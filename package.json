@@ -1,0 +1,14 @@
+{
+  "name": "fica-portal",
+  "version": "1.0.0",
+  "description": "ERP / Portal empresarial de A y F FICA Asociados S.A.C. — Fase 1 (Core y Administración).",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}

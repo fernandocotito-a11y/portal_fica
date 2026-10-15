@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Portal empresarial de A y F FICA Asociados S.A.C. — Consultoría contable, tributaria, inventarios y software empresarial." />
+  <title>FICA Portal · A y F FICA Asociados S.A.C.</title>
+
+  <!-- Favicon: logotipo corporativo -->
+  <link rel="icon" type="image/png" href="./assets/logo-ayf.png" />
+
+  <!-- Hojas de estilo del sistema de diseño -->
+  <link rel="stylesheet" href="./css/variables.css" />
+  <link rel="stylesheet" href="./css/base.css" />
+  <link rel="stylesheet" href="./css/login.css" />
+  <link rel="stylesheet" href="./css/layout.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+  <link rel="stylesheet" href="./css/responsive.css" />
+</head>
+<body>
+  <!-- Contenedor raíz donde el enrutador renderiza toda la SPA -->
+  <div id="app" class="app-root"></div>
+
+  <script>
+    // Punto de arranque condicional.
+    // El portal usa módulos ES6 (ES Modules), que los navegadores exigen servir
+    // mediante HTTP(S). Si alguien abre index.html directamente con doble clic
+    // (protocolo file://), mostramos una guía clara en lugar de errores de consola.
+    (function () {
+      if (window.location.protocol === 'file:') {
+        document.getElementById('app').innerHTML =
+          '<div class="boot-notice">' +
+            '<img class="boot-notice__logo" src="./assets/logo-ayf.png" alt="A y F FICA Asociados" />' +
+            '<h1>Inicia el servidor local</h1>' +
+            '<p>Este portal está construido con módulos ES6 y debe servirse mediante HTTP.</p>' +
+            '<p>Abre una terminal en la carpeta del proyecto y ejecuta:</p>' +
+            '<code>node server.js</code>' +
+            '<p>Luego visita <strong>http://localhost:3000</strong></p>' +
+          '</div>';
+      } else {
+        var script = document.createElement('script');
+        script.type = 'module';
+        script.src = './js/app.js';
+        document.body.appendChild(script);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+/* ============================================================================
+   responsive.css — Adaptación a dispositivos móviles y pantallas intermedias
+   ========================================================================== */
+
+/* ---- Tabletas y pantallas medianas ---- */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-width: 240px;
+  }
+  .content {
+    padding: var(--space-5);
+  }
+}
+
+/* ---- Móviles: sidebar fuera de lienzo (off-canvas) ---- */
+@media (max-width: 768px) {
+  .login {
+    grid-template-columns: 1fr;
+  }
+  .login__brand {
+    display: none;
+  }
+  .login__panel {
+    min-height: 100vh;
+    padding: var(--space-4);
+  }
+  .login__card {
+    padding: var(--space-5);
+  }
+
+  .sidebar {
+    transform: translateX(-100%);
+    width: var(--sidebar-width);
+  }
+  .layout.menu-open .sidebar {
+    transform: translateX(0);
+  }
+  .layout.menu-open .sidebar-backdrop {
+    display: block;
+    opacity: 1;
+  }
+  .main {
+    margin-left: 0 !important;
+  }
+  .sidebar__brand-text,
+  .nav-item__label,
+  .nav-section__title,
+  .sidebar__footer span {
+    opacity: 1 !important;
+    width: auto !important;
+  }
+  .layout.is-collapsed .sidebar {
+    width: var(--sidebar-width);
+  }
+  .layout.is-collapsed .nav-item {
+    justify-content: flex-start;
+    padding: var(--space-3);
+  }
+  .layout.is-collapsed .sidebar__brand {
+    justify-content: flex-start;
+    padding: 0 var(--space-4);
+  }
+
+  .header {
+    padding: 0 var(--space-4);
+    gap: var(--space-3);
+  }
+  .profile__info {
+    display: none;
+  }
+  .profile__chevron {
+    display: none;
+  }
+
+  .content {
+    padding: var(--space-4);
+  }
+  .page-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+  .table-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .table-toolbar__search {
+    max-width: none;
+  }
+
+  .toast-container {
+    left: var(--space-4);
+    right: var(--space-4);
+  }
+  .toast {
+    min-width: 0;
+    max-width: none;
+  }
+}
+
+/* ---- Pantallas muy pequeñas ---- */
+@media (max-width: 420px) {
+  .header__title {
+    font-size: var(--font-size-md);
+  }
+  .modal__footer {
+    flex-direction: column-reverse;
+  }
+  .modal__footer .btn {
+    width: 100%;
+  }
+}
+
+/* ---- Altura reducida ---- */
+@media (max-height: 600px) {
+  .login__brand {
+    display: none;
+  }
+  .login {
+    grid-template-columns: 1fr;
+  }
+}

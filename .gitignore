@@ -1,0 +1,11 @@
+# Dependencias (este proyecto no las usa, pero por si se añaden luego)
+node_modules/
+
+# Archivos del sistema operativo
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Logs y temporales
+*.log
+npm-debug.log*
