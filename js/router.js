@@ -1,15 +1,16 @@
 /* ============================================================================
    router.js — Enrutador hash con protección de rutas (guards)
    ----------------------------------------------------------------------------
-   Implementa una SPA ligera basada en `location.hash`:
+   Rutas:
 
-     #/login            -> Autenticación (solo invitados)
-     #/dashboard        -> Panel principal (requiere sesión)
-     #/users            -> Gestión de usuarios (requiere superadmin)
-     #/module/:key      -> Módulo (maqueta/placeholder, requiere sesión)
+     #/login           -> Autenticación (solo invitados)
+     #/select-company  -> Selector de empresa (requiere sesión, sin shell)
+     #/dashboard       -> Panel principal (sesión + empresa seleccionada)
+     #/users           -> Gestión de usuarios (sesión + empresa + superadmin)
+     #/companies       -> Gestión de empresas (sesión + empresa + superadmin)
+     #/module/:key     -> Módulo placeholder (sesión + empresa + permiso)
 
-   Carga los módulos de forma diferida con import() dinámico para que el
-   bundle inicial sea mínimo y la arquitectura escale con los futuros módulos.
+   Los módulos se cargan de forma diferida con import() dinámico.
    ========================================================================== */
 
 import { authService } from '../services/authService.js';
@@ -25,24 +26,45 @@ const routes = [
     loader: () => import('../modules/login/login.js'),
   },
   {
+    pattern: /^\/select-company\/?$/,
+    guard: 'auth',
+    shell: false, // página independiente (aún no se "está" dentro de una empresa)
+    loader: () => import('../modules/select-company/select-company.js'),
+  },
+  {
     pattern: /^\/dashboard\/?$/,
     guard: 'auth',
+    company: true,
     loader: () => import('../modules/dashboard/dashboard.js'),
   },
   {
     pattern: /^\/users\/?$/,
     guard: 'auth',
     adminOnly: true,
+    company: true,
     loader: () => import('../modules/users/users.js'),
+  },
+  {
+    pattern: /^\/companies\/?$/,
+    guard: 'auth',
+    adminOnly: true,
+    company: true,
+    loader: () => import('../modules/companies/companies.js'),
   },
   {
     pattern: /^\/module\/([\w-]+)\/?$/,
     guard: 'auth',
+    company: true,
     loader: () => import('../modules/placeholder/module.js'),
   },
 ];
 
 let currentShell = null;
+
+/** Ruta "de casa" según si ya hay empresa seleccionada. */
+function homeHash() {
+  return authService.activeCompany() ? '#/dashboard' : '#/select-company';
+}
 
 /** Extrae la ruta normalizada a partir del hash actual. */
 function currentPath() {
@@ -65,7 +87,6 @@ function matchRoute(path) {
 /** Navega de forma programática a una ruta. */
 export function navigate(path) {
   if (window.location.hash === `#${path}`) {
-    // Forzar re-render si ya estamos en la ruta (p. ej. logout).
     handleRoute();
   } else {
     window.location.hash = `#${path}`;
@@ -89,7 +110,7 @@ async function handleRoute() {
 
   // Ruta desconocida -> redirige según estado de sesión.
   if (!matched) {
-    window.location.hash = authService.isAuthenticated() ? '#/dashboard' : '#/login';
+    window.location.hash = authService.isAuthenticated() ? homeHash() : '#/login';
     return;
   }
 
@@ -98,7 +119,7 @@ async function handleRoute() {
 
   // Guard "guest": si ya hay sesión, no mostramos el login.
   if (route.guard === 'guest' && isAuthed) {
-    window.location.hash = '#/dashboard';
+    window.location.hash = homeHash();
     return;
   }
 
@@ -111,17 +132,22 @@ async function handleRoute() {
   // Restricción de rol: rutas exclusivas del superadmin.
   if (route.adminOnly && !authService.isSuperAdmin()) {
     showToast('No tienes permisos para acceder a ese módulo.', 'error');
-    window.location.hash = '#/dashboard';
+    window.location.hash = homeHash();
     return;
   }
 
-  // Valida que el parámetro :key corresponda a un módulo registrado y que el
-  // usuario actual tenga permiso para acceder a él.
+  // Requisito de empresa seleccionada.
+  if (route.company && !authService.activeCompany()) {
+    window.location.hash = '#/select-company';
+    return;
+  }
+
+  // Valida el parámetro :key (módulo registrado y permiso de acceso).
   const moduleKey = params[0];
   if (route.pattern.source.startsWith('^\\/module') && moduleKey) {
     if (!getModule(moduleKey) || !authService.can(moduleKey)) {
       showToast('No tienes permisos para acceder a ese módulo.', 'error');
-      window.location.hash = '#/dashboard';
+      window.location.hash = homeHash();
       return;
     }
   }
@@ -129,12 +155,12 @@ async function handleRoute() {
   // Carga el módulo y renderiza.
   const mod = (await route.loader()).default;
   const ctx = buildContext(params);
-  // Para el placeholder de módulos, el título del header es el nombre real
-  // del módulo (p. ej. "SIRE", "Planillas"); en el resto usa el título propio.
   const moduleInfo = moduleKey ? getModule(moduleKey) : null;
   const title = moduleInfo ? moduleInfo.name : mod.title || 'FICA Portal';
 
-  if (route.guard === 'guest') {
+  // Páginas sin shell (login y selector de empresa).
+  const useShell = route.guard === 'auth' && route.shell !== false;
+  if (!useShell) {
     if (currentShell) {
       currentShell.cleanup();
       currentShell = null;
@@ -145,7 +171,7 @@ async function handleRoute() {
     return;
   }
 
-  // Página autenticada: reutiliza el shell si ya existe.
+  // Página autenticada con shell: reutiliza el layout si ya existe.
   const activeKey = moduleKey || path.replace(/^\/|\/$/g, '') || 'dashboard';
   if (!currentShell) {
     currentShell = renderShell(authService.currentUser(), { title, activeKey });

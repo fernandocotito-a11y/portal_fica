@@ -63,9 +63,12 @@ clave `fica.users.v1` desde las DevTools o limpiando el almacenamiento del sitio
 | **Usuario Secundario** | Acceso restringido únicamente a los módulos que el Superadministrador le habilite. |
 
 - El **Panel Principal** siempre está disponible para cualquier usuario autenticado.
-- **Gestión de Usuarios** es exclusivo del Superadministrador.
+- **Gestión de Usuarios** y **Gestión de Empresas** son exclusivos del Superadministrador.
 - El resto de módulos (Planillas, SIRE, Compras/Ventas, Retenciones, Declaraciones,
   Reportes) se asignan individualmente a cada usuario secundario.
+- Cada usuario secundario tiene además **empresas asignadas**: al iniciar sesión
+  elige una de sus empresas (selector) y trabaja dentro de ese contexto. El
+  Superadministrador ve todas las empresas y puede cambiarlas en cualquier momento.
 
 ---
 
@@ -99,12 +102,15 @@ Portal/
 ├── services/               # Capa de datos/servicios (sustituible por API real)
 │   ├── storageService.js   # Abstracción de LocalStorage/SessionStorage
 │   ├── userService.js      # CRUD de usuarios + semilla del superadmin
-│   └── authService.js      # Sesión, login/logout y control de acceso (RBAC)
+│   ├── companyService.js   # CRUD de empresas + semilla inicial
+│   └── authService.js      # Sesión, login/logout, RBAC y contexto de empresa
 │
 └── modules/                # Módulos de vista (carga diferida por el router)
     ├── login/login.js      # Autenticación
+    ├── select-company/select-company.js  # Selector de empresa
     ├── dashboard/dashboard.js  # Panel principal (métricas + accesos directos)
-    ├── users/users.js      # Gestión de usuarios (CRUD + asignación de módulos)
+    ├── users/users.js      # Gestión de usuarios (CRUD + módulos + empresas)
+    ├── companies/companies.js  # Gestión de empresas (CRUD)
     └── placeholder/module.js   # Maqueta de módulos futuros ("Próximamente")
 ```
 
@@ -126,10 +132,12 @@ La aplicación es una **SPA modular desacoplada** en tres capas:
 ### Flujo de autenticación y rutas
 
 ```
-#/login       -> Solo invitados (si ya hay sesión, redirige a /dashboard)
-#/dashboard   -> Requiere sesión
-#/users       -> Requiere sesión + rol Superadministrador
-#/module/:key -> Requiere sesión + permiso específico sobre el módulo
+#/login           -> Solo invitados
+#/select-company  -> Requiere sesión (selector de empresa, sin shell)
+#/dashboard       -> Requiere sesión + empresa seleccionada
+#/users           -> Requiere sesión + empresa + rol Superadministrador
+#/companies       -> Requiere sesión + empresa + rol Superadministrador
+#/module/:key     -> Requiere sesión + empresa + permiso sobre el módulo
 ```
 
 - La sesión se guarda en `sessionStorage` o `localStorage` según la opción
@@ -166,6 +174,7 @@ Para darle una vista propia, crea `modules/facturacion/facturacion.js` (o
 | ------------------- | ------------------------------ |
 | Panel Principal     | ✅ Activo                       |
 | Gestión de Usuarios | ✅ Activo (CRUD + RBAC)         |
+| Gestión de Empresas | ✅ Activo (CRUD + asignación)   |
 | Planillas (PLAME / T-Registro) | 🟡 Listo para configurar |
 | SIRE (SUNAT)        | ⏳ Próximamente                 |
 | Compras y Ventas    | ⏳ Próximamente                 |
@@ -193,6 +202,7 @@ Toda la información se guarda en el navegador mediante `LocalStorage`:
 | Clave              | Contenido                              |
 | ------------------ | -------------------------------------- |
 | `fica.users.v1`    | Colección de usuarios                  |
+| `fica.companies.v1`| Colección de empresas                  |
 | `fica.session.v1`  | Sesión activa (o en `sessionStorage`)  |
 | `fica.sidebar.collapsed` | Estado colapsado del sidebar     |
 

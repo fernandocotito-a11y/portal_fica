@@ -24,6 +24,7 @@ export default {
   render(container) {
     const user = authService.currentUser();
     const isAdmin = authService.isSuperAdmin();
+    const company = authService.activeCompany();
     const firstName = user ? user.name.trim().split(/\s+/)[0] : '';
 
     const accessible = authService.accessibleModules().filter((m) => m.key !== 'dashboard');
@@ -84,7 +85,7 @@ export default {
       <div class="page-heading">
         <div>
           <h2 class="page-heading__title">Bienvenido, ${escapeHtml(firstName || 'Usuario')}</h2>
-          <p class="page-heading__subtitle">Resumen general de tu espacio de trabajo.</p>
+          <p class="page-heading__subtitle">${company ? `${escapeHtml(company.name)} — ` : ''}Resumen general de tu espacio de trabajo.</p>
         </div>
         <span class="badge badge--gold">
           <span class="badge__dot"></span>${isAdmin ? 'Superadministrador' : 'Usuario Secundario'}

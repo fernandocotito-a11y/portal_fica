@@ -42,6 +42,7 @@ export const userService = {
       passwordHash: hashPassword(SUPERADMIN_SEED.password),
       role: ROLES.SUPERADMIN,
       permissions: ['*'],
+      companies: ['*'],
       active: true,
       createdAt: new Date().toISOString(),
     });
@@ -79,7 +80,7 @@ export const userService = {
    * Crea un usuario secundario.
    * Lanza Error si el correo ya está registrado o los datos son inválidos.
    */
-  create({ name, email, password, permissions = [] }) {
+  create({ name, email, password, permissions = [], companies = [] }) {
     const normalized = normalizeEmail(email);
     if (!name || !name.trim()) throw new Error('El nombre es obligatorio.');
     if (!normalized) throw new Error('El correo es obligatorio.');
@@ -96,6 +97,7 @@ export const userService = {
       passwordHash: hashPassword(password),
       role: ROLES.SECONDARY,
       permissions: Array.isArray(permissions) ? permissions.slice() : [],
+      companies: Array.isArray(companies) ? companies.slice() : [],
       active: true,
       createdAt: new Date().toISOString(),
     };

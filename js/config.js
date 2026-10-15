@@ -19,6 +19,7 @@ export const APP = {
 /* ---- Claves de persistencia (LocalStorage) ---- */
 export const STORAGE_KEYS = {
   users: 'fica.users.v1',
+  companies: 'fica.companies.v1',
   session: 'fica.session.v1',
 };
 
@@ -66,6 +67,15 @@ export const MODULES = [
     name: 'Gestión de Usuarios',
     description: 'Usuarios secundarios, roles y permisos (RBAC).',
     icon: ic('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.5c2.8.3 5 2.3 5 5.5"/>'),
+    status: 'active',
+    adminOnly: true,
+    group: 'admin',
+  },
+  {
+    key: 'companies',
+    name: 'Gestión de Empresas',
+    description: 'Crea y administra las empresas del portal.',
+    icon: ic('<rect x="5" y="3" width="6" height="18"/><path d="M11 7h7a1 1 0 0 1 1 1v13"/><path d="M3 21h18"/><path d="M8 7h.01M8 11h.01M8 15h.01M14 11h.01M14 15h.01"/>'),
     status: 'active',
     adminOnly: true,
     group: 'admin',

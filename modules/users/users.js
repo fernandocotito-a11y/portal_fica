@@ -1,12 +1,15 @@
 /* ============================================================================
-   users.js — Módulo de Gestión de Usuarios (CRUD + RBAC)
+   users.js — Módulo de Gestión de Usuarios (CRUD + RBAC + Empresas)
    ----------------------------------------------------------------------------
    Permite al Superadministrador listar, crear, editar, activar/desactivar y
-   eliminar usuarios secundarios, así como asignarles los módulos a los que
-   tendrán acceso. Exclusivo del Superadministrador (protegido por el router).
+   eliminar usuarios secundarios. A cada usuario se le asignan:
+   - Módulos a los que tendrá acceso (RBAC).
+   - Empresas que podrá ver/operar (selector de empresa).
+   Exclusivo del Superadministrador (protegido por el router).
    ========================================================================== */
 
 import { userService } from '../../services/userService.js';
+import { companyService } from '../../services/companyService.js';
 import { ROLE_LABELS, ROLES, getModule, assignableModules } from '../../js/config.js';
 import {
   ICONS,
@@ -32,6 +35,21 @@ function permissionCheckboxesHtml() {
     .join('');
 }
 
+/** Genera el HTML de los checkboxes de empresas asignables. */
+function companyCheckboxesHtml() {
+  return companyService
+    .list()
+    .map(
+      (c) => `
+        <label class="permission-item" title="${escapeHtml('RUC ' + c.ruc)}">
+          <input type="checkbox" value="${escapeHtml(c.id)}" data-company />
+          <span class="permission-item__box">${ICONS.check}</span>
+          <span class="permission-item__label">${escapeHtml(c.name)}</span>
+        </label>`
+    )
+    .join('');
+}
+
 export default {
   title: 'Gestión de Usuarios',
 
@@ -43,7 +61,7 @@ export default {
       <div class="page-heading">
         <div>
           <h2 class="page-heading__title">Gestión de Usuarios</h2>
-          <p class="page-heading__subtitle">Administra usuarios secundarios, roles y permisos de acceso.</p>
+          <p class="page-heading__subtitle">Administra usuarios secundarios, roles, permisos y empresas.</p>
         </div>
         <button type="button" class="btn btn--primary" data-add>
           ${ICONS.plus} Nuevo usuario
@@ -66,6 +84,7 @@ export default {
                   <th>Usuario</th>
                   <th>Rol</th>
                   <th>Módulos asignados</th>
+                  <th>Empresas</th>
                   <th>Estado</th>
                   <th style="text-align:right;">Acciones</th>
                 </tr>
@@ -118,6 +137,14 @@ export default {
               <div class="permission-grid" data-permissions>${permissionCheckboxesHtml()}</div>
             </div>
 
+            <div class="form-group">
+              <label class="form-label">Empresas asignadas</label>
+              <p class="form-hint" style="margin-bottom: var(--space-3);">
+                El usuario solo podrá seleccionar y trabajar con las empresas marcadas.
+              </p>
+              <div class="permission-grid" data-companies>${companyCheckboxesHtml()}</div>
+            </div>
+
             <div class="form-group" data-active-group hidden>
               <label class="checkbox">
                 <input type="checkbox" data-active />
@@ -151,6 +178,7 @@ export default {
     const emailError = container.querySelector('[data-error-email]');
     const passwordError = container.querySelector('[data-error-password]');
     const permInputs = container.querySelectorAll('[data-perm]');
+    const companyInputs = container.querySelectorAll('[data-company]');
 
     /* --------------------------- Helpers ------------------------------- */
     function filteredUsers() {
@@ -169,12 +197,27 @@ export default {
         return '<span class="chip chip--gold">Acceso total</span>';
       }
       if (!user.permissions || user.permissions.length === 0) {
-        return '<span class="text-muted" style="font-size: var(--font-size-xs);">Sin módulos asignados</span>';
+        return '<span class="text-muted" style="font-size: var(--font-size-xs);">Sin módulos</span>';
       }
       return user.permissions
         .map((key) => {
           const mod = getModule(key);
           return mod ? `<span class="chip">${escapeHtml(mod.name)}</span>` : '';
+        })
+        .join('');
+    }
+
+    function companiesSummary(user) {
+      if (user.role === ROLES.SUPERADMIN) {
+        return '<span class="chip chip--gold">Todas</span>';
+      }
+      if (!user.companies || user.companies.length === 0) {
+        return '<span class="text-muted" style="font-size: var(--font-size-xs);">Sin empresas</span>';
+      }
+      return user.companies
+        .map((id) => {
+          const company = companyService.getById(id);
+          return company ? `<span class="chip">${escapeHtml(company.name)}</span>` : '';
         })
         .join('');
     }
@@ -186,7 +229,7 @@ export default {
       if (users.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="5">
+            <td colspan="6">
               <div class="empty-state">
                 <span class="empty-state__icon">${ICONS.users}</span>
                 <div class="empty-state__title">Sin resultados</div>
@@ -228,6 +271,7 @@ export default {
               </td>
               <td><span class="badge ${roleBadge}"><span class="badge__dot"></span>${escapeHtml(ROLE_LABELS[user.role])}</span></td>
               <td>${permissionsSummary(user)}</td>
+              <td>${companiesSummary(user)}</td>
               <td>${state}</td>
               <td>
                 <div class="table__actions" style="justify-content:flex-end;">${actions}</div>
@@ -256,6 +300,7 @@ export default {
       activeGroup.hidden = true;
       activeInput.checked = true;
       permInputs.forEach((inp) => (inp.checked = false));
+      companyInputs.forEach((inp) => (inp.checked = false));
       modal.showModal();
       nameInput.focus();
     }
@@ -276,6 +321,9 @@ export default {
       permInputs.forEach((inp) => {
         inp.checked = user.permissions.includes(inp.value);
       });
+      companyInputs.forEach((inp) => {
+        inp.checked = user.companies.includes(inp.value);
+      });
       modal.showModal();
       nameInput.focus();
     }
@@ -291,6 +339,12 @@ export default {
         .map((inp) => inp.value);
     }
 
+    function getSelectedCompanies() {
+      return Array.from(companyInputs)
+        .filter((inp) => inp.checked)
+        .map((inp) => inp.value);
+    }
+
     function validate() {
       let valid = true;
       clearErrors();
@@ -301,7 +355,6 @@ export default {
         valid = false;
       }
 
-      // El correo y la contraseña solo se validan al crear (no al editar).
       if (!editingId) {
         const email = emailInput.value.trim();
         if (!email) {
@@ -333,10 +386,7 @@ export default {
     }
 
     /* ---------------------------- Eventos ------------------------------ */
-    // "Nuevo usuario"
     container.querySelector('[data-add]').addEventListener('click', openCreate);
-
-    // Cierre del modal
     container.querySelector('[data-close]').addEventListener('click', closeModal);
     container.querySelector('[data-cancel]').addEventListener('click', closeModal);
     modal.addEventListener('cancel', (e) => {
@@ -344,7 +394,6 @@ export default {
       closeModal();
     });
 
-    // Limpieza de errores al escribir
     nameInput.addEventListener('input', () => {
       nameInput.classList.remove('is-invalid');
       nameError.textContent = '';
@@ -358,25 +407,25 @@ export default {
       passwordError.textContent = '';
     });
 
-    // Búsqueda
     searchInput.addEventListener('input', () => {
       searchTerm = searchInput.value;
       renderTable();
     });
 
-    // Envío del formulario
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       if (!validate()) return;
 
       const name = nameInput.value.trim();
       const permissions = getSelectedPermissions();
+      const companies = getSelectedCompanies();
 
       try {
         if (editingId) {
           userService.update(editingId, {
             name,
             permissions,
+            companies,
             active: activeInput.checked,
           });
           showToast('Usuario actualizado correctamente.');
@@ -386,6 +435,7 @@ export default {
             email: emailInput.value.trim(),
             password: passwordInput.value,
             permissions,
+            companies,
           });
           showToast('Usuario creado correctamente.');
         }
@@ -396,7 +446,6 @@ export default {
       }
     });
 
-    // Delegación de eventos sobre la tabla (editar, eliminar, toggle).
     tbody.addEventListener('click', async (e) => {
       const editBtn = e.target.closest('[data-edit]');
       const deleteBtn = e.target.closest('[data-delete]');

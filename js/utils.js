@@ -192,4 +192,6 @@ export const ICONS = {
   info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   arrowRight: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+  building: svg('<rect x="5" y="3" width="6" height="18"/><path d="M11 7h7a1 1 0 0 1 1 1v13"/><path d="M3 21h18"/><path d="M8 7h.01M8 11h.01M8 15h.01M14 11h.01M14 15h.01"/>'),
+  briefcase: svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/>'),
 };

@@ -1,20 +1,22 @@
 /* ============================================================================
-   authService.js — Autenticación, sesión y control de acceso (RBAC)
+   authService.js — Autenticación, sesión, RBAC y contexto de empresa
    ----------------------------------------------------------------------------
-   Gestiona el inicio/cierre de sesión, la sesión activa (con opción de
-   "recordar sesión") y las comprobaciones de permisos por módulo. La interfaz
-   está preparada para sustituirse por un backend real (JWT + API) sin afectar
-   a las vistas ni al enrutador.
+   Además del inicio/cierre de sesión y los permisos por módulo, gestiona el
+   "contexto de empresa": qué empresas puede ver cada usuario y cuál tiene
+   seleccionada (guardada en la sesión). La interfaz está preparada para
+   sustituirse por un backend real (JWT + API) sin afectar a las vistas.
    ========================================================================== */
 
 import { storageService } from './storageService.js';
 import { userService } from './userService.js';
+import { companyService } from './companyService.js';
 import { hashPassword } from '../js/utils.js';
 import { STORAGE_KEYS, ROLES, MODULES, getModule } from '../js/config.js';
 
-/** Inicializa el sistema de autenticación (semilla del superadmin). */
+/** Inicializa el sistema de autenticación (semilla de superadmin y empresa). */
 function init() {
   userService.seedSuperAdmin();
+  companyService.seedDefaultCompany();
 }
 
 /** Lee la sesión activa (prioriza la persistente, luego la de pestaña). */
@@ -24,9 +26,9 @@ function readSession() {
   return storageService.session.get(STORAGE_KEYS.session, null);
 }
 
-/** Escribe la sesión según la opción "recordar sesión". */
-function writeSession(session, remember) {
-  // Se limpia la otra ubicación para evitar sesiones duplicadas/desincronizadas.
+/** Escribe la sesión según la opción "recordar sesión" (guardada en la sesión). */
+function writeSession(session) {
+  const remember = !!session.remember;
   if (remember) {
     storageService.session.remove(STORAGE_KEYS.session);
     storageService.local.set(STORAGE_KEYS.session, session);
@@ -40,7 +42,7 @@ export const authService = {
   init,
 
   /**
-   * Autentica a un usuario. Lanza Error con un mensaje legible en caso de
+   * Autentica a un usuario. Lanza Error con mensaje legible en caso de
    * credenciales inválidas o cuenta desactivada. Devuelve el usuario en éxito.
    */
   login(email, password, remember = false) {
@@ -54,7 +56,12 @@ export const authService = {
       throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
     }
 
-    writeSession({ userId: user.id, issuedAt: new Date().toISOString() }, !!remember);
+    writeSession({
+      userId: user.id,
+      issuedAt: new Date().toISOString(),
+      remember: !!remember,
+      activeCompanyId: null,
+    });
     return user;
   },
 
@@ -88,13 +95,10 @@ export const authService = {
     const user = this.currentUser();
     if (!user) return false;
 
-    // El panel principal está disponible para todo usuario autenticado.
     if (moduleKey === 'dashboard') return true;
 
-    // El Superadministrador tiene acceso total.
     if (user.role === ROLES.SUPERADMIN) return true;
 
-    // Los módulos exclusivos del administrador quedan bloqueados.
     const mod = getModule(moduleKey);
     if (mod && mod.adminOnly) return false;
 
@@ -106,5 +110,53 @@ export const authService = {
     if (!this.isAuthenticated()) return [];
     if (this.isSuperAdmin()) return MODULES.slice();
     return MODULES.filter((m) => this.can(m.key));
+  },
+
+  /* ----------------------- Contexto de empresa -------------------------- */
+
+  /** ¿El usuario actual puede acceder a la empresa indicada? */
+  canAccessCompany(companyId) {
+    const user = this.currentUser();
+    if (!user) return false;
+    if (user.role === ROLES.SUPERADMIN) return true;
+    return Array.isArray(user.companies) && user.companies.includes(companyId);
+  },
+
+  /** Empresas (activas) que el usuario actual puede ver. */
+  availableCompanies() {
+    const user = this.currentUser();
+    if (!user) return [];
+    const active = companyService.listActive();
+    if (user.role === ROLES.SUPERADMIN) return active;
+    const ids = Array.isArray(user.companies) ? user.companies : [];
+    return active.filter((c) => ids.includes(c.id));
+  },
+
+  /** Empresa actualmente seleccionada (o `null` si no hay/ya no aplica). */
+  activeCompany() {
+    const session = readSession();
+    if (!session || !session.activeCompanyId) return null;
+    if (!this.canAccessCompany(session.activeCompanyId)) return null;
+    const company = companyService.getById(session.activeCompanyId);
+    return company && company.active ? company : null;
+  },
+
+  /** Selecciona una empresa como contexto activo. Devuelve true si se pudo. */
+  setActiveCompany(companyId) {
+    const session = readSession();
+    if (!session || !this.canAccessCompany(companyId)) return false;
+    const company = companyService.getById(companyId);
+    if (!company || !company.active) return false;
+    session.activeCompanyId = companyId;
+    writeSession(session);
+    return true;
+  },
+
+  /** Quita el contexto de empresa activo (sin cerrar sesión). */
+  clearActiveCompany() {
+    const session = readSession();
+    if (!session) return;
+    session.activeCompanyId = null;
+    writeSession(session);
   },
 };

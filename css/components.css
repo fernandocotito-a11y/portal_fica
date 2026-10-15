@@ -878,3 +878,51 @@ dialog.modal::backdrop {
   max-width: 460px;
   color: var(--color-text-muted);
 }
+
+/* ============================ Selector de empresa ======================== */
+.select-company {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-cream);
+}
+.select-company__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.select-company__logo {
+  height: 40px;
+  padding: 3px;
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.select-company__body {
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+.select-company__title {
+  font-size: var(--font-size-2xl);
+  color: var(--color-primary);
+  margin-bottom: var(--space-1);
+}
+.select-company__subtitle {
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+.select-company__actions {
+  margin-bottom: var(--space-5);
+}
+
+.company-card.is-selected {
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px var(--color-gold-soft);
+}

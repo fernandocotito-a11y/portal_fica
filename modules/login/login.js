@@ -165,7 +165,7 @@ export default {
 
       try {
         authService.login(email, password, remember);
-        ctx.navigate('/dashboard');
+        ctx.navigate('/select-company');
       } catch (err) {
         alertMsg.textContent = err.message;
         alert.hidden = false;

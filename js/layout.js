@@ -35,7 +35,7 @@ function buildSections(modules) {
 }
 
 /** Construye el HTML del sidebar y header a partir del usuario autenticado. */
-function shellTemplate(user, activeKey, title) {
+function shellTemplate(user, activeKey, title, company) {
   const sections = buildSections(authService.accessibleModules());
   const roleLabel = ROLE_LABELS[user.role] || 'Usuario';
 
@@ -81,6 +81,11 @@ function shellTemplate(user, activeKey, title) {
           <h1 class="header__title" data-title>${escapeHtml(title)}</h1>
           <div class="header__spacer"></div>
 
+          <button type="button" class="header__company" data-switch-company title="Cambiar de empresa">
+            <span class="header__company__icon">${ICONS.building}</span>
+            <span class="header__company__name">${escapeHtml(company ? company.name : 'Sin empresa')}</span>
+          </button>
+
           <div class="profile" data-profile>
             <button type="button" class="profile__button" data-profile-button aria-haspopup="true" aria-expanded="false">
               <span class="profile__avatar">${escapeHtml(initials(user.name))}</span>
@@ -95,6 +100,9 @@ function shellTemplate(user, activeKey, title) {
                 <div class="profile__name">${escapeHtml(user.name)}</div>
                 <div class="dropdown__email">${escapeHtml(user.email)}</div>
               </div>
+              <button type="button" class="dropdown__item" data-switch>${ICONS.briefcase}
+                <span>Cambiar de empresa</span>
+              </button>
               <button type="button" class="dropdown__item dropdown__item--danger" data-logout>${ICONS.logout}
                 <span>Cerrar sesión</span>
               </button>
@@ -116,7 +124,8 @@ function shellTemplate(user, activeKey, title) {
  */
 export function renderShell(user, { title = '', activeKey = 'dashboard' } = {}) {
   const app = document.getElementById('app');
-  app.innerHTML = shellTemplate(user, activeKey, title);
+  const company = authService.activeCompany();
+  app.innerHTML = shellTemplate(user, activeKey, title, company);
 
   const layout = app.querySelector('.layout');
   const content = app.querySelector('[data-content]');
@@ -178,6 +187,13 @@ export function renderShell(user, { title = '', activeKey = 'dashboard' } = {}) 
     authService.logout();
     window.location.hash = '#/login';
   });
+
+  /* ---- Cambiar de empresa ---- */
+  const switchCompany = () => {
+    window.location.hash = '#/select-company';
+  };
+  app.querySelector('[data-switch]').addEventListener('click', switchCompany);
+  app.querySelector('[data-switch-company]').addEventListener('click', switchCompany);
 
   return {
     content,
