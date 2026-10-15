@@ -3,7 +3,8 @@
    ----------------------------------------------------------------------------
    Pantalla a la que llegan los usuarios tras hacer clic en el enlace del correo
    (invitación o restablecimiento). Comprueba la sesión y muestra un formulario
-   para crear una nueva contraseña; luego redirige al selector de empresa.
+   para crear una nueva contraseña (con opción de ver/ocultar), y luego redirige
+   al selector de empresa.
    ========================================================================== */
 
 import { supabase } from '../../js/supabase.js';
@@ -44,6 +45,8 @@ function formHtml(email) {
                 <span class="input-wrap__icon">${ICONS.lock}</span>
                 <input class="form-input form-input--icon" type="password" autocomplete="new-password"
                   placeholder="Mín. 8 caracteres, mayúscula y número" data-password />
+                <button type="button" class="input-wrap__icon input-wrap__icon--right" data-toggle="password"
+                  aria-label="Mostrar u ocultar contraseña">${ICONS.eye}</button>
               </div>
               <span class="field-error" data-error-password></span>
             </div>
@@ -53,6 +56,8 @@ function formHtml(email) {
                 <span class="input-wrap__icon">${ICONS.lock}</span>
                 <input class="form-input form-input--icon" type="password" autocomplete="new-password"
                   placeholder="Repite la contraseña" data-confirm />
+                <button type="button" class="input-wrap__icon input-wrap__icon--right" data-toggle="confirm"
+                  aria-label="Mostrar u ocultar contraseña">${ICONS.eye}</button>
               </div>
               <span class="field-error" data-error-confirm></span>
             </div>
@@ -63,6 +68,18 @@ function formHtml(email) {
         </div></div>
       </main>
     </div>`;
+}
+
+/** Conecta un botón "ojo" con su input de contraseña. */
+function wireToggle(scope, toggleName, input) {
+  const btn = scope.querySelector(`[data-toggle="${toggleName}"]`);
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    btn.innerHTML = isHidden ? ICONS.eyeOff : ICONS.eye;
+    btn.setAttribute('aria-label', isHidden ? 'Ocultar contraseña' : 'Mostrar contraseña');
+  });
 }
 
 export default {
@@ -96,6 +113,9 @@ export default {
       const passwordError = container.querySelector('[data-error-password]');
       const confirmError = container.querySelector('[data-error-confirm]');
       const submitBtn = container.querySelector('[data-submit]');
+
+      wireToggle(container, 'password', passwordInput);
+      wireToggle(container, 'confirm', confirmInput);
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

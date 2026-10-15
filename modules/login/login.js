@@ -2,8 +2,8 @@
    login.js — Módulo de autenticación (Supabase)
    ----------------------------------------------------------------------------
    Inicio de sesión por email/contraseña y envío de enlace para restablecer la
-   contraseña ("¿Olvidaste tu contraseña?"). La sesión la gestiona Supabase y
-   se mantiene iniciada en el dispositivo.
+   contraseña ("¿Olvidaste tu contraseña?"). Alerta roja solo en caso de error
+   y alerta verde cuando el enlace se envía correctamente.
    ========================================================================== */
 
 import { authService } from '../../services/authService.js';
@@ -36,6 +36,9 @@ export default {
 
             <div class="alert alert--error" data-alert hidden>
               ${ICONS.error}<span data-alert-msg></span>
+            </div>
+            <div class="alert alert--success" data-success hidden>
+              ${ICONS.success}<span data-success-msg></span>
             </div>
 
             <form data-form novalidate>
@@ -89,9 +92,26 @@ export default {
     const passwordError = container.querySelector('[data-error-password]');
     const alert = container.querySelector('[data-alert]');
     const alertMsg = container.querySelector('[data-alert-msg]');
+    const success = container.querySelector('[data-success]');
+    const successMsg = container.querySelector('[data-success-msg]');
     const submitBtn = container.querySelector('[data-submit]');
     const togglePassword = container.querySelector('[data-toggle-password]');
     const forgotBtn = container.querySelector('[data-forgot]');
+
+    const hideAlerts = () => {
+      alert.hidden = true;
+      success.hidden = true;
+    };
+    const showError = (msg) => {
+      alertMsg.textContent = msg;
+      alert.hidden = false;
+      success.hidden = true;
+    };
+    const showSuccess = (msg) => {
+      successMsg.textContent = msg;
+      success.hidden = false;
+      alert.hidden = true;
+    };
 
     togglePassword.addEventListener('click', () => {
       const isHidden = passwordInput.type === 'password';
@@ -103,12 +123,12 @@ export default {
     emailInput.addEventListener('input', () => {
       emailInput.classList.remove('is-invalid');
       emailError.textContent = '';
-      alert.hidden = true;
+      hideAlerts();
     });
     passwordInput.addEventListener('input', () => {
       passwordInput.classList.remove('is-invalid');
       passwordError.textContent = '';
-      alert.hidden = true;
+      hideAlerts();
     });
 
     form.addEventListener('submit', async (e) => {
@@ -122,7 +142,7 @@ export default {
       passwordInput.classList.remove('is-invalid');
       emailError.textContent = '';
       passwordError.textContent = '';
-      alert.hidden = true;
+      hideAlerts();
 
       if (!isNonEmpty(email)) {
         emailInput.classList.add('is-invalid');
@@ -145,14 +165,14 @@ export default {
         await authService.login(email, password);
         ctx.navigate('/select-company');
       } catch (err) {
-        alertMsg.textContent = err.message;
-        alert.hidden = false;
+        showError(err.message);
         submitBtn.disabled = false;
       }
     });
 
     forgotBtn.addEventListener('click', async () => {
       const email = emailInput.value.trim();
+      hideAlerts();
       if (!isValidEmail(email)) {
         emailInput.classList.add('is-invalid');
         emailError.textContent = 'Escribe tu correo para enviarte el enlace.';
@@ -162,11 +182,9 @@ export default {
       forgotBtn.disabled = true;
       try {
         await authService.requestPasswordReset(email);
-        alertMsg.textContent = 'Te enviamos un enlace a tu correo para restablecer la contraseña.';
-        alert.hidden = false;
+        showSuccess('Listo. Si ese correo está registrado, recibirás un enlace para restablecer tu contraseña.');
       } catch (err) {
-        alertMsg.textContent = err.message;
-        alert.hidden = false;
+        showError(err.message);
       } finally {
         forgotBtn.disabled = false;
       }

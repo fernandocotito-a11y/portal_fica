@@ -32,6 +32,12 @@ svg {
   max-width: 100%;
 }
 
+/* El atributo `hidden` siempre oculta el elemento.
+   (Sin esto, una regla con `display: flex` como .alert lo pisa y aparece vacío.) */
+[hidden] {
+  display: none !important;
+}
+
 button {
   font-family: inherit;
   cursor: pointer;
