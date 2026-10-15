@@ -3,217 +3,187 @@
 Portal / ERP empresarial de **A y F FICA Asociados S.A.C.** (consultoría contable,
 tributaria, inventarios y software empresarial).
 
-> **Fase 1 — Core y Administración**: autenticación, control de roles y permisos
-> (RBAC), panel administrativo con gestión de usuarios y estructura modular lista
-> para conectar los futuros módulos (Planillas PLAME, SIRE, Compras/Ventas,
-> Agentes de Retención, Declaraciones SUNAT y Reportes Gerenciales).
+> **Arquitectura**: SPA estática (Vanilla JS / ES Modules) + **Supabase** como
+> backend (autenticación por email, base de datos PostgreSQL y envío de correos
+> de invitación / recuperación de contraseña). Desplegado en GitHub Pages.
 
 ---
 
 ## 1. Requisitos
 
-- **Node.js 14+** (solo para el servidor local de desarrollo; no hay dependencias npm).
-
-No requiere instalación de paquetes: todo el frontend es **JavaScript estándar
-(ES6+ / ES Modules) sin frameworks ni build step**.
+- **Node.js 14+** (solo para el servidor local de desarrollo; sin dependencias npm).
+- Una cuenta y proyecto de **Supabase** (para autenticación, datos y correos).
 
 ---
 
-## 2. Puesta en marcha
+## 2. Puesta en marcha (desarrollo local)
 
-Los módulos ES6 deben servirse mediante **HTTP** (el navegador bloquea los
-`import`/`export` con protocolo `file://`). Ejecuta desde la raíz del proyecto:
+Los módulos ES6 deben servirse mediante **HTTP**. Ejecuta desde la raíz:
 
 ```bash
 node server.js
-# o bien
-npm start
+# o: npm start
+# sin Node (Windows): powershell -ExecutionPolicy Bypass -File serve.ps1 -Port 3000
 ```
 
-Abre **http://localhost:3000** en tu navegador.
-
-> **Sin Node instalado (Windows)**: se incluye un servidor alternativo en PowerShell:
->
-> ```powershell
-> powershell -ExecutionPolicy Bypass -File serve.ps1 -Port 3000
-> ```
-
-> Si abres `index.html` con doble clic, se mostrará una pantalla con las
-> instrucciones para iniciar el servidor (en lugar de errores de consola).
+Abre **http://localhost:3000**.
 
 ---
 
-## 3. Credenciales por defecto
+## 3. Configuración de Supabase (una sola vez)
 
-| Rol              | Correo              | Contraseña   |
-| ---------------- | ------------------- | ------------ |
-| Superadministrador | `admin@ayffica.com` | `Admin123*`  |
+1. Crea un proyecto en **supabase.com** y copia **Project URL** y **anon key**
+   (las dejo en `js/supabase.js`).
+2. En **SQL Editor**, ejecuta `supabase/schema.sql` (crea tablas, RLS, trigger y
+   empresa inicial). Si ya lo habías ejecutado, añade la columna `email`:
 
-Estas credenciales se **siembran automáticamente** la primera vez que se carga la
-aplicación y se almacenan en `LocalStorage`. Puedes restablecerlas borrando la
-clave `fica.users.v1` desde las DevTools o limpiando el almacenamiento del sitio.
+   ```sql
+   alter table public.profiles add column if not exists email text;
+
+   create or replace function public.handle_new_user()
+   returns trigger language plpgsql security definer set search_path = public as $$
+   begin
+     insert into public.profiles (id, name, email, role)
+     values (new.id, coalesce(new.raw_user_meta_data->>'name', ''), new.email, 'secondary')
+     on conflict (id) do nothing;
+     return new;
+   end;
+   $$;
+
+   update public.profiles p set email = u.email from auth.users u where u.id = p.id;
+   ```
+
+3. **Authentication → Users → Add user** con `admin@ayffica.com` (Auto Confirm),
+   y promuévelo a superadmin:
+
+   ```sql
+   update public.profiles
+   set role = 'superadmin', active = true, name = 'Administrador Principal'
+   where id = (select id from auth.users where email = 'admin@ayffica.com');
+   ```
+
+4. **Authentication → URL Configuration**:
+   - Site URL: `https://portal.ayffica.com`
+   - Redirect URLs: añade `https://portal.ayffica.com/#/set-password`
+
+5. Despliega la Edge Function que envía las invitaciones:
+
+   ```bash
+   npm install -g supabase
+   supabase login
+   supabase link --project-ref <tu-project-ref>
+   supabase functions deploy invite-user --no-verify-jwt
+   ```
 
 ---
 
-## 4. Roles y permisos (RBAC)
+## 4. Flujo de acceso
 
-| Rol                | Descripción                                                                 |
-| ------------------ | --------------------------------------------------------------------------- |
-| **Superadministrador** | Acceso total: crea, lista, activa/desactiva y asigna módulos a usuarios secundarios. |
-| **Usuario Secundario** | Acceso restringido únicamente a los módulos que el Superadministrador le habilite. |
+| Rol | Cómo accede |
+|---|---|
+| **Superadministrador** (`admin@ayffica.com`) | Define su contraseña con **"¿Olvidaste tu contraseña?"**; el enlace llega a su correo. |
+| **Usuario secundario** | El superadmin escribe su correo (Gmail/Hotmail/etc.) en *Gestión de Usuarios*; recibe una **invitación** con enlace para crear su contraseña. |
 
-- El **Panel Principal** siempre está disponible para cualquier usuario autenticado.
-- **Gestión de Usuarios** y **Gestión de Empresas** son exclusivos del Superadministrador.
-- El resto de módulos (Planillas, SIRE, Compras/Ventas, Retenciones, Declaraciones,
-  Reportes) se asignan individualmente a cada usuario secundario.
-- Cada usuario secundario tiene además **empresas asignadas**: al iniciar sesión
-  elige una de sus empresas (selector) y trabaja dentro de ese contexto. El
-  Superadministrador ve todas las empresas y puede cambiarlas en cualquier momento.
+Después de autenticarse, el usuario elige una **empresa** (solo las que le fueron
+asignadas) y entra al panel.
 
 ---
 
-## 5. Estructura de carpetas
+## 5. Roles, permisos y empresas
+
+- **Superadministrador**: acceso total. Crea empresas y usuarios, y asigna a cada
+  usuario secundario qué **módulos** y qué **empresas** puede ver.
+- **Usuario secundario**: solo accede a los módulos y empresas asignados.
+
+---
+
+## 6. Estructura de carpetas
 
 ```
 Portal/
-├── index.html              # Entrada de la SPA (carga el bundle y detecta file://)
-├── server.js               # Servidor HTTP estático sin dependencias
-├── package.json            # Scripts (npm start)
+├── index.html              # Entrada de la SPA
+├── server.js / serve.ps1   # Servidor local de desarrollo (sin producción)
+├── package.json
 ├── README.md
 │
-├── assets/
-│   └── logo-ayf.png        # Logotipo corporativo (copia de la carpeta raíz)
+├── assets/logo-ayf.png     # Logotipo corporativo
+├── css/                    # variables, base, login, layout, components, responsive
 │
-├── css/                    # Sistema de diseño (paleta corporativa en :root)
-│   ├── variables.css       # Tokens de color, tipografía, espaciado, sombras…
-│   ├── base.css            # Reset y utilidades globales
-│   ├── login.css           # Pantalla de autenticación
-│   ├── layout.css          # Sidebar + header + área de contenido
-│   ├── components.css      # Botones, formularios, tablas, badges, modales, toast
-│   └── responsive.css      # Adaptación móvil / tablet
+├── js/                     # Núcleo
+│   ├── app.js              # Bootstrap (restaura sesión y arranca el router)
+│   ├── supabase.js         # Cliente de Supabase (URL + anon key)
+│   ├── config.js           # Identidad, roles y registro de módulos
+│   ├── router.js           # Enrutador hash con guards
+│   ├── layout.js           # "Shell" (sidebar + header)
+│   └── utils.js            # Helpers, íconos, toast, confirm…
 │
-├── js/                     # Núcleo de la aplicación
-│   ├── app.js              # Punto de entrada (bootstrap)
-│   ├── config.js           # Identidad, roles, semilla y registro de módulos
-│   ├── router.js           # Enrutador hash con protección de rutas (guards)
-│   ├── layout.js           # "Shell" del panel (sidebar/header reutilizable)
-│   └── utils.js            # Helpers: DOM, escape, validación, toast, íconos…
+├── services/               # Capa de datos sobre Supabase
+│   ├── authService.js      # Sesión, RBAC y contexto de empresa
+│   ├── userService.js      # Usuarios (invitación + perfiles)
+│   └── companyService.js   # Empresas (CRUD + caché)
 │
-├── services/               # Capa de datos/servicios (sustituible por API real)
-│   ├── storageService.js   # Abstracción de LocalStorage/SessionStorage
-│   ├── userService.js      # CRUD de usuarios + semilla del superadmin
-│   ├── companyService.js   # CRUD de empresas + semilla inicial
-│   └── authService.js      # Sesión, login/logout, RBAC y contexto de empresa
+├── modules/                # Vistas (carga diferida)
+│   ├── login/login.js      # Login + "olvidé mi contraseña"
+│   ├── set-password/       # Crear contraseña (invitación / reset)
+│   ├── select-company/     # Selector de empresa
+│   ├── dashboard/          # Panel principal
+│   ├── users/              # Gestión de usuarios
+│   ├── companies/          # Gestión de empresas
+│   └── placeholder/        # Maqueta de módulos futuros
 │
-└── modules/                # Módulos de vista (carga diferida por el router)
-    ├── login/login.js      # Autenticación
-    ├── select-company/select-company.js  # Selector de empresa
-    ├── dashboard/dashboard.js  # Panel principal (métricas + accesos directos)
-    ├── users/users.js      # Gestión de usuarios (CRUD + módulos + empresas)
-    ├── companies/companies.js  # Gestión de empresas (CRUD)
-    └── placeholder/module.js   # Maqueta de módulos futuros ("Próximamente")
+└── supabase/
+    ├── schema.sql          # Tablas, RLS y semilla
+    └── functions/invite-user/  # Edge Function de invitación por correo
 ```
 
 ---
 
-## 6. Arquitectura
-
-La aplicación es una **SPA modular desacoplada** en tres capas:
-
-1. **Vista (`/modules`)** — Cada pantalla es un módulo ES6 que el enrutador carga
-   de forma **diferida** (`import()` dinámico). Un módulo exporta
-   `{ title, render(container, ctx) }`.
-2. **Servicios (`/services`)** — Lógica de negocio y persistencia aislada. El
-   resto del código solo habla con estos servicios, por lo que **migrar a una
-   API/BD real** (backend REST + JWT) requiere reemplazar únicamente su
-   implementación interna, sin tocar las vistas ni el router.
-3. **Núcleo (`/js`)** — Enrutador con guards, layout compartido y utilidades.
-
-### Flujo de autenticación y rutas
+## 7. Arquitectura
 
 ```
-#/login           -> Solo invitados
-#/select-company  -> Requiere sesión (selector de empresa, sin shell)
-#/dashboard       -> Requiere sesión + empresa seleccionada
-#/users           -> Requiere sesión + empresa + rol Superadministrador
-#/companies       -> Requiere sesión + empresa + rol Superadministrador
-#/module/:key     -> Requiere sesión + empresa + permiso sobre el módulo
+Frontend (GitHub Pages)  ──▶  Supabase
+   portal.ayffica.com         • Auth (email/contraseña, reset, invitación)
+                              • PostgreSQL (profiles, companies) con RLS
+                              • Edge Function "invite-user" (service role)
 ```
 
-- La sesión se guarda en `sessionStorage` o `localStorage` según la opción
-  **"Recordar sesión"**.
-- Las contraseñas se almacenan con un **hash de demostración** (no criptográfico)
-  para no guardarlas en texto plano; en producción debe usarse autenticación real
-  en el backend (bcrypt/argon2 + JWT).
+- Los **getters** de `authService`/`companyService` son síncronos (leen un caché
+  cargado al iniciar sesión); las **mutaciones** (login, CRUD) son asíncronas.
+- El control de acceso se aplica en dos capas: **RLS en la base de datos** y
+  **guards en el router** (`#/login`, `#/set-password`, `#/select-company`,
+  `#/dashboard`, `#/users`, `#/companies`, `#/module/:key`).
 
-### Cómo añadir un módulo nuevo
+### Añadir un módulo nuevo
 
-Registra el módulo en `js/config.js` dentro del arreglo `MODULES`:
-
-```js
-{
-  key: 'facturacion',
-  name: 'Facturación',
-  description: 'Módulo de facturación electrónica.',
-  icon: ic('<path d="..."/>'),   // ícono SVG
-  status: 'soon',                 // 'active' | 'config' | 'soon'
-  adminOnly: false,
-  group: 'operations',
-}
-```
-
-Aparecerá automáticamente en el sidebar, el dashboard y el selector de permisos.
-Para darle una vista propia, crea `modules/facturacion/facturacion.js` (o
-`modules/<key>/<key>.js`) y añade su ruta en `js/router.js`.
+Registra la entrada en `js/config.js` (arreglo `MODULES`); aparecerá en el
+sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
+`modules/<key>/<key>.js` y añade su ruta en `js/router.js`.
 
 ---
 
-## 7. Módulos (Fase 1)
+## 8. Módulos (estado)
 
-| Módulo              | Estado                         |
-| ------------------- | ------------------------------ |
-| Panel Principal     | ✅ Activo                       |
-| Gestión de Usuarios | ✅ Activo (CRUD + RBAC)         |
-| Gestión de Empresas | ✅ Activo (CRUD + asignación)   |
-| Planillas (PLAME / T-Registro) | 🟡 Listo para configurar |
-| SIRE (SUNAT)        | ⏳ Próximamente                 |
-| Compras y Ventas    | ⏳ Próximamente                 |
-| Agentes de Retención | ⏳ Próximamente                |
-| Declaraciones SUNAT | ⏳ Próximamente                 |
-| Reportes Gerenciales | ⏳ Próximamente                |
+| Módulo | Estado |
+|---|---|
+| Panel Principal, Gestión de Usuarios, Gestión de Empresas | ✅ Activo |
+| Planillas (PLAME/T-Registro) | 🟡 Listo para configurar |
+| SIRE, Compras/Ventas, Retenciones, Declaraciones, Reportes | ⏳ Próximamente |
 
 ---
 
-## 8. Tecnologías y decisiones
+## 9. Scripts
 
-- **Vanilla JavaScript (ES6+)** con ES Modules: sin frameworks ni build step,
-  mantiene el proyecto ligero y fácil de auditar.
-- **HTML5 `<dialog>`** para modales (crear/editar usuario y confirmaciones).
-- **CSS personalizado** con variables en `:root` que reflejan la identidad
-  corporativa (marrones, crema, dorado, grafito).
-- **Sin errores de consola** y diseño **responsive** (sidebar off-canvas en móvil).
+| Comando | Descripción |
+|---|---|
+| `npm start` | Servidor local en `:3000` |
+| `npm run dev` | Alias de `npm start` |
 
 ---
 
-## 9. Persistencia (Mock)
+## 10. Seguridad
 
-Toda la información se guarda en el navegador mediante `LocalStorage`:
-
-| Clave              | Contenido                              |
-| ------------------ | -------------------------------------- |
-| `fica.users.v1`    | Colección de usuarios                  |
-| `fica.companies.v1`| Colección de empresas                  |
-| `fica.session.v1`  | Sesión activa (o en `sessionStorage`)  |
-| `fica.sidebar.collapsed` | Estado colapsado del sidebar     |
-
-Esta capa está encapsulada en `services/storageService.js`, de modo que conectar
-un backend real no afecta al resto del código.
-
----
-
-## 10. Scripts
-
-| Comando      | Descripción                                   |
-| ------------ | --------------------------------------------- |
-| `npm start`  | Inicia el servidor local en `:3000`           |
-| `npm run dev`| Alias de `npm start`                          |
+- La **anon key** (pública) vive en `js/supabase.js`; es pública por diseño.
+- La **service_role key** (secreta) **nunca** va en el frontend: solo la usa la
+  Edge Function (la recibe automáticamente como variable de entorno).
+- No compartas ni guardes en el repo la `service_role key`; rótala desde
+  **Project Settings → API Keys → Rotate** si se ha expuesto.

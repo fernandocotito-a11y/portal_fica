@@ -1,162 +1,184 @@
 /* ============================================================================
    authService.js — Autenticación, sesión, RBAC y contexto de empresa
    ----------------------------------------------------------------------------
-   Además del inicio/cierre de sesión y los permisos por módulo, gestiona el
-   "contexto de empresa": qué empresas puede ver cada usuario y cuál tiene
-   seleccionada (guardada en la sesión). La interfaz está preparada para
-   sustituirse por un backend real (JWT + API) sin afectar a las vistas.
+   Envoltorio sobre Supabase Auth + la tabla `profiles`. Mantiene un caché en
+   memoria del perfil y de la empresa activa para que las vistas y el router
+   puedan consultarlos de forma síncrona después del arranque.
+
+   - init()  (async): restaura la sesión y carga perfil + empresas.
+   - login() (async): inicia sesión por email/contraseña.
+   - Los getters (currentUser, can, availableCompanies, activeCompany) son
+     síncronos y leen del caché.
    ========================================================================== */
 
-import { storageService } from './storageService.js';
-import { userService } from './userService.js';
+import { supabase } from '../js/supabase.js';
 import { companyService } from './companyService.js';
-import { hashPassword } from '../js/utils.js';
-import { STORAGE_KEYS, ROLES, MODULES, getModule } from '../js/config.js';
+import { ROLES, MODULES, getModule } from '../js/config.js';
 
-/** Inicializa el sistema de autenticación (semilla de superadmin y empresa). */
-function init() {
-  userService.seedSuperAdmin();
-  companyService.seedDefaultCompany();
-}
+const ACTIVE_COMPANY_KEY = 'fica.activeCompanyId';
 
-/** Lee la sesión activa (prioriza la persistente, luego la de pestaña). */
-function readSession() {
-  const fromLocal = storageService.local.get(STORAGE_KEYS.session, null);
-  if (fromLocal) return fromLocal;
-  return storageService.session.get(STORAGE_KEYS.session, null);
-}
+let profile = null; // perfil en caché (null si no hay sesión válida)
+let activeCompanyId = null; // empresa activa en memoria
 
-/** Escribe la sesión según la opción "recordar sesión" (guardada en la sesión). */
-function writeSession(session) {
-  const remember = !!session.remember;
-  if (remember) {
-    storageService.session.remove(STORAGE_KEYS.session);
-    storageService.local.set(STORAGE_KEYS.session, session);
-  } else {
-    storageService.local.remove(STORAGE_KEYS.session);
-    storageService.session.set(STORAGE_KEYS.session, session);
-  }
+/** Traduce errores de Supabase Auth a mensajes legibles. */
+function mapAuthError(error) {
+  const msg = (error && (error.message || error.msg)) || 'Error de autenticación.';
+  if (/invalid login credentials/i.test(msg)) return 'Correo o contraseña incorrectos.';
+  if (/email not confirmed/i.test(msg)) return 'Confirma tu correo antes de iniciar sesión.';
+  if (/rate limit/i.test(msg)) return 'Demasiados intentos. Espera unos segundos e inténtalo de nuevo.';
+  return msg;
 }
 
 export const authService = {
-  init,
-
-  /**
-   * Autentica a un usuario. Lanza Error con mensaje legible en caso de
-   * credenciales inválidas o cuenta desactivada. Devuelve el usuario en éxito.
-   */
-  login(email, password, remember = false) {
-    const normalized = String(email || '').trim().toLowerCase();
-    const user = userService.findByEmail(normalized);
-
-    if (!user || user.passwordHash !== hashPassword(password)) {
-      throw new Error('Correo o contraseña incorrectos.');
+  /** Restaura la sesión y precarga perfil y empresas (arranque de la app). */
+  async init() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      profile = null;
+      return;
     }
-    if (!user.active) {
-      throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
+    const ok = await this._loadProfile(session.user.id);
+    if (!ok) {
+      await supabase.auth.signOut();
+      profile = null;
+      return;
+    }
+    activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || null;
+    await companyService.refresh();
+    if (activeCompanyId && !this.activeCompany()) activeCompanyId = null;
+  },
+
+  /** Carga el perfil del usuario desde la BD y lo guarda en caché. */
+  async _loadProfile(userId) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    if (!data) {
+      profile = null;
+      return false;
     }
 
-    writeSession({
-      userId: user.id,
-      issuedAt: new Date().toISOString(),
-      remember: !!remember,
-      activeCompanyId: null,
-    });
-    return user;
-  },
+    let email = data.email || '';
+    if (!email) {
+      const { data: { user } } = await supabase.auth.getUser();
+      email = user?.email || '';
+    }
 
-  /** Cierra la sesión actual y limpia ambos almacenes. */
-  logout() {
-    storageService.local.remove(STORAGE_KEYS.session);
-    storageService.session.remove(STORAGE_KEYS.session);
-  },
+    profile = {
+      id: data.id,
+      name: data.name,
+      role: data.role,
+      permissions: data.permissions || [],
+      companies: data.companies || [],
+      active: data.active,
+      email,
+    };
 
-  /** Devuelve el usuario de la sesión activa, o `null` si no hay sesión. */
-  currentUser() {
-    const session = readSession();
-    if (!session || !session.userId) return null;
-    const user = userService.getById(session.userId);
-    return user && user.active ? user : null;
-  },
-
-  /** ¿Hay una sesión autenticada válida? */
-  isAuthenticated() {
-    return this.currentUser() !== null;
-  },
-
-  /** ¿El usuario actual es Superadministrador? */
-  isSuperAdmin() {
-    const user = this.currentUser();
-    return !!user && user.role === ROLES.SUPERADMIN;
-  },
-
-  /** ¿El usuario actual tiene acceso al módulo indicado? */
-  can(moduleKey) {
-    const user = this.currentUser();
-    if (!user) return false;
-
-    if (moduleKey === 'dashboard') return true;
-
-    if (user.role === ROLES.SUPERADMIN) return true;
-
-    const mod = getModule(moduleKey);
-    if (mod && mod.adminOnly) return false;
-
-    return Array.isArray(user.permissions) && user.permissions.includes(moduleKey);
-  },
-
-  /** Devuelve los módulos accesibles por el usuario actual. */
-  accessibleModules() {
-    if (!this.isAuthenticated()) return [];
-    if (this.isSuperAdmin()) return MODULES.slice();
-    return MODULES.filter((m) => this.can(m.key));
-  },
-
-  /* ----------------------- Contexto de empresa -------------------------- */
-
-  /** ¿El usuario actual puede acceder a la empresa indicada? */
-  canAccessCompany(companyId) {
-    const user = this.currentUser();
-    if (!user) return false;
-    if (user.role === ROLES.SUPERADMIN) return true;
-    return Array.isArray(user.companies) && user.companies.includes(companyId);
-  },
-
-  /** Empresas (activas) que el usuario actual puede ver. */
-  availableCompanies() {
-    const user = this.currentUser();
-    if (!user) return [];
-    const active = companyService.listActive();
-    if (user.role === ROLES.SUPERADMIN) return active;
-    const ids = Array.isArray(user.companies) ? user.companies : [];
-    return active.filter((c) => ids.includes(c.id));
-  },
-
-  /** Empresa actualmente seleccionada (o `null` si no hay/ya no aplica). */
-  activeCompany() {
-    const session = readSession();
-    if (!session || !session.activeCompanyId) return null;
-    if (!this.canAccessCompany(session.activeCompanyId)) return null;
-    const company = companyService.getById(session.activeCompanyId);
-    return company && company.active ? company : null;
-  },
-
-  /** Selecciona una empresa como contexto activo. Devuelve true si se pudo. */
-  setActiveCompany(companyId) {
-    const session = readSession();
-    if (!session || !this.canAccessCompany(companyId)) return false;
-    const company = companyService.getById(companyId);
-    if (!company || !company.active) return false;
-    session.activeCompanyId = companyId;
-    writeSession(session);
+    if (!profile.active) {
+      profile = null;
+      return false;
+    }
     return true;
   },
 
-  /** Quita el contexto de empresa activo (sin cerrar sesión). */
-  clearActiveCompany() {
-    const session = readSession();
-    if (!session) return;
-    session.activeCompanyId = null;
-    writeSession(session);
+  /** Inicia sesión por email/contraseña. Lanza Error con mensaje legible. */
+  async login(email, password) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: String(email || '').trim().toLowerCase(),
+      password,
+    });
+    if (error) throw new Error(mapAuthError(error));
+
+    const ok = await this._loadProfile(data.user.id);
+    if (!ok) {
+      await supabase.auth.signOut();
+      throw new Error('Tu cuenta está desactivada. Contacta al administrador.');
+    }
+
+    activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || null;
+    await companyService.refresh();
+    if (activeCompanyId && !this.activeCompany()) activeCompanyId = null;
+    return this.currentUser();
+  },
+
+  /** Cierra la sesión y limpia el caché. */
+  async logout() {
+    await supabase.auth.signOut();
+    profile = null;
+    activeCompanyId = null;
+    localStorage.removeItem(ACTIVE_COMPANY_KEY);
+    companyService.clearCache();
+  },
+
+  /** Envía el correo para restablecer la contraseña. */
+  async requestPasswordReset(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      String(email || '').trim().toLowerCase(),
+      { redirectTo: `${window.location.origin}/#/set-password` }
+    );
+    if (error) throw new Error(mapAuthError(error));
+  },
+
+  /** Establece una nueva contraseña para el usuario autenticado. */
+  async updatePassword(password) {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw new Error(mapAuthError(error));
+  },
+
+  /* --------------------------- Getters síncronos ------------------------ */
+
+  currentUser() {
+    return profile;
+  },
+
+  isAuthenticated() {
+    return !!profile;
+  },
+
+  isSuperAdmin() {
+    return !!profile && profile.role === ROLES.SUPERADMIN;
+  },
+
+  can(moduleKey) {
+    if (!profile) return false;
+    if (moduleKey === 'dashboard') return true;
+    if (profile.role === ROLES.SUPERADMIN) return true;
+    const mod = getModule(moduleKey);
+    if (mod && mod.adminOnly) return false;
+    return (profile.permissions || []).includes(moduleKey);
+  },
+
+  accessibleModules() {
+    if (!profile) return [];
+    if (profile.role === ROLES.SUPERADMIN) return MODULES.slice();
+    return MODULES.filter((m) => this.can(m.key));
+  },
+
+  canAccessCompany(companyId) {
+    if (!profile) return false;
+    if (profile.role === ROLES.SUPERADMIN) return true;
+    return (profile.companies || []).includes(companyId);
+  },
+
+  /** Empresas activas a las que el usuario tiene acceso (según RLS + perfil). */
+  availableCompanies() {
+    if (!profile) return [];
+    return companyService.getAll().filter((c) => c.active);
+  },
+
+  activeCompany() {
+    if (!activeCompanyId) return null;
+    return companyService.getAll().find((c) => c.id === activeCompanyId && c.active) || null;
+  },
+
+  setActiveCompany(companyId) {
+    if (!this.canAccessCompany(companyId)) return false;
+    const company = companyService.getAll().find((c) => c.id === companyId && c.active);
+    if (!company) return false;
+    activeCompanyId = companyId;
+    localStorage.setItem(ACTIVE_COMPANY_KEY, companyId);
+    return true;
   },
 };

@@ -1,17 +1,15 @@
 /* ============================================================================
-   select-company.js — Selector de empresa
+   select-company.js — Selector de empresa (Supabase)
    ----------------------------------------------------------------------------
    Pantalla posterior al login donde el usuario elige con qué empresa trabajar.
    - Superadministrador: ve todas las empresas y puede crear una nueva.
-   - Usuario secundario: ve únicamente las empresas que el administrador le
-     asignó. Al seleccionar una, se guarda como contexto activo y entra al panel.
+   - Usuario secundario: ve solo las empresas que le asignaron.
    ========================================================================== */
 
 import { authService } from '../../services/authService.js';
 import { companyService } from '../../services/companyService.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
 
-/** HTML del modal "Nueva empresa" (solo superadministrador). */
 function newCompanyModalHtml() {
   return `
     <dialog class="modal" data-modal>
@@ -38,62 +36,6 @@ function newCompanyModalHtml() {
         </div>
       </form>
     </dialog>`;
-}
-
-/** Conecta el modal de creación (validación + guardado). */
-function wireNewCompanyModal(container, rerender) {
-  const modal = container.querySelector('[data-modal]');
-  const form = container.querySelector('[data-form]');
-  const nameInput = container.querySelector('[data-name]');
-  const rucInput = container.querySelector('[data-ruc]');
-  const nameError = container.querySelector('[data-error-name]');
-  const rucError = container.querySelector('[data-error-ruc]');
-
-  const close = () => modal.close();
-  modal.addEventListener('cancel', (e) => {
-    e.preventDefault();
-    close();
-  });
-  container.querySelector('[data-close]').addEventListener('click', close);
-  container.querySelector('[data-cancel]').addEventListener('click', close);
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    nameInput.classList.remove('is-invalid');
-    rucInput.classList.remove('is-invalid');
-    nameError.textContent = '';
-    rucError.textContent = '';
-
-    const name = nameInput.value.trim();
-    const ruc = rucInput.value.trim();
-    let valid = true;
-
-    if (!name) {
-      nameInput.classList.add('is-invalid');
-      nameError.textContent = 'La razón social es obligatoria.';
-      valid = false;
-    }
-    if (!ruc) {
-      rucInput.classList.add('is-invalid');
-      rucError.textContent = 'El RUC es obligatorio.';
-      valid = false;
-    } else if (!/^\d{11}$/.test(ruc)) {
-      rucInput.classList.add('is-invalid');
-      rucError.textContent = 'El RUC debe tener 11 dígitos.';
-      valid = false;
-    }
-    if (!valid) return;
-
-    try {
-      companyService.create({ name, ruc });
-      showToast('Empresa creada correctamente.');
-      form.reset();
-      close();
-      rerender();
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  });
 }
 
 export default {
@@ -168,8 +110,9 @@ export default {
       });
 
       container.querySelector('[data-logout]').addEventListener('click', () => {
-        authService.logout();
-        window.location.hash = '#/login';
+        authService.logout().then(() => {
+          window.location.hash = '#/login';
+        });
       });
 
       if (isAdmin) {
@@ -179,6 +122,65 @@ export default {
         });
         wireNewCompanyModal(container, render);
       }
+    }
+
+    function wireNewCompanyModal(scope, rerender) {
+      const modal = scope.querySelector('[data-modal]');
+      const form = scope.querySelector('[data-form]');
+      const nameInput = scope.querySelector('[data-name]');
+      const rucInput = scope.querySelector('[data-ruc]');
+      const nameError = scope.querySelector('[data-error-name]');
+      const rucError = scope.querySelector('[data-error-ruc]');
+      const submitBtn = scope.querySelector('[data-submit]');
+
+      const close = () => modal.close();
+      modal.addEventListener('cancel', (e) => {
+        e.preventDefault();
+        close();
+      });
+      scope.querySelector('[data-close]').addEventListener('click', close);
+      scope.querySelector('[data-cancel]').addEventListener('click', close);
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        nameInput.classList.remove('is-invalid');
+        rucInput.classList.remove('is-invalid');
+        nameError.textContent = '';
+        rucError.textContent = '';
+
+        const name = nameInput.value.trim();
+        const ruc = rucInput.value.trim();
+        let valid = true;
+
+        if (!name) {
+          nameInput.classList.add('is-invalid');
+          nameError.textContent = 'La razón social es obligatoria.';
+          valid = false;
+        }
+        if (!ruc) {
+          rucInput.classList.add('is-invalid');
+          rucError.textContent = 'El RUC es obligatorio.';
+          valid = false;
+        } else if (!/^\d{11}$/.test(ruc)) {
+          rucInput.classList.add('is-invalid');
+          rucError.textContent = 'El RUC debe tener 11 dígitos.';
+          valid = false;
+        }
+        if (!valid) return;
+
+        submitBtn.disabled = true;
+        try {
+          await companyService.create({ name, ruc });
+          showToast('Empresa creada correctamente.');
+          form.reset();
+          close();
+          rerender();
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
     }
 
     render();

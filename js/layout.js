@@ -8,8 +8,7 @@
    ========================================================================== */
 
 import { authService } from '../services/authService.js';
-import { storageService } from '../services/storageService.js';
-import { APP, ROLE_LABELS, ROLES } from './config.js';
+import { APP, ROLE_LABELS } from './config.js';
 import { ICONS, initials, escapeHtml } from './utils.js';
 
 const COLLAPSE_KEY = 'fica.sidebar.collapsed';
@@ -138,7 +137,7 @@ export function renderShell(user, { title = '', activeKey = 'dashboard' } = {}) 
   const logoutBtn = app.querySelector('[data-logout]');
 
   // Restaura el estado colapsado persistido.
-  if (storageService.local.get(COLLAPSE_KEY, false)) {
+  if (localStorage.getItem(COLLAPSE_KEY) === 'true') {
     layout.classList.add('is-collapsed');
   }
 
@@ -150,7 +149,7 @@ export function renderShell(user, { title = '', activeKey = 'dashboard' } = {}) 
       layout.classList.toggle('menu-open');
     } else {
       layout.classList.toggle('is-collapsed');
-      storageService.local.set(COLLAPSE_KEY, layout.classList.contains('is-collapsed'));
+      localStorage.setItem(COLLAPSE_KEY, String(layout.classList.contains('is-collapsed')));
     }
   });
 

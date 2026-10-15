@@ -1,11 +1,8 @@
 /* ============================================================================
    users.js — Módulo de Gestión de Usuarios (CRUD + RBAC + Empresas)
    ----------------------------------------------------------------------------
-   Permite al Superadministrador listar, crear, editar, activar/desactivar y
-   eliminar usuarios secundarios. A cada usuario se le asignan:
-   - Módulos a los que tendrá acceso (RBAC).
-   - Empresas que podrá ver/operar (selector de empresa).
-   Exclusivo del Superadministrador (protegido por el router).
+   Superadministrador: lista usuarios, invita a nuevos por correo (Edge Function),
+   edita permisos/empresas y activa/desactiva. Exclusivo del Superadministrador.
    ========================================================================== */
 
 import { userService } from '../../services/userService.js';
@@ -18,10 +15,9 @@ import {
   isValidEmail,
   isStrongPassword,
   showToast,
-  confirmDialog,
 } from '../../js/utils.js';
 
-/** Genera el HTML de los checkboxes de permisos (módulos asignables). */
+/** HTML de los checkboxes de permisos (módulos asignables). */
 function permissionCheckboxesHtml() {
   return assignableModules()
     .map(
@@ -35,7 +31,7 @@ function permissionCheckboxesHtml() {
     .join('');
 }
 
-/** Genera el HTML de los checkboxes de empresas asignables. */
+/** HTML de los checkboxes de empresas asignables. */
 function companyCheckboxesHtml() {
   return companyService
     .list()
@@ -56,16 +52,15 @@ export default {
   render(container) {
     let editingId = null;
     let searchTerm = '';
+    let allUsers = [];
 
     container.innerHTML = `
       <div class="page-heading">
         <div>
           <h2 class="page-heading__title">Gestión de Usuarios</h2>
-          <p class="page-heading__subtitle">Administra usuarios secundarios, roles, permisos y empresas.</p>
+          <p class="page-heading__subtitle">Invita usuarios, y asigna módulos y empresas de acceso.</p>
         </div>
-        <button type="button" class="btn btn--primary" data-add>
-          ${ICONS.plus} Nuevo usuario
-        </button>
+        <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Nuevo usuario</button>
       </div>
 
       <div class="card">
@@ -95,7 +90,6 @@ export default {
         </div>
       </div>
 
-      <!-- Modal de crear / editar usuario -->
       <dialog class="modal" data-modal>
         <form data-form novalidate>
           <div class="modal__header">
@@ -114,19 +108,10 @@ export default {
               <div class="input-wrap">
                 <span class="input-wrap__icon">${ICONS.mail}</span>
                 <input class="form-input form-input--icon" type="email" name="email"
-                  placeholder="correo@ayffica.com" autocomplete="off" data-email />
+                  placeholder="Gmail, Hotmail, corporativo..." autocomplete="off" data-email />
               </div>
               <span class="field-error" data-error-email></span>
-            </div>
-
-            <div class="form-group" data-password-group>
-              <label class="form-label">Contraseña <span class="req">*</span></label>
-              <div class="input-wrap">
-                <span class="input-wrap__icon">${ICONS.lock}</span>
-                <input class="form-input form-input--icon" type="password" name="password"
-                  placeholder="Mín. 8 caracteres, mayúscula y número" autocomplete="new-password" data-password />
-              </div>
-              <span class="field-error" data-error-password></span>
+              <p class="form-hint">Recibirá un correo con un enlace para crear su contraseña.</p>
             </div>
 
             <div class="form-group">
@@ -155,7 +140,7 @@ export default {
           </div>
           <div class="modal__footer">
             <button type="button" class="btn" data-cancel>Cancelar</button>
-            <button type="submit" class="btn btn--primary" data-submit>Crear usuario</button>
+            <button type="submit" class="btn btn--primary" data-submit>Invitar usuario</button>
           </div>
         </form>
       </dialog>
@@ -170,32 +155,27 @@ export default {
     const submitBtn = container.querySelector('[data-submit]');
     const nameInput = container.querySelector('[data-name]');
     const emailInput = container.querySelector('[data-email]');
-    const passwordInput = container.querySelector('[data-password]');
-    const passwordGroup = container.querySelector('[data-password-group]');
     const activeGroup = container.querySelector('[data-active-group]');
     const activeInput = container.querySelector('[data-active]');
     const nameError = container.querySelector('[data-error-name]');
     const emailError = container.querySelector('[data-error-email]');
-    const passwordError = container.querySelector('[data-error-password]');
     const permInputs = container.querySelectorAll('[data-perm]');
     const companyInputs = container.querySelectorAll('[data-company]');
 
     /* --------------------------- Helpers ------------------------------- */
     function filteredUsers() {
       const term = searchTerm.trim().toLowerCase();
-      return userService.list().filter((u) => {
+      return allUsers.filter((u) => {
         if (!term) return true;
         return (
-          u.name.toLowerCase().includes(term) ||
-          u.email.toLowerCase().includes(term)
+          (u.name || '').toLowerCase().includes(term) ||
+          (u.email || '').toLowerCase().includes(term)
         );
       });
     }
 
     function permissionsSummary(user) {
-      if (user.role === ROLES.SUPERADMIN) {
-        return '<span class="chip chip--gold">Acceso total</span>';
-      }
+      if (user.role === ROLES.SUPERADMIN) return '<span class="chip chip--gold">Acceso total</span>';
       if (!user.permissions || user.permissions.length === 0) {
         return '<span class="text-muted" style="font-size: var(--font-size-xs);">Sin módulos</span>';
       }
@@ -208,9 +188,7 @@ export default {
     }
 
     function companiesSummary(user) {
-      if (user.role === ROLES.SUPERADMIN) {
-        return '<span class="chip chip--gold">Todas</span>';
-      }
+      if (user.role === ROLES.SUPERADMIN) return '<span class="chip chip--gold">Todas</span>';
       if (!user.companies || user.companies.length === 0) {
         return '<span class="text-muted" style="font-size: var(--font-size-xs);">Sin empresas</span>';
       }
@@ -224,7 +202,7 @@ export default {
 
     function renderTable() {
       const users = filteredUsers();
-      countEl.textContent = `Mostrando ${users.length} de ${userService.list().length} usuarios`;
+      countEl.textContent = `Mostrando ${users.length} de ${allUsers.length} usuarios`;
 
       if (users.length === 0) {
         tbody.innerHTML = `
@@ -254,9 +232,7 @@ export default {
               </label>`;
           const actions = isAdmin
             ? '<span class="text-muted" style="font-size: var(--font-size-xs);">Protegido</span>'
-            : `
-              <button type="button" class="icon-btn" data-edit="${escapeHtml(user.id)}" title="Editar">${ICONS.edit}</button>
-              <button type="button" class="icon-btn icon-btn--danger" data-delete="${escapeHtml(user.id)}" title="Eliminar">${ICONS.trash}</button>`;
+            : `<button type="button" class="icon-btn" data-edit="${escapeHtml(user.id)}" title="Editar">${ICONS.edit}</button>`;
 
           return `
             <tr>
@@ -273,30 +249,32 @@ export default {
               <td>${permissionsSummary(user)}</td>
               <td>${companiesSummary(user)}</td>
               <td>${state}</td>
-              <td>
-                <div class="table__actions" style="justify-content:flex-end;">${actions}</div>
-              </td>
+              <td><div class="table__actions" style="justify-content:flex-end;">${actions}</div></td>
             </tr>`;
         })
         .join('');
     }
 
+    async function load() {
+      allUsers = await userService.list();
+      renderTable();
+    }
+
     /* ----------------------- Apertura del modal ------------------------ */
     function clearErrors() {
-      [nameInput, emailInput, passwordInput].forEach((inp) => inp.classList.remove('is-invalid'));
+      nameInput.classList.remove('is-invalid');
+      emailInput.classList.remove('is-invalid');
       nameError.textContent = '';
       emailError.textContent = '';
-      passwordError.textContent = '';
     }
 
     function openCreate() {
       editingId = null;
       modalTitle.textContent = 'Nuevo usuario';
-      submitBtn.textContent = 'Crear usuario';
+      submitBtn.textContent = 'Invitar usuario';
       emailInput.disabled = false;
       form.reset();
       clearErrors();
-      passwordGroup.hidden = false;
       activeGroup.hidden = true;
       activeInput.checked = true;
       permInputs.forEach((inp) => (inp.checked = false));
@@ -306,23 +284,22 @@ export default {
     }
 
     function openEdit(id) {
-      const user = userService.getById(id);
+      const user = allUsers.find((u) => u.id === id);
       if (!user || user.role === ROLES.SUPERADMIN) return;
       editingId = id;
       modalTitle.textContent = 'Editar usuario';
       submitBtn.textContent = 'Guardar cambios';
       clearErrors();
       nameInput.value = user.name;
-      emailInput.value = user.email;
+      emailInput.value = user.email || '';
       emailInput.disabled = true;
-      passwordGroup.hidden = true;
       activeGroup.hidden = false;
       activeInput.checked = user.active;
       permInputs.forEach((inp) => {
-        inp.checked = user.permissions.includes(inp.value);
+        inp.checked = (user.permissions || []).includes(inp.value);
       });
       companyInputs.forEach((inp) => {
-        inp.checked = user.companies.includes(inp.value);
+        inp.checked = (user.companies || []).includes(inp.value);
       });
       modal.showModal();
       nameInput.focus();
@@ -332,7 +309,6 @@ export default {
       modal.close();
     }
 
-    /* --------------------------- Validación ---------------------------- */
     function getSelectedPermissions() {
       return Array.from(permInputs)
         .filter((inp) => inp.checked)
@@ -365,19 +341,9 @@ export default {
           emailInput.classList.add('is-invalid');
           emailError.textContent = 'Ingresa un correo electrónico válido.';
           valid = false;
-        } else if (userService.findByEmail(email)) {
+        } else if (allUsers.some((u) => u.email === email.toLowerCase())) {
           emailInput.classList.add('is-invalid');
           emailError.textContent = 'Ya existe un usuario con ese correo.';
-          valid = false;
-        }
-
-        if (!passwordInput.value) {
-          passwordInput.classList.add('is-invalid');
-          passwordError.textContent = 'La contraseña es obligatoria.';
-          valid = false;
-        } else if (!isStrongPassword(passwordInput.value)) {
-          passwordInput.classList.add('is-invalid');
-          passwordError.textContent = 'Debe tener al menos 8 caracteres, una mayúscula y un número.';
           valid = false;
         }
       }
@@ -402,97 +368,57 @@ export default {
       emailInput.classList.remove('is-invalid');
       emailError.textContent = '';
     });
-    passwordInput.addEventListener('input', () => {
-      passwordInput.classList.remove('is-invalid');
-      passwordError.textContent = '';
-    });
 
     searchInput.addEventListener('input', () => {
       searchTerm = searchInput.value;
       renderTable();
     });
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!validate()) return;
 
       const name = nameInput.value.trim();
       const permissions = getSelectedPermissions();
       const companies = getSelectedCompanies();
+      submitBtn.disabled = true;
 
       try {
         if (editingId) {
-          userService.update(editingId, {
-            name,
-            permissions,
-            companies,
-            active: activeInput.checked,
-          });
+          await userService.update(editingId, { name, permissions, companies, active: activeInput.checked });
           showToast('Usuario actualizado correctamente.');
         } else {
-          userService.create({
-            name,
-            email: emailInput.value.trim(),
-            password: passwordInput.value,
-            permissions,
-            companies,
-          });
-          showToast('Usuario creado correctamente.');
+          await userService.create({ name, email: emailInput.value.trim(), permissions, companies });
+          showToast(`Invitación enviada a ${emailInput.value.trim()}.`);
         }
         closeModal();
-        renderTable();
+        await load();
       } catch (err) {
         showToast(err.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
       }
     });
 
-    tbody.addEventListener('click', async (e) => {
+    tbody.addEventListener('click', (e) => {
       const editBtn = e.target.closest('[data-edit]');
-      const deleteBtn = e.target.closest('[data-delete]');
-
-      if (editBtn) {
-        openEdit(editBtn.dataset.edit);
-        return;
-      }
-
-      if (deleteBtn) {
-        const user = userService.getById(deleteBtn.dataset.delete);
-        if (!user) return;
-        const ok = await confirmDialog({
-          title: 'Eliminar usuario',
-          message: `¿Seguro que deseas eliminar a "${user.name}"? Esta acción no se puede deshacer.`,
-          confirmText: 'Eliminar',
-          danger: true,
-        });
-        if (ok) {
-          try {
-            userService.remove(user.id);
-            showToast('Usuario eliminado correctamente.');
-            renderTable();
-          } catch (err) {
-            showToast(err.message, 'error');
-          }
-        }
-      }
+      if (editBtn) openEdit(editBtn.dataset.edit);
     });
 
-    tbody.addEventListener('change', (e) => {
+    tbody.addEventListener('change', async (e) => {
       const toggle = e.target.closest('[data-toggle]');
       if (!toggle) return;
       try {
-        const user = userService.toggleActive(toggle.dataset.toggle);
-        showToast(
-          user.active ? 'Usuario activado.' : 'Usuario desactivado.',
-          user.active ? 'success' : 'info'
-        );
-        renderTable();
+        const user = await userService.toggleActive(toggle.dataset.toggle);
+        showToast(user.active ? 'Usuario activado.' : 'Usuario desactivado.', user.active ? 'success' : 'info');
+        await load();
       } catch (err) {
         showToast(err.message, 'error');
-        renderTable();
+        await load();
       }
     });
 
     /* --------------------------- Render inicial ------------------------ */
-    renderTable();
+    load();
   },
 };

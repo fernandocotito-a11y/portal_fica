@@ -7,7 +7,7 @@
    ========================================================================== */
 
 import { authService } from '../../services/authService.js';
-import { userService } from '../../services/userService.js';
+import { companyService } from '../../services/companyService.js';
 import { STATUS_LABELS } from '../../js/config.js';
 import { ICONS, escapeHtml } from '../../js/utils.js';
 
@@ -30,19 +30,14 @@ export default {
     const accessible = authService.accessibleModules().filter((m) => m.key !== 'dashboard');
     const activeCount = accessible.filter((m) => m.status === 'active').length;
     const soonCount = accessible.filter((m) => m.status === 'soon').length;
-    const configCount = accessible.filter((m) => m.status === 'config').length;
 
-    // Métricas: la cuarta tarjeta varía según el rol.
+    // Métricas resumen.
     const stats = [
       { icon: ICONS.shield, value: accessible.length, label: 'Módulos accesibles' },
       { icon: ICONS.check, value: activeCount, label: 'Módulos activos' },
       { icon: ICONS.clock, value: soonCount, label: 'Próximamente' },
+      { icon: ICONS.building, value: companyService.countActive(), label: 'Empresas activas' },
     ];
-    if (isAdmin) {
-      stats.push({ icon: ICONS.users, value: userService.countActive(), label: 'Usuarios activos' });
-    } else {
-      stats.push({ icon: ICONS.arrowRight, value: configCount, label: 'Listo para configurar' });
-    }
 
     const statsHtml = stats
       .map(

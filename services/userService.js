@@ -1,147 +1,78 @@
 /* ============================================================================
-   userService.js — Gestión de usuarios (CRUD)
+   userService.js — Gestión de usuarios (Supabase)
    ----------------------------------------------------------------------------
-   Administra la colección de usuarios persistida en LocalStorage. Incluye la
-   semilla del Superadministrador. A futuro, este servicio puede delegar en un
-   endpoint REST manteniendo la misma interfaz pública.
+   CRUD sobre la tabla `profiles` + invitación de usuarios vía la Edge Function
+   `invite-user` (que envía el correo y crea el usuario en Auth).
+
+   - list()      -> perfiles visibles (el superadmin ve todos por RLS).
+   - create()    -> llama a la Edge Function (invitación por correo).
+   - update()    -> actualiza el perfil (permisos, empresas, activo, nombre).
+   - toggleActive() -> activa/desactiva un usuario.
    ========================================================================== */
 
-import { storageService } from './storageService.js';
-import { uuid, hashPassword } from '../js/utils.js';
-import { STORAGE_KEYS, ROLES, SUPERADMIN_SEED } from '../js/config.js';
-
-/** Lee la colección de usuarios. */
-function readUsers() {
-  return storageService.local.get(STORAGE_KEYS.users, []);
-}
-
-/** Persiste la colección de usuarios. */
-function writeUsers(users) {
-  storageService.local.set(STORAGE_KEYS.users, users);
-}
-
-/** Normaliza un correo para comparaciones consistentes. */
-function normalizeEmail(email) {
-  return String(email).trim().toLowerCase();
-}
+import { supabase, SUPABASE_ANON_KEY, INVITE_FUNCTION_URL } from '../js/supabase.js';
 
 export const userService = {
-  /**
-   * Garantiza la existencia del Superadministrador inicial. Idempotente: si ya
-   * existe un usuario con ese correo, no duplica registros.
-   */
-  seedSuperAdmin() {
-    const users = readUsers();
-    const exists = users.some((u) => u.email === SUPERADMIN_SEED.email);
-    if (exists) return;
-
-    users.push({
-      id: uuid(),
-      name: SUPERADMIN_SEED.name,
-      email: SUPERADMIN_SEED.email,
-      passwordHash: hashPassword(SUPERADMIN_SEED.password),
-      role: ROLES.SUPERADMIN,
-      permissions: ['*'],
-      companies: ['*'],
-      active: true,
-      createdAt: new Date().toISOString(),
+  /** Lista los usuarios (superadmin primero, luego por fecha). */
+  async list() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    return (data || []).sort((a, b) => {
+      if (a.role === 'superadmin' && b.role !== 'superadmin') return -1;
+      if (b.role === 'superadmin' && a.role !== 'superadmin') return 1;
+      return new Date(b.created_at) - new Date(a.created_at);
     });
-    writeUsers(users);
   },
 
-  /** Lista todos los usuarios ordenados (superadmin primero, luego por fecha). */
-  list() {
-    return readUsers()
-      .slice()
-      .sort((a, b) => {
-        if (a.role === ROLES.SUPERADMIN && b.role !== ROLES.SUPERADMIN) return -1;
-        if (b.role === ROLES.SUPERADMIN && a.role !== ROLES.SUPERADMIN) return 1;
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      });
-  },
-
-  /** Número total de usuarios activos. */
-  countActive() {
-    return readUsers().filter((u) => u.active).length;
-  },
-
-  /** Obtiene un usuario por id. */
-  getById(id) {
-    return readUsers().find((u) => u.id === id) || null;
-  },
-
-  /** Busca un usuario por correo (insensible a mayúsculas). */
-  findByEmail(email) {
-    const normalized = normalizeEmail(email);
-    return readUsers().find((u) => u.email === normalized) || null;
+  async getById(id) {
+    const { data } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle();
+    return data || null;
   },
 
   /**
-   * Crea un usuario secundario.
-   * Lanza Error si el correo ya está registrado o los datos son inválidos.
+   * Crea/invita a un usuario secundario por correo (Edge Function).
+   * Lanza Error con el mensaje devuelto por la función en caso de fallo.
    */
-  create({ name, email, password, permissions = [], companies = [] }) {
-    const normalized = normalizeEmail(email);
-    if (!name || !name.trim()) throw new Error('El nombre es obligatorio.');
-    if (!normalized) throw new Error('El correo es obligatorio.');
-    if (!password) throw new Error('La contraseña es obligatoria.');
-    if (this.findByEmail(normalized)) {
-      throw new Error('Ya existe un usuario con ese correo electrónico.');
-    }
+  async create({ name, email, permissions = [], companies = [] }) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No hay sesión activa.');
 
-    const users = readUsers();
-    const user = {
-      id: uuid(),
-      name: name.trim(),
-      email: normalized,
-      passwordHash: hashPassword(password),
-      role: ROLES.SECONDARY,
-      permissions: Array.isArray(permissions) ? permissions.slice() : [],
-      companies: Array.isArray(companies) ? companies.slice() : [],
-      active: true,
-      createdAt: new Date().toISOString(),
-    };
-    users.push(user);
-    writeUsers(users);
-    return user;
+    const res = await fetch(INVITE_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ email, name, permissions, companies }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || 'No se pudo invitar al usuario.');
+    }
+    return json;
   },
 
-  /** Actualiza campos de un usuario existente (nombre, permisos, activo...). */
-  update(id, patch) {
-    const users = readUsers();
-    const index = users.findIndex((u) => u.id === id);
-    if (index === -1) throw new Error('Usuario no encontrado.');
-
-    const user = users[index];
-
-    // El superadministrador no puede desactivarse ni cambiarse de rol.
-    if (user.role === ROLES.SUPERADMIN && patch.active === false) {
-      throw new Error('No se puede desactivar al Superadministrador.');
-    }
-
-    const updated = { ...user, ...patch, id: user.id, role: user.role, email: user.email };
-    users[index] = updated;
-    writeUsers(users);
-    return updated;
+  async update(id, patch) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return data;
   },
 
-  /** Activa o desactiva un usuario secundario. */
-  toggleActive(id) {
-    const user = this.getById(id);
+  async toggleActive(id) {
+    const user = await this.getById(id);
     if (!user) throw new Error('Usuario no encontrado.');
-    if (user.role === ROLES.SUPERADMIN) {
+    if (user.role === 'superadmin') {
       throw new Error('No se puede desactivar al Superadministrador.');
     }
     return this.update(id, { active: !user.active });
-  },
-
-  /** Elimina un usuario secundario. */
-  remove(id) {
-    const user = this.getById(id);
-    if (!user) throw new Error('Usuario no encontrado.');
-    if (user.role === ROLES.SUPERADMIN) {
-      throw new Error('No se puede eliminar al Superadministrador.');
-    }
-    writeUsers(readUsers().filter((u) => u.id !== id));
   },
 };

@@ -4,8 +4,9 @@
    Rutas:
 
      #/login           -> Autenticación (solo invitados)
-     #/select-company  -> Selector de empresa (requiere sesión, sin shell)
-     #/dashboard       -> Panel principal (sesión + empresa seleccionada)
+     #/set-password    -> Establecer contraseña (invitación / reset, sin guard)
+     #/select-company  -> Selector de empresa (sesión, sin shell)
+     #/dashboard       -> Panel principal (sesión + empresa)
      #/users           -> Gestión de usuarios (sesión + empresa + superadmin)
      #/companies       -> Gestión de empresas (sesión + empresa + superadmin)
      #/module/:key     -> Módulo placeholder (sesión + empresa + permiso)
@@ -26,9 +27,15 @@ const routes = [
     loader: () => import('../modules/login/login.js'),
   },
   {
+    pattern: /^\/set-password\/?$/,
+    guard: 'none', // accesible tras hacer clic en el enlace de invitación/reset
+    shell: false,
+    loader: () => import('../modules/set-password/set-password.js'),
+  },
+  {
     pattern: /^\/select-company\/?$/,
     guard: 'auth',
-    shell: false, // página independiente (aún no se "está" dentro de una empresa)
+    shell: false,
     loader: () => import('../modules/select-company/select-company.js'),
   },
   {
@@ -117,6 +124,15 @@ async function handleRoute() {
   const { route, params } = matched;
   const isAuthed = authService.isAuthenticated();
 
+  // Rutas sin guard (p. ej. set-password) no aplican controles de sesión.
+  if (route.guard === 'none') {
+    const mod = (await route.loader()).default;
+    const app = document.getElementById('app');
+    app.innerHTML = '';
+    mod.render(app, buildContext(params));
+    return;
+  }
+
   // Guard "guest": si ya hay sesión, no mostramos el login.
   if (route.guard === 'guest' && isAuthed) {
     window.location.hash = homeHash();
@@ -158,7 +174,7 @@ async function handleRoute() {
   const moduleInfo = moduleKey ? getModule(moduleKey) : null;
   const title = moduleInfo ? moduleInfo.name : mod.title || 'FICA Portal';
 
-  // Páginas sin shell (login y selector de empresa).
+  // Páginas sin shell: login (guest) y selector de empresa (shell: false).
   const useShell = route.guard === 'auth' && route.shell !== false;
   if (!useShell) {
     if (currentShell) {

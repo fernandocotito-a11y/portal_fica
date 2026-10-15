@@ -21,6 +21,7 @@ create table if not exists public.companies (
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   name text not null default '',
+  email text,
   role text not null default 'secondary' check (role in ('superadmin','secondary')),
   permissions text[] not null default '{}',
   companies uuid[] not null default '{}',
@@ -36,8 +37,8 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, name, role)
-  values (new.id, coalesce(new.raw_user_meta_data->>'name', ''), 'secondary')
+  insert into public.profiles (id, name, email, role)
+  values (new.id, coalesce(new.raw_user_meta_data->>'name', ''), new.email, 'secondary')
   on conflict (id) do nothing;
   return new;
 end;

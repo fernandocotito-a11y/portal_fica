@@ -1,136 +1,86 @@
 /* ============================================================================
-   companyService.js — Gestión de empresas (CRUD)
+   companyService.js — Gestión de empresas (Supabase)
    ----------------------------------------------------------------------------
-   Administra la colección de empresas persistida en LocalStorage. Cada empresa
-   tiene razón social y RUC. El Superadministrador crea las empresas y asigna a
-   cada usuario secundario cuáles puede ver.
+   CRUD de la tabla `companies` con caché en memoria. El `refresh()` precarga la
+   lista (filtrada por las políticas RLS según el usuario), y los getters
+   (`getAll`, `list`, `getById`, ...) son síncronos sobre ese caché.
    ========================================================================== */
 
-import { storageService } from './storageService.js';
-import { uuid } from '../js/utils.js';
-import { STORAGE_KEYS } from '../js/config.js';
+import { supabase } from '../js/supabase.js';
 
-/** Empresa por defecto que se siembra la primera vez (editable). */
-const DEFAULT_COMPANY = {
-  name: 'A y F FICA Asociados S.A.C.',
-  ruc: '20123456789',
-};
+let cache = [];
 
-function readCompanies() {
-  return storageService.local.get(STORAGE_KEYS.companies, []);
-}
-
-function writeCompanies(companies) {
-  storageService.local.set(STORAGE_KEYS.companies, companies);
-}
-
-function normalizeRuc(value) {
-  return String(value || '').trim();
-}
-
-/** Valida el formato de un RUC peruano (11 dígitos). */
-function isValidRuc(ruc) {
-  return /^\d{11}$/.test(ruc);
+/** Traduce errores de PostgREST a mensajes legibles. */
+function mapError(error) {
+  if (error?.code === '23505') return 'Ya existe una empresa con ese RUC.';
+  if (error?.code === '23514') return 'Valor no permitido.';
+  return error?.message || 'Error al guardar la empresa.';
 }
 
 export const companyService = {
-  /** Garantiza que exista al menos una empresa inicial. Idempotente. */
-  seedDefaultCompany() {
-    const companies = readCompanies();
-    if (companies.length > 0) return;
-    companies.push({
-      id: uuid(),
-      name: DEFAULT_COMPANY.name,
-      ruc: DEFAULT_COMPANY.ruc,
-      active: true,
-      createdAt: new Date().toISOString(),
-    });
-    writeCompanies(companies);
+  /** Recarga el caché desde Supabase. */
+  async refresh() {
+    const { data, error } = await supabase
+      .from('companies')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error) cache = data || [];
+    return cache;
   },
 
-  /** Lista todas las empresas (más recientes primero). */
+  getAll() {
+    return cache.slice();
+  },
+
+  clearCache() {
+    cache = [];
+  },
+
   list() {
-    return readCompanies()
-      .slice()
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return cache.slice();
   },
 
-  /** Lista solo las empresas activas. */
   listActive() {
-    return this.list().filter((c) => c.active);
+    return cache.filter((c) => c.active);
   },
 
-  /** Obtiene una empresa por id. */
-  getById(id) {
-    return readCompanies().find((c) => c.id === id) || null;
-  },
-
-  /** Busca una empresa por RUC (insensible a espacios). */
-  findByRuc(ruc) {
-    const normalized = normalizeRuc(ruc);
-    return readCompanies().find((c) => normalizeRuc(c.ruc) === normalized) || null;
-  },
-
-  /** Número total de empresas activas. */
   countActive() {
-    return this.listActive().length;
+    return cache.filter((c) => c.active).length;
   },
 
-  /**
-   * Crea una empresa. Lanza Error si la razón social o el RUC son inválidos
-   * o si el RUC ya existe.
-   */
-  create({ name, ruc }) {
-    const nName = String(name || '').trim();
-    const nRuc = normalizeRuc(ruc);
-
-    if (!nName) throw new Error('La razón social es obligatoria.');
-    if (!nRuc) throw new Error('El RUC es obligatorio.');
-    if (!isValidRuc(nRuc)) throw new Error('El RUC debe tener 11 dígitos.');
-    if (this.findByRuc(nRuc)) throw new Error('Ya existe una empresa con ese RUC.');
-
-    const companies = readCompanies();
-    const company = {
-      id: uuid(),
-      name: nName,
-      ruc: nRuc,
-      active: true,
-      createdAt: new Date().toISOString(),
-    };
-    companies.push(company);
-    writeCompanies(companies);
-    return company;
+  getById(id) {
+    return cache.find((c) => c.id === id) || null;
   },
 
-  /** Actualiza campos de una empresa (razón social, RUC, activo). */
-  update(id, patch) {
-    const companies = readCompanies();
-    const index = companies.findIndex((c) => c.id === id);
-    if (index === -1) throw new Error('Empresa no encontrada.');
-
-    const current = companies[index];
-    const next = { ...current, ...patch, id: current.id };
-
-    if (patch.name !== undefined && !String(patch.name).trim()) {
-      throw new Error('La razón social es obligatoria.');
-    }
-    if (patch.ruc !== undefined) {
-      const nRuc = normalizeRuc(patch.ruc);
-      if (!isValidRuc(nRuc)) throw new Error('El RUC debe tener 11 dígitos.');
-      const duplicate = companies.find(
-        (c) => c.id !== id && normalizeRuc(c.ruc) === nRuc
-      );
-      if (duplicate) throw new Error('Ya existe una empresa con ese RUC.');
-      next.ruc = nRuc;
-    }
-
-    companies[index] = next;
-    writeCompanies(companies);
-    return next;
+  findByRuc(ruc) {
+    const n = String(ruc || '').trim();
+    return cache.find((c) => String(c.ruc).trim() === n) || null;
   },
 
-  /** Activa o desactiva una empresa (siempre debe quedar al menos una activa). */
-  toggleActive(id) {
+  async create({ name, ruc }) {
+    const { data, error } = await supabase
+      .from('companies')
+      .insert({ name: String(name).trim(), ruc: String(ruc).trim() })
+      .select()
+      .single();
+    if (error) throw new Error(mapError(error));
+    await this.refresh();
+    return data;
+  },
+
+  async update(id, patch) {
+    const { data, error } = await supabase
+      .from('companies')
+      .update(patch)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new Error(mapError(error));
+    await this.refresh();
+    return data;
+  },
+
+  async toggleActive(id) {
     const company = this.getById(id);
     if (!company) throw new Error('Empresa no encontrada.');
     if (company.active && this.listActive().length <= 1) {
@@ -139,13 +89,14 @@ export const companyService = {
     return this.update(id, { active: !company.active });
   },
 
-  /** Elimina una empresa (siempre debe quedar al menos una). */
-  remove(id) {
+  async remove(id) {
     const company = this.getById(id);
     if (!company) throw new Error('Empresa no encontrada.');
     if (this.list().length <= 1) {
       throw new Error('Debe existir al menos una empresa.');
     }
-    writeCompanies(readCompanies().filter((c) => c.id !== id));
+    const { error } = await supabase.from('companies').delete().eq('id', id);
+    if (error) throw new Error(mapError(error));
+    await this.refresh();
   },
 };

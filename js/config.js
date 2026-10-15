@@ -1,26 +1,18 @@
 /* ============================================================================
    config.js — Configuración global y registro de módulos del portal
    ----------------------------------------------------------------------------
-   Centraliza identidad corporativa, claves de almacenamiento, roles, semilla
-   del superadministrador y el catálogo de módulos (activos y futuros). Añadir
-   un módulo nuevo solo requiere registrarlo aquí: automáticamente aparecerá en
-   el sidebar, el dashboard y el selector de permisos.
+   Centraliza identidad corporativa, roles y el catálogo de módulos (activos y
+   futuros). Añadir un módulo nuevo solo requiere registrarlo aquí: aparece
+   automáticamente en el sidebar, el dashboard y el selector de permisos.
    ========================================================================== */
 
 /* ---- Identidad de la aplicación ---- */
 export const APP = {
   name: 'FICA Portal',
   company: 'A y F FICA Asociados S.A.C.',
-  version: '1.0.0',
+  version: '1.1.0',
   tagline: 'Consultoría contable, tributaria, inventarios y software empresarial',
   services: ['Contabilidad', 'Tributación', 'Inventarios', 'Software empresarial'],
-};
-
-/* ---- Claves de persistencia (LocalStorage) ---- */
-export const STORAGE_KEYS = {
-  users: 'fica.users.v1',
-  companies: 'fica.companies.v1',
-  session: 'fica.session.v1',
 };
 
 /* ---- Roles del sistema (RBAC) ---- */
@@ -32,14 +24,6 @@ export const ROLES = {
 export const ROLE_LABELS = {
   [ROLES.SUPERADMIN]: 'Superadministrador',
   [ROLES.SECONDARY]: 'Usuario Secundario',
-};
-
-/* ---- Semilla del Superadministrador (credenciales de prueba) ---- */
-export const SUPERADMIN_SEED = {
-  name: 'Administrador Principal',
-  email: 'admin@ayffica.com',
-  password: 'Admin123*',
-  role: ROLES.SUPERADMIN,
 };
 
 /* ---------------------------------------------------------------------------

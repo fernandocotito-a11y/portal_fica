@@ -87,10 +87,11 @@ Deno.serve(async (req) => {
       return json({ error: inviteError?.message || "No se pudo invitar al usuario" }, 400);
     }
 
-    // 5) Guardar/actualizar su perfil (nombre, permisos, empresas).
+    // 5) Guardar/actualizar su perfil (nombre, email, permisos, empresas).
     await serviceClient.from("profiles").upsert({
       id: userId,
       name,
+      email,
       role: "secondary",
       permissions,
       companies,

@@ -1,9 +1,7 @@
 /* ============================================================================
-   companies.js — Módulo de Gestión de Empresas (CRUD)
+   companies.js — Módulo de Gestión de Empresas (CRUD, Supabase)
    ----------------------------------------------------------------------------
-   Permite al Superadministrador crear, editar, activar/desactivar y eliminar
-   empresas. Las empresas son las entidades que los usuarios secundarios pueden
-   ver/operar según la asignación definida en Gestión de Usuarios.
+   Superadministrador: crea, edita, activa/desactiva y elimina empresas.
    ========================================================================== */
 
 import { companyService } from '../../services/companyService.js';
@@ -97,7 +95,6 @@ export default {
     const nameError = container.querySelector('[data-error-name]');
     const rucError = container.querySelector('[data-error-ruc]');
 
-    /* --------------------------- Helpers ------------------------------- */
     function filteredCompanies() {
       const term = searchTerm.trim().toLowerCase();
       return companyService.list().filter((c) => {
@@ -153,7 +150,11 @@ export default {
         .join('');
     }
 
-    /* ----------------------- Apertura del modal ------------------------ */
+    async function load() {
+      await companyService.refresh();
+      renderTable();
+    }
+
     function clearErrors() {
       nameInput.classList.remove('is-invalid');
       rucInput.classList.remove('is-invalid');
@@ -192,7 +193,6 @@ export default {
       modal.close();
     }
 
-    /* --------------------------- Validación ---------------------------- */
     function validate() {
       let valid = true;
       clearErrors();
@@ -217,7 +217,6 @@ export default {
       return valid;
     }
 
-    /* ---------------------------- Eventos ------------------------------ */
     container.querySelector('[data-add]').addEventListener('click', openCreate);
     container.querySelector('[data-close]').addEventListener('click', closeModal);
     container.querySelector('[data-cancel]').addEventListener('click', closeModal);
@@ -240,25 +239,28 @@ export default {
       renderTable();
     });
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!validate()) return;
 
       const name = nameInput.value.trim();
       const ruc = rucInput.value.trim();
+      submitBtn.disabled = true;
 
       try {
         if (editingId) {
-          companyService.update(editingId, { name, ruc, active: activeInput.checked });
+          await companyService.update(editingId, { name, ruc, active: activeInput.checked });
           showToast('Empresa actualizada correctamente.');
         } else {
-          companyService.create({ name, ruc });
+          await companyService.create({ name, ruc });
           showToast('Empresa creada correctamente.');
         }
         closeModal();
         renderTable();
       } catch (err) {
         showToast(err.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
       }
     });
 
@@ -282,7 +284,7 @@ export default {
         });
         if (ok) {
           try {
-            companyService.remove(company.id);
+            await companyService.remove(company.id);
             showToast('Empresa eliminada correctamente.');
             renderTable();
           } catch (err) {
@@ -292,15 +294,12 @@ export default {
       }
     });
 
-    tbody.addEventListener('change', (e) => {
+    tbody.addEventListener('change', async (e) => {
       const toggle = e.target.closest('[data-toggle]');
       if (!toggle) return;
       try {
-        const company = companyService.toggleActive(toggle.dataset.toggle);
-        showToast(
-          company.active ? 'Empresa activada.' : 'Empresa desactivada.',
-          company.active ? 'success' : 'info'
-        );
+        const company = await companyService.toggleActive(toggle.dataset.toggle);
+        showToast(company.active ? 'Empresa activada.' : 'Empresa desactivada.', company.active ? 'success' : 'info');
         renderTable();
       } catch (err) {
         showToast(err.message, 'error');
@@ -308,7 +307,6 @@ export default {
       }
     });
 
-    /* --------------------------- Render inicial ------------------------ */
-    renderTable();
+    load();
   },
 };
