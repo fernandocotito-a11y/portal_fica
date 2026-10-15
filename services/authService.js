@@ -114,9 +114,11 @@ export const authService = {
 
   /** Envía el correo para restablecer la contraseña. */
   async requestPasswordReset(email) {
+    // redirectTo apunta a la raíz (sin hash) para que Supabase añada los tokens
+    // en un único "#..." y no se rompa el enrutado. app.js lleva a #/set-password.
     const { error } = await supabase.auth.resetPasswordForEmail(
       String(email || '').trim().toLowerCase(),
-      { redirectTo: `${window.location.origin}/#/set-password` }
+      { redirectTo: `${window.location.origin}/` }
     );
     if (error) throw new Error(mapAuthError(error));
   },

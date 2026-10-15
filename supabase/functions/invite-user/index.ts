@@ -7,7 +7,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "jsr:@supabase/server@^1";
 
-const REDIRECT_TO = "https://portal.ayffica.com/#/set-password";
+// redirectTo a la raíz (sin hash): Supabase añade los tokens y app.js lleva a #/set-password.
+const REDIRECT_TO = "https://portal.ayffica.com/";
 
 interface InvitePayload {
   email: string;
