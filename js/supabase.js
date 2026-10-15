@@ -13,7 +13,7 @@ export const SUPABASE_ANON_KEY = 'sb_publishable_J3XL58s2L6cEhYm9ghaNkg_nV-aToIS
 
 /** URL de la Edge Function que invita a usuarios por correo. */
 export const INVITE_FUNCTION_URL =
-  'https://kiogxgcrexgpgumfpgnq.supabase.co/functions/v1/invite-user';
+  'https://kiogxgcrexgpgumfpgnq.supabase.co/functions/v1/super-action';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
