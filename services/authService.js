@@ -123,6 +123,18 @@ export const authService = {
     if (error) throw new Error(mapAuthError(error));
   },
 
+  /**
+   * ¿Existe un usuario registrado con ese correo?
+   * Devuelve true/false, o null si no se pudo determinar (no bloquear).
+   */
+  async isEmailRegistered(email) {
+    const { data, error } = await supabase.rpc('email_registered', {
+      p_email: String(email || '').trim().toLowerCase(),
+    });
+    if (error) return null;
+    return !!data;
+  },
+
   /** Establece una nueva contraseña para el usuario autenticado. */
   async updatePassword(password) {
     const { error } = await supabase.auth.updateUser({ password });

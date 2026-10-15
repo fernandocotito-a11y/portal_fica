@@ -63,6 +63,23 @@ as $$
   );
 $$;
 
+-- 4b) Helper: ¿existe un usuario registrado con ese correo? ------------------
+-- Permite avisar en el formulario público si un correo NO está registrado.
+-- Nota: habilita "enumeración" de correos (se puede consultar si existe o no).
+create or replace function public.email_registered(p_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles where lower(email) = lower(p_email)
+  );
+$$;
+
+grant execute on function public.email_registered(text) to anon, authenticated;
+
 -- 5) Políticas de seguridad (RLS) -------------------------------------------
 alter table public.companies enable row level security;
 alter table public.profiles enable row level security;

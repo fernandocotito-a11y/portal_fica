@@ -181,8 +181,14 @@ export default {
       }
       forgotBtn.disabled = true;
       try {
+        // ¿El correo está registrado? Si no, avisamos de inmediato.
+        const registered = await authService.isEmailRegistered(email);
+        if (registered === false) {
+          showError('Este correo no está registrado en el portal. Pide al administrador que te invite.');
+          return;
+        }
         await authService.requestPasswordReset(email);
-        showSuccess('Listo. Si ese correo está registrado, recibirás un enlace para restablecer tu contraseña.');
+        showSuccess('Listo. Te enviamos un enlace a tu correo para restablecer tu contraseña.');
       } catch (err) {
         showError(err.message);
       } finally {
