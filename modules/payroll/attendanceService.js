@@ -67,9 +67,9 @@ export const attendanceService = {
 
   /* ------------------------------- Cálculos ------------------------------ */
 
-  /** Descuento por minuto de tardanza: sueldo / 30 / 8 / 60. */
+  /** Descuento por minuto de tardanza: sueldo / 30 / 8 / 60 (sin redondear). */
   descuentoPorMinuto(baseSalary) {
-    return round2(num(baseSalary) / 30 / 8 / 60);
+    return num(baseSalary) / 30 / 8 / 60;
   },
 
   /** Descuento total por minutos de tardanza. */

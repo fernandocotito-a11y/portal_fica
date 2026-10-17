@@ -166,7 +166,7 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 | Módulo | Estado |
 |---|---|
 | Panel Principal, Gestión de Usuarios, Gestión de Empresas | ✅ Activo |
-| Planillas (PLAME/T-Registro) | 🟡 Listo para configurar |
+| **Planillas** (remuneraciones, asistencias, CTS/grati, Renta 5ta, liquidaciones) | ✅ Activo |
 | SIRE, Compras/Ventas, Retenciones, Declaraciones, Reportes | ⏳ Próximamente |
 
 ---
