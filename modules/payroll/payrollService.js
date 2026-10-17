@@ -15,6 +15,7 @@ import {
   getUit,
   getRmv,
 } from './payrollConfig.js';
+import { taxService } from './taxService.js';
 
 /* ------------------------------------------------------------------ utils */
 function num(v, def = 0) {
@@ -109,7 +110,15 @@ export function calcRow(emp, inputs = {}, year, month) {
     pensionLabel = `AFP ${emp.afp || ''}`.trim();
   }
 
-  const renta5ta = calcRenta5taMensual(remAsegurable * 12, uit);
+  const gratProyectada = round2((month <= 7 ? remAsegurable : 0) + remAsegurable);
+  const renta5ta = taxService.calcRetencionMensual({
+    remuneracionMensual: remAsegurable,
+    mes: month,
+    year,
+    gratificacionesProyectadas: gratProyectada,
+    bonifExtraordinaria: round2(gratProyectada * TASAS.essalud),
+    retencionesAnteriores: num(inputs.retencionesAnteriores),
+  }).retencionMes;
   const tardanzas = round2(num(inputs.tardanzas));
   const prestamos = round2(num(inputs.loans));
   const totalRetenciones = round2(pension + renta5ta + tardanzas + prestamos);
