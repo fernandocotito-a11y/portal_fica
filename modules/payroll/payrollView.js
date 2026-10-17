@@ -9,6 +9,10 @@
    ========================================================================== */
 
 import { payrollService, calcRow, sumTotals } from './payrollService.js';
+import { attendanceService } from './attendanceService.js';
+import { vacationService } from './vacationService.js';
+import { liquidationService } from './liquidationService.js';
+import { taxSummaryService } from './taxSummaryService.js';
 import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION } from './payrollConfig.js';
 import { money } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
@@ -282,8 +286,12 @@ function renderPlanillaTab(root) {
     summaryEl.textContent = `Neto total a pagar: ${money(totals.neto)}`;
   }
   function persist() {
-    payrollService.savePeriodInputs(year, month, inputs, closed);
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      payrollService.savePeriodInputs(year, month, inputs, closed).catch((err) => showToast(err.message, 'error'));
+    }, 700);
   }
+  let saveTimer = null;
   function applyClosedState() {
     closedBadge.hidden = !closed;
     closeBtn.disabled = closed;
@@ -380,7 +388,7 @@ function renderPlanillaTab(root) {
   pensionI.addEventListener('change', updateAfpVisibility);
   contractI.addEventListener('change', updateContractVisibility);
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!validate()) return;
     const data = {
@@ -403,8 +411,8 @@ function renderPlanillaTab(root) {
       active: activeGroup.hidden ? true : activeI.checked,
     };
     try {
-      if (editingId) payrollService.updateEmployee(editingId, data);
-      else payrollService.createEmployee(data);
+      if (editingId) await payrollService.updateEmployee(editingId, data);
+      else await payrollService.createEmployee(data);
       showToast(editingId ? 'Colaborador actualizado.' : 'Colaborador agregado.');
       modal.close();
       renderTable();
@@ -434,7 +442,16 @@ function renderPlanillaTab(root) {
       const emp = payrollService.getEmployee(delBtn.dataset.del);
       if (!emp) return;
       const ok = await confirmDialog({ title: 'Eliminar colaborador', message: `¿Eliminar a "${emp.name}"? Esta acción no se puede deshacer.`, confirmText: 'Eliminar', danger: true });
-      if (ok) { payrollService.removeEmployee(emp.id); showToast('Colaborador eliminado.'); renderTable(); applyClosedState(); }
+      if (ok) {
+        try {
+          await payrollService.removeEmployee(emp.id);
+          showToast('Colaborador eliminado.');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+        renderTable();
+        applyClosedState();
+      }
     }
   });
 
@@ -443,11 +460,19 @@ function renderPlanillaTab(root) {
     if (data.length === 0) { showToast('No hay colaboradores para cerrar.', 'error'); return; }
     const totals = sumTotals(data.map((d) => d.calc));
     const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.neto)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
-    if (ok) { payrollService.closePeriod(year, month, inputs); closed = true; applyClosedState(); showToast('Planilla del mes cerrada.'); }
+    if (ok) {
+      try {
+        await payrollService.closePeriod(year, month, inputs);
+        closed = true;
+        applyClosedState();
+        showToast('Planilla del mes cerrada.');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
   });
 
   monthSel.value = String(month);
-  payrollService.ensureAfpTable();
   loadPeriod();
 }
 
@@ -484,9 +509,6 @@ export default {
     const content = container.querySelector('[data-tab-content]');
     const tabsBar = container.querySelector('[data-tabs]');
 
-    // Migra datos previos (claves globales) a las claves por empresa.
-    payrollService.migrateLegacy();
-
     function show(key) {
       tabsBar.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === key));
       if (key === 'planilla') renderPlanillaTab(content);
@@ -502,6 +524,21 @@ export default {
       if (btn) show(btn.dataset.tab);
     });
 
-    show('planilla');
+    // Carga inicial desde Supabase y render de la primera pestaña.
+    (async () => {
+      content.innerHTML = '<p class="text-muted" style="padding:var(--space-4);">Cargando planilla…</p>';
+      try {
+        await Promise.all([
+          payrollService.refresh(),
+          attendanceService.refresh(),
+          vacationService.refresh(),
+          liquidationService.refresh(),
+          taxSummaryService.refresh(),
+        ]);
+      } catch (err) {
+        showToast('Error al cargar la planilla: ' + err.message, 'error');
+      }
+      show('planilla');
+    })();
   },
 };

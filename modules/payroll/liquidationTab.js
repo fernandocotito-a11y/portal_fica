@@ -143,17 +143,21 @@ export function renderLiquidationTab(root) {
     w.print();
   });
 
-  saveBtn.addEventListener('click', () => {
+  saveBtn.addEventListener('click', async () => {
     if (!current) return;
-    liquidationService.save({
-      employeeId: current.employee.id,
-      employeeName: current.employee.name,
-      fechaCese: current.fechaCese,
-      motivo: current.motivo,
-      neto: current.neto,
-      bruto: current.bruto,
-    });
-    showToast('Liquidación guardada en el historial.');
+    try {
+      await liquidationService.save({
+        employeeId: current.employee.id,
+        employeeName: current.employee.name,
+        fechaCese: current.fechaCese,
+        motivo: current.motivo,
+        neto: current.neto,
+        bruto: current.bruto,
+      });
+      showToast('Liquidación guardada en el historial.');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   });
 
   fillEmployees();

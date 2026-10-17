@@ -170,9 +170,13 @@ export function renderAuditTab(root) {
 
   yearSel.addEventListener('change', () => { year = Number(yearSel.value); render(); });
   monthSel.addEventListener('change', () => { month = Number(monthSel.value); render(); });
-  stateSel.addEventListener('change', () => {
-    taxSummaryService.setState(year, month, stateSel.value);
-    showToast('Estado de pago actualizado.');
+  stateSel.addEventListener('change', async () => {
+    try {
+      await taxSummaryService.setState(year, month, stateSel.value);
+      showToast('Estado de pago actualizado.');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
     render();
   });
 

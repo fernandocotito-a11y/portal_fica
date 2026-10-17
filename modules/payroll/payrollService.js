@@ -1,79 +1,78 @@
 /* ============================================================================
-   payrollService.js — Motor de cálculo laboral (Perú) + persistencia (mock)
+   payrollService.js — Colaboradores y períodos de planilla (Supabase)
    ----------------------------------------------------------------------------
-   - Fórmulas: total bruto, aportes del trabajador (ONP / AFP), Renta de 5ª
-     categoría, Essalud, Seguro Vida Ley y neto a pagar.
-   - Persistencia en LocalStorage (mock persistente): colaboradores, tabla AFP
-     mensualizada y planillas por período (con opción de "cerrar" el mes).
+   Datos aislados por EMPRESA (company_id). Los getters son síncronos (leen un
+   caché cargado con refresh()); las mutaciones son asíncronas.
+   Incluye el motor de cálculo (calcRow, Renta 5ta, totales).
    ========================================================================== */
 
-import {
-  TASAS,
-  RENTA_5TA,
-  AFP_BASE,
-  buildAfpTable,
-  getUit,
-  getRmv,
-} from './payrollConfig.js';
+import { supabase } from '../../js/supabase.js';
+import { num, round2 } from './payrollUtils.js';
 import { taxService } from './taxService.js';
-import { scopedKey } from './payrollScope.js';
+import { activeCompanyId } from './payrollScope.js';
+import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv } from './payrollConfig.js';
 
-/* ------------------------------------------------------------------ utils */
-function num(v, def = 0) {
+/* ------------------------------------------------------------ caché en memoria */
+let employeesCache = [];
+let periodsCache = {}; // 'YYYY-MM' -> { closed, rows }
+
+function mapEmployee(r) {
+  return {
+    id: r.id,
+    code: r.code || '',
+    docType: r.doc_type || 'DNI',
+    docNumber: r.doc_number || '',
+    name: r.name || '',
+    startDate: r.start_date || '',
+    position: r.position || '',
+    baseSalary: num(r.base_salary),
+    pensionType: r.pension_type || 'ONP',
+    afp: r.afp || null,
+    cuspp: r.cuspp || '',
+    bankName: r.bank_name || '',
+    bankAccount: r.bank_account || '',
+    bankCci: r.bank_cci || '',
+    contractType: r.contract_type || 'indeterminado',
+    contractEnd: r.contract_end || '',
+    asignacionFamiliar: !!r.asignacion_familiar,
+    active: r.active !== false,
+    createdAt: r.created_at,
+  };
+}
+
+function toEmployeeRow(d) {
+  return {
+    company_id: activeCompanyId(),
+    code: d.code || null,
+    doc_type: d.docType || 'DNI',
+    doc_number: d.docNumber || null,
+    name: d.name,
+    start_date: d.startDate || null,
+    position: d.position || null,
+    base_salary: num(d.baseSalary),
+    pension_type: d.pensionType || 'ONP',
+    afp: d.pensionType === 'AFP' ? d.afp || 'HABITAT' : null,
+    cuspp: d.pensionType === 'AFP' ? d.cuspp || null : null,
+    bank_name: d.bankName || null,
+    bank_account: d.bankAccount || null,
+    bank_cci: d.bankCci || null,
+    contract_type: d.contractType || 'indeterminado',
+    contract_end: d.contractType === 'plazo_fijo' ? d.contractEnd || null : null,
+    asignacion_familiar: !!d.asignacionFamiliar,
+    active: d.active !== false,
+  };
+}
+
+/* ------------------------------------------------------ utilidades de cálculo */
+function numOr(v, def = 0) {
   const n = parseFloat(v);
   return Number.isFinite(n) ? n : def;
-}
-function round2(n) {
-  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 function clamp(n, min, max) {
   return Math.min(Math.max(n, min), max);
 }
-function uuid() {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
-}
 
-/* --------------------------------------------------------- localStorage */
-/* Claves base del módulo (se prefijan por EMPRESA vía scopedKey) */
-const K_EMPLOYEES = 'employees';
-const K_PERIODS = 'periods';
-const K_AFPTABLE = 'fica.payroll.afpTable'; // parámetros globales (SUNAT/SBS)
-
-function read(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw === null ? fallback : JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
-}
-function write(key, val) {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch {
-    /* noop */
-  }
-}
-
-/* Accesos por empresa (colaboradores y períodos) */
-const readEmp = (fb) => read(scopedKey(K_EMPLOYEES), fb);
-const writeEmp = (v) => write(scopedKey(K_EMPLOYEES), v);
-const readPeriods = (fb) => read(scopedKey(K_PERIODS), fb);
-const writePeriods = (v) => write(scopedKey(K_PERIODS), v);
-
-/* ================================================================ MOTOR === */
-
-/** Devuelve los parámetros AFP de un período concreto. */
-export function getAfpParams(year, month, afp) {
-  const table = read(K_AFPTABLE, null) || buildAfpTable();
-  const found = table.find((r) => r.year === year && r.month === month && r.afp === afp);
-  if (found) return found;
-  const base = AFP_BASE.find((a) => a.afp === afp) || AFP_BASE[0];
-  return { ...base, aporteObligatorio: 0.1, remMaxAsegurable: 10400 };
-}
-
-/** Renta de 5ª categoría: estimación de la retención mensual (anual / 12). */
+/** Renta de 5ª: estimación simple (anual / 12). */
 export function calcRenta5taMensual(annualRem, uit) {
   const base = Math.max(0, annualRem - RENTA_5TA.deduccionUIT * uit);
   let tax = 0;
@@ -87,11 +86,13 @@ export function calcRenta5taMensual(annualRem, uit) {
   return round2(tax / 12);
 }
 
-/**
- * Calcula una fila de planilla para un colaborador.
- * @param {Object} emp    Colaborador (sueldo base, régimen, AFP…).
- * @param {Object} inputs Valores editables del período (días, bonos, etc.).
- */
+/** Parámetros AFP del período. */
+export function getAfpParams(year, month, afp) {
+  const base = AFP_BASE.find((a) => a.afp === afp) || AFP_BASE[0];
+  return { year, month, afp: base.afp, comisionFlujo: base.comisionFlujo, comisionSaldo: base.comisionSaldo, primaSeguro: base.primaSeguro, aporteObligatorio: 0.1, remMaxAsegurable: 10400 };
+}
+
+/** Calcula una fila de planilla. */
 export function calcRow(emp, inputs = {}, year, month) {
   const uit = getUit(year);
   const rmv = getRmv(year);
@@ -105,7 +106,6 @@ export function calcRow(emp, inputs = {}, year, month) {
 
   const remAsegurable = round2(basico + asigFamiliar);
 
-  // Aporte del trabajador (pensión)
   let pension = 0;
   let pensionLabel = '—';
   if (emp.pensionType === 'ONP') {
@@ -114,24 +114,26 @@ export function calcRow(emp, inputs = {}, year, month) {
   } else if (emp.pensionType === 'AFP') {
     const p = getAfpParams(year, month, emp.afp);
     const baseAfp = Math.min(remAsegurable, num(p.remMaxAsegurable, remAsegurable));
-    pension = round2(baseAfp * (num(p.aporteObligatorio, 0.1) + num(p.comisionFlujo) + num(p.primaSeguro)));
+    pension = round2(baseAfp * (p.aporteObligatorio + p.comisionFlujo + p.primaSeguro));
     pensionLabel = `AFP ${emp.afp || ''}`.trim();
   }
 
   const gratProyectada = round2((month <= 7 ? remAsegurable : 0) + remAsegurable);
-  const renta5ta = taxService.calcRetencionMensual({
-    remuneracionMensual: remAsegurable,
-    mes: month,
-    year,
-    gratificacionesProyectadas: gratProyectada,
-    bonifExtraordinaria: round2(gratProyectada * TASAS.essalud),
-    retencionesAnteriores: num(inputs.retencionesAnteriores),
-  }).retencionMes;
+  const renta5ta = taxService
+    .calcRetencionMensual({
+      remuneracionMensual: remAsegurable,
+      mes: month,
+      year,
+      gratificacionesProyectadas: gratProyectada,
+      bonifExtraordinaria: round2(gratProyectada * TASAS.essalud),
+      retencionesAnteriores: num(inputs.retencionesAnteriores),
+    })
+    .retencionMes;
+
   const tardanzas = round2(num(inputs.tardanzas));
   const prestamos = round2(num(inputs.loans));
   const totalRetenciones = round2(pension + renta5ta + tardanzas + prestamos);
 
-  // Aportes del empleador
   const essalud = round2(remAsegurable * TASAS.essalud);
   const vidaLey = round2(num(inputs.vidaLey));
   const totalAportes = round2(essalud + vidaLey);
@@ -159,122 +161,89 @@ export function calcRow(emp, inputs = {}, year, month) {
   };
 }
 
-/** Suma los totales de un conjunto de filas calculadas. */
+/** Suma totales de un conjunto de filas. */
 export function sumTotals(rows) {
-  const keys = [
-    'basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'totalBruto',
-    'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones',
-    'essalud', 'vidaLey', 'totalAportes', 'neto',
-  ];
+  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'totalBruto', 'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto'];
   const acc = {};
   keys.forEach((k) => (acc[k] = 0));
   rows.forEach((r) => keys.forEach((k) => (acc[k] = round2(acc[k] + num(r[k])))));
   return acc;
 }
 
-/* ============================================================= SERVICIO === */
-
+/* =============================================================== SERVICIO === */
 export const payrollService = {
-  /* ------------------------- Tabla AFP (parámetros) -------------------- */
-  ensureAfpTable() {
-    if (!read(K_AFPTABLE, null)) write(K_AFPTABLE, buildAfpTable());
+  /** Recarga colaboradores y períodos desde Supabase. */
+  async refresh() {
+    const cid = activeCompanyId();
+    if (!cid) {
+      employeesCache = [];
+      periodsCache = {};
+      return;
+    }
+    const [emp, per] = await Promise.all([
+      supabase.from('payroll_employees').select('*').eq('company_id', cid).order('name'),
+      supabase.from('payroll_periods').select('*').eq('company_id', cid),
+    ]);
+    if (!emp.error) employeesCache = (emp.data || []).map(mapEmployee);
+    periodsCache = {};
+    (per.data || []).forEach((p) => {
+      periodsCache[`${p.year}-${String(p.month).padStart(2, '0')}`] = { closed: !!p.closed, rows: p.rows || {} };
+    });
   },
 
-  /**
-   * Migra (una sola vez) los datos antiguos con claves globales hacia las
-   * claves por empresa de la empresa activa. Evita perder la planilla previa.
-   */
-  migrateLegacy() {
-    const legacyEmp = localStorage.getItem('fica.payroll.employees');
-    if (legacyEmp && read(scopedKey(K_EMPLOYEES), null) === null) {
-      write(scopedKey(K_EMPLOYEES), JSON.parse(legacyEmp));
-      localStorage.removeItem('fica.payroll.employees');
-    }
-    const legacyPer = localStorage.getItem('fica.payroll.periods');
-    if (legacyPer && read(scopedKey(K_PERIODS), null) === null) {
-      write(scopedKey(K_PERIODS), JSON.parse(legacyPer));
-      localStorage.removeItem('fica.payroll.periods');
-    }
-  },
-  getAfpTable() {
-    this.ensureAfpTable();
-    return read(K_AFPTABLE, []);
-  },
-
-  /* --------------------------- Colaboradores --------------------------- */
   listEmployees() {
-    return readEmp([]).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return employeesCache.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   },
   getEmployee(id) {
-    return readEmp([]).find((e) => e.id === id) || null;
-  },
-  createEmployee(data) {
-    const list = readEmp([]);
-    const emp = {
-      id: uuid(),
-      code: String(data.code || '').trim(),
-      docType: data.docType || 'DNI',
-      docNumber: String(data.docNumber || '').trim(),
-      name: String(data.name || '').trim(),
-      startDate: data.startDate || '',
-      position: String(data.position || '').trim(),
-      baseSalary: num(data.baseSalary),
-      pensionType: data.pensionType === 'AFP' ? 'AFP' : 'ONP',
-      afp: data.pensionType === 'AFP' ? data.afp || 'HABITAT' : null,
-      cuspp: String(data.cuspp || '').trim(),
-      bankName: String(data.bankName || '').trim(),
-      bankAccount: String(data.bankAccount || '').trim(),
-      bankCci: String(data.bankCci || '').trim(),
-      contractType: data.contractType || 'indeterminado',
-      contractEnd: data.contractEnd || '',
-      asignacionFamiliar: !!data.asignacionFamiliar,
-      active: data.active !== false,
-      createdAt: new Date().toISOString(),
-    };
-    list.push(emp);
-    writeEmp( list);
-    return emp;
-  },
-  updateEmployee(id, patch) {
-    const list = readEmp([]);
-    const i = list.findIndex((e) => e.id === id);
-    if (i === -1) throw new Error('Colaborador no encontrado.');
-    list[i] = { ...list[i], ...patch, id };
-    writeEmp( list);
-    return list[i];
-  },
-  removeEmployee(id) {
-    writeEmp( readEmp([]).filter((e) => e.id !== id));
+    return employeesCache.find((e) => e.id === id) || null;
   },
 
-  /* ------------------------ Planillas por período ---------------------- */
+  async createEmployee(data) {
+    const { data: row, error } = await supabase.from('payroll_employees').insert(toEmployeeRow(data)).select().single();
+    if (error) throw new Error(error.message);
+    const emp = mapEmployee(row);
+    employeesCache.push(emp);
+    return emp;
+  },
+  async updateEmployee(id, patch) {
+    const current = this.getEmployee(id) || {};
+    const merged = { ...current, ...patch };
+    const { data: row, error } = await supabase.from('payroll_employees').update(toEmployeeRow(merged)).eq('id', id).select().single();
+    if (error) throw new Error(error.message);
+    const emp = mapEmployee(row);
+    const i = employeesCache.findIndex((e) => e.id === id);
+    if (i >= 0) employeesCache[i] = emp;
+    return emp;
+  },
+  async removeEmployee(id) {
+    const { error } = await supabase.from('payroll_employees').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    employeesCache = employeesCache.filter((e) => e.id !== id);
+  },
+
+  /* ------------------------------ Períodos ------------------------------ */
   periodKey(year, month) {
     return `${year}-${String(month).padStart(2, '0')}`;
   },
   getPeriodInputs(year, month) {
-    const periods = readPeriods({});
-    return periods[this.periodKey(year, month)] || { closed: false, rows: {} };
+    return periodsCache[this.periodKey(year, month)] || { closed: false, rows: {} };
   },
-  /** Devuelve todos los períodos guardados { 'YYYY-MM': { closed, rows } }. */
   listPeriods() {
-    return readPeriods({});
+    return periodsCache;
   },
-  /** ¿La planilla de un período está cerrada? */
   isPeriodClosed(year, month) {
     return !!this.getPeriodInputs(year, month).closed;
   },
-  /** Guarda las entradas editables de un período. */
-  savePeriodInputs(year, month, rows, closed = false) {
-    const periods = readPeriods({});
+  async savePeriodInputs(year, month, rows, closed = false) {
+    const cid = activeCompanyId();
     const key = this.periodKey(year, month);
-    periods[key] = { closed, rows };
-    writePeriods(periods);
+    periodsCache[key] = { closed, rows };
+    const { error } = await supabase
+      .from('payroll_periods')
+      .upsert({ company_id: cid, year, month, closed, rows, updated_at: new Date().toISOString() }, { onConflict: 'company_id,year,month' });
+    if (error) throw new Error(error.message);
   },
-  /** Marca la planilla del mes como cerrada. */
-  closePeriod(year, month, rows) {
-    this.savePeriodInputs(year, month, rows, true);
-  },
-  isClosed(year, month) {
-    return !!this.getPeriodInputs(year, month).closed;
+  async closePeriod(year, month, rows) {
+    await this.savePeriodInputs(year, month, rows, true);
   },
 };

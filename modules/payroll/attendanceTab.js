@@ -187,7 +187,7 @@ export function renderAttendanceTab(root) {
   root.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
   modal.addEventListener('cancel', (e) => { e.preventDefault(); modal.close(); });
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!employeeSel.value) { showToast('Selecciona un empleado.', 'error'); return; }
     const data = {
@@ -200,11 +200,15 @@ export function renderAttendanceTab(root) {
       type: typeI.value,
       withPay: withpayI.checked,
     };
-    if (editingId) attendanceService.update(editingId, data);
-    else attendanceService.create(data);
-    modal.close();
-    showToast('Registro guardado.');
-    render();
+    try {
+      if (editingId) await attendanceService.update(editingId, data);
+      else await attendanceService.create(data);
+      modal.close();
+      showToast('Registro guardado.');
+      render();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
   });
 
   tbody.addEventListener('click', async (e) => {
@@ -213,7 +217,10 @@ export function renderAttendanceTab(root) {
     if (ed) openEdit(ed.dataset.edit);
     if (del) {
       const ok = await confirmDialog({ title: 'Eliminar registro', message: '¿Eliminar este registro de asistencia?', confirmText: 'Eliminar', danger: true });
-      if (ok) { attendanceService.remove(del.dataset.del); showToast('Registro eliminado.'); render(); }
+      if (ok) {
+        try { await attendanceService.remove(del.dataset.del); showToast('Registro eliminado.'); } catch (err) { showToast(err.message, 'error'); }
+        render();
+      }
     }
   });
 

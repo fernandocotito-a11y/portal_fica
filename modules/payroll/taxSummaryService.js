@@ -1,38 +1,46 @@
 /* ============================================================================
    taxSummaryService.js — Liquidador tributario mensual de nómina
    ----------------------------------------------------------------------------
-   Consolida el mes para la declaración del PDT PLAME:
-     - A cargo del empleador: EsSalud (9%), Seguro Vida Ley / EPS.
-     - Retenido al trabajador (a pagar a SUNAT): Renta 5ta, ONP (13%).
-     - Aportes SPP (AFPnet): fondo obligatorio + comisión + prima por AFP.
-   Incluye fecha límite según el último dígito del RUC y estado de pago.
+   Consolida el mes para el PDT PLAME y guarda el ESTADO de pago por empresa.
    ========================================================================== */
 
-import { num, round2, storeRead, storeWrite } from './payrollUtils.js';
-import { getRmv, MESES } from './payrollConfig.js';
+import { supabase } from '../../js/supabase.js';
+import { num, round2 } from './payrollUtils.js';
+import { getRmv } from './payrollConfig.js';
 import { getAfpParams } from './payrollService.js';
-import { scopedKey } from './payrollScope.js';
+import { activeCompanyId } from './payrollScope.js';
 
-const K = 'taxState';
-const readS = (fb) => storeRead(scopedKey(K), fb);
-const writeS = (v) => storeWrite(scopedKey(K), v);
-
-/* Cronograma referencial SUNAT: día límite (mes siguiente) según último dígito del RUC.
-   Debe actualizarse con el cronograma oficial del año. */
+/* Cronograma referencial SUNAT: día límite (mes siguiente) según último dígito del RUC. */
 const RUC_DIGIT_DAY = { 0: 13, 1: 14, 2: 15, 3: 16, 4: 17, 5: 18, 6: 19, 7: 20, 8: 21, 9: 22 };
 
+let stateCache = {}; // 'YYYY-MM' -> state
+
 export const taxSummaryService = {
-  getState(year, month) {
-    const all = readS( {});
-    return all[`${year}-${String(month).padStart(2, '0')}`] || 'pendiente';
-  },
-  setState(year, month, state) {
-    const all = readS( {});
-    all[`${year}-${String(month).padStart(2, '0')}`] = state;
-    writeS( all);
+  async refresh() {
+    const cid = activeCompanyId();
+    if (!cid) {
+      stateCache = {};
+      return;
+    }
+    const { data } = await supabase.from('payroll_tax_state').select('*').eq('company_id', cid);
+    stateCache = {};
+    (data || []).forEach((r) => {
+      stateCache[`${r.year}-${String(r.month).padStart(2, '0')}`] = r.state;
+    });
   },
 
-  /** Fecha límite de pago (referencial) según el último dígito del RUC. */
+  getState(year, month) {
+    return stateCache[`${year}-${String(month).padStart(2, '0')}`] || 'pendiente';
+  },
+  async setState(year, month, state) {
+    const cid = activeCompanyId();
+    stateCache[`${year}-${String(month).padStart(2, '0')}`] = state;
+    const { error } = await supabase
+      .from('payroll_tax_state')
+      .upsert({ company_id: cid, year, month, state }, { onConflict: 'company_id,year,month' });
+    if (error) throw new Error(error.message);
+  },
+
   dueDate(ruc, year, month) {
     const last = String(ruc || '').replace(/\D/g, '').slice(-1);
     const day = RUC_DIGIT_DAY[last] ?? 15;
@@ -45,23 +53,14 @@ export const taxSummaryService = {
     return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   },
 
-  /**
-   * Resumen ejecutivo del período.
-   * @param {Array} rows [{ employee, calc }]
-   * @param {Object} period { year, month }
-   * @param {Object} company { name, ruc }
-   */
   buildSummary(rows, period, company) {
     const rmv = getRmv(period.year);
 
     const essalud = round2(rows.reduce((s, r) => s + num(r.calc.essalud), 0));
     const vidaLey = round2(rows.reduce((s, r) => s + num(r.calc.vidaLey), 0));
     const renta5ta = round2(rows.reduce((s, r) => s + num(r.calc.renta5ta), 0));
-    const onp = round2(
-      rows.filter((r) => r.employee.pensionType === 'ONP').reduce((s, r) => s + num(r.calc.pension), 0)
-    );
+    const onp = round2(rows.filter((r) => r.employee.pensionType === 'ONP').reduce((s, r) => s + num(r.calc.pension), 0));
 
-    // Desglose AFP por administradora
     const afpMap = {};
     rows
       .filter((r) => r.employee.pensionType === 'AFP')
@@ -81,7 +80,7 @@ export const taxSummaryService = {
 
     const totalEmpleador = round2(essalud + vidaLey);
     const totalTrabajadorSunat = round2(renta5ta + onp);
-    const totalSunat = round2(totalEmpleador + totalTrabajadorSunat); // EsSalud va a SUNAT (PLAME)
+    const totalSunat = round2(totalEmpleador + totalTrabajadorSunat);
 
     return {
       period,
