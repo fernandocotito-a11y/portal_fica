@@ -484,6 +484,9 @@ export default {
     const content = container.querySelector('[data-tab-content]');
     const tabsBar = container.querySelector('[data-tabs]');
 
+    // Migra datos previos (claves globales) a las claves por empresa.
+    payrollService.migrateLegacy();
+
     function show(key) {
       tabsBar.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === key));
       if (key === 'planilla') renderPlanillaTab(content);

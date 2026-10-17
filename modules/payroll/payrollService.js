@@ -179,6 +179,23 @@ export const payrollService = {
   ensureAfpTable() {
     if (!read(K_AFPTABLE, null)) write(K_AFPTABLE, buildAfpTable());
   },
+
+  /**
+   * Migra (una sola vez) los datos antiguos con claves globales hacia las
+   * claves por empresa de la empresa activa. Evita perder la planilla previa.
+   */
+  migrateLegacy() {
+    const legacyEmp = localStorage.getItem('fica.payroll.employees');
+    if (legacyEmp && read(scopedKey(K_EMPLOYEES), null) === null) {
+      write(scopedKey(K_EMPLOYEES), JSON.parse(legacyEmp));
+      localStorage.removeItem('fica.payroll.employees');
+    }
+    const legacyPer = localStorage.getItem('fica.payroll.periods');
+    if (legacyPer && read(scopedKey(K_PERIODS), null) === null) {
+      write(scopedKey(K_PERIODS), JSON.parse(legacyPer));
+      localStorage.removeItem('fica.payroll.periods');
+    }
+  },
   getAfpTable() {
     this.ensureAfpTable();
     return read(K_AFPTABLE, []);
