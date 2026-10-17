@@ -10,6 +10,7 @@ import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
 const Y = new Date().getFullYear();
 const YEARS = [Y - 2, Y - 1, Y, Y + 1];
 const AFPS = ['HABITAT', 'INTEGRA', 'PRIMA', 'PROFUTURO'];
+const SBS_URL = 'https://www.sbs.gob.pe/app/spp/empleadores/comisiones_spp/paginas/comision_prima.aspx';
 
 export function renderAfpTab(root) {
   const now = new Date();
@@ -26,7 +27,7 @@ export function renderAfpTab(root) {
         <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">
           <select class="form-input" data-year style="max-width:110px;">${YEARS.map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
           <select class="form-input" data-month style="max-width:150px;">${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select>
-          <button type="button" class="btn" data-import>${ICONS.arrowRight} Actualizar desde la SBS</button>
+          <button type="button" class="btn" data-open-sbs>${ICONS.arrowRight} Abrir la SBS</button>
           <button type="button" class="btn btn--primary" data-save>${ICONS.check} Guardar</button>
         </div>
       </div>
@@ -34,7 +35,7 @@ export function renderAfpTab(root) {
         <div class="form-group" style="margin-bottom:var(--space-4);">
           <label class="form-label">Pegar tabla de la SBS (método recomendado)</label>
           <textarea class="form-input" data-paste rows="3" placeholder="Abre la SBS en tu navegador → selecciona las 4 filas (HABITAT…PROFUTURO) → Ctrl+C → pega aquí (Ctrl+V)."></textarea>
-          <p class="form-hint">La SBS bloquea los accesos automáticos desde la nube (Incapsula), pero tu navegador sí entra. Copia y pega la tabla, y se llena sola.</p>
+          <p class="form-hint">1) Pulsa <strong>"Abrir la SBS"</strong> → 2) selecciona la tabla (elige el mes en la SBS si necesitas otro) → 3) Ctrl+C → 4) pega aquí abajo. Se llena sola.</p>
         </div>
         <div class="table-wrap">
           <table class="table" style="min-width:820px;">
@@ -136,28 +137,10 @@ export function renderAfpTab(root) {
     }
   });
 
-  root.querySelector('[data-import]').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    try {
-      const { period, rows } = await afpRatesService.fetchFromSBS();
-      let [y, m] = [year, month];
-      if (period) {
-        y = Number(period.split('-')[0]);
-        m = Number(period.split('-')[1]);
-      }
-      await afpRatesService.saveMonth(y, m, rows);
-      year = y;
-      month = m;
-      yearSel.value = String(y);
-      monthSel.value = String(m);
-      showToast(`Parámetros importados desde la SBS (${period || 'último mes'}).`);
-      render();
-    } catch (err) {
-      showToast('No se pudo importar: ' + err.message, 'error');
-    } finally {
-      btn.disabled = false;
-    }
+  // Abre la web de la SBS en una pestaña nueva para copiar la tabla
+  root.querySelector('[data-open-sbs]').addEventListener('click', () => {
+    window.open(SBS_URL, '_blank', 'noopener');
+    showToast('Selecciona la tabla en la SBS, copia (Ctrl+C) y pégala aquí.', 'info');
   });
 
   render();
