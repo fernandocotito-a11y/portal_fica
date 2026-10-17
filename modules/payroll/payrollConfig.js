@@ -146,6 +146,24 @@ export const BONUS_TYPES = [
   { value: 'extraordinaria', label: 'Bonificación extraordinaria (NO afecta)' },
 ];
 
+/* ---- Catálogo de conceptos de bonificación (la afectación viene incluida) ---- */
+export const BONUS_CONCEPTS = [
+  // Afectas (regulares)
+  { value: 'productividad', label: 'Bonificación por productividad', tipo: 'regular' },
+  { value: 'asistencia', label: 'Bonificación por asistencia', tipo: 'regular' },
+  { value: 'responsabilidad', label: 'Bonificación por responsabilidad', tipo: 'regular' },
+  { value: 'tiempo_servicio', label: 'Bonificación por tiempo de servicio', tipo: 'regular' },
+  { value: 'turno_nocturno', label: 'Bonificación por turno nocturno / guardia', tipo: 'regular' },
+  { value: 'comisiones', label: 'Comisiones', tipo: 'regular' },
+  // No afectas (extraordinarias) — Art. 19 del Reglamento de la LIR
+  { value: 'cumpleanos', label: 'Bonificación por cumpleaños', tipo: 'extraordinaria' },
+  { value: 'matrimonio', label: 'Asignación por matrimonio', tipo: 'extraordinaria' },
+  { value: 'nacimiento', label: 'Bonificación por nacimiento de hijo', tipo: 'extraordinaria' },
+  { value: 'escolaridad', label: 'Bonificación por escolaridad', tipo: 'extraordinaria' },
+  { value: 'fallecimiento', label: 'Bonificación por fallecimiento de familiar', tipo: 'extraordinaria' },
+  { value: 'otro', label: 'Otro concepto (escribir)', tipo: 'regular' },
+];
+
 /** Comisión mensual (sobre flujo) según el tipo de comisión del afiliado. */
 export function monthlyCommission(commissionType, afpParams) {
   return commissionType === 'mixta' ? 0 : num(afpParams.comisionFlujo);
