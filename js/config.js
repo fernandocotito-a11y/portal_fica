@@ -172,3 +172,14 @@ export function optionLabel(list, value) {
   const found = list.find((o) => o.value === value);
   return found ? found.label : value || '—';
 }
+
+/**
+ * Devuelve el hash de navegación de un módulo.
+ * Centraliza qué claves tienen vista propia y cuáles usan el placeholder.
+ */
+export function moduleHash(key) {
+  if (key === 'dashboard') return '#/dashboard';
+  if (key === 'users') return '#/users';
+  if (key === 'companies') return '#/companies';
+  return `#/module/${key}`;
+}

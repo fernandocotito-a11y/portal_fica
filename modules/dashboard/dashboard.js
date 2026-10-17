@@ -8,7 +8,7 @@
 
 import { authService } from '../../services/authService.js';
 import { companyService } from '../../services/companyService.js';
-import { STATUS_LABELS } from '../../js/config.js';
+import { STATUS_LABELS, moduleHash } from '../../js/config.js';
 import { ICONS, escapeHtml } from '../../js/utils.js';
 
 /** Mapea el estado de un módulo a la clase de su badge. */
@@ -54,7 +54,7 @@ export default {
 
     const cardsHtml = accessible
       .map((m) => {
-        const href = m.key === 'users' ? '#/users' : `#/module/${m.key}`;
+        const href = moduleHash(m.key);
         const status = m.status || 'soon';
         return `
           <a class="module-card" href="${href}">

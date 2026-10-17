@@ -8,7 +8,7 @@
    ========================================================================== */
 
 import { authService } from '../services/authService.js';
-import { APP, ROLE_LABELS } from './config.js';
+import { APP, ROLE_LABELS, moduleHash } from './config.js';
 import { ICONS, initials, escapeHtml } from './utils.js';
 
 const COLLAPSE_KEY = 'fica.sidebar.collapsed';
@@ -160,9 +160,7 @@ export function renderShell(user, { title = '', activeKey = 'dashboard' } = {}) 
     item.addEventListener('click', () => {
       const key = item.dataset.key;
       closeMobileMenu();
-      if (key === 'dashboard') window.location.hash = '#/dashboard';
-      else if (key === 'users') window.location.hash = '#/users';
-      else window.location.hash = `#/module/${key}`;
+      window.location.hash = moduleHash(key);
     });
   });
 
