@@ -1,9 +1,9 @@
 // ============================================================================
 // FICA Portal — Edge Function "smooth-task" (importa parámetros AFP desde la SBS)
 // ----------------------------------------------------------------------------
-// Consulta la web de la SBS del lado del servidor (evita CORS) y devuelve el
-// período + las 4 filas de AFP. Sigue redirecciones manualmente conservando
-// cookies para evitar bucles de redirección.
+// Consulta la web de la SBS (evita CORS) y devuelve el período + las 4 filas AFP.
+// Intenta seguir redirecciones automáticamente y, si falla, manualmente con
+// cookies. Ante un fallo devuelve un diagnóstico claro.
 // auth: 'user' -> solo usuarios autenticados del portal.
 // ============================================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -47,47 +47,66 @@ function parseSbs(html: string) {
   return rows;
 }
 
-/** Descarga la página de la SBS siguiendo redirecciones y conservando cookies. */
+const baseHeaders = {
+  "User-Agent": UA,
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "es-PE,es;q=0.9",
+};
+
 async function fetchSbsHtml() {
+  // Intento 1: seguir redirecciones automáticamente
+  try {
+    const res = await fetch(SBS_URL, { headers: baseHeaders });
+    const html = await res.text();
+    if (html.includes("JER_filaContenido")) {
+      return { html, status: res.status, finalUrl: res.url, mode: "auto" };
+    }
+  } catch (_e) {
+    /* continuar al intento 2 */
+  }
+
+  // Intento 2: redirecciones manuales conservando cookies
   let url = SBS_URL;
   let cookie = "";
-  for (let i = 0; i < 10; i++) {
+  let last = { html: "", status: 0, finalUrl: url, mode: "manual" };
+  for (let i = 0; i < 12; i++) {
     const res = await fetch(url, {
       redirect: "manual",
-      headers: {
-        "User-Agent": UA,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "es-PE,es;q=0.9",
-        ...(cookie ? { Cookie: cookie } : {}),
-      },
+      headers: { ...baseHeaders, ...(cookie ? { Cookie: cookie } : {}) },
     });
-
-    const setCookie = res.headers.get("set-cookie");
-    if (setCookie) {
-      const first = setCookie.split(";")[0];
+    const sc = res.headers.get("set-cookie");
+    if (sc) {
+      const first = sc.split(";")[0];
       cookie = cookie ? `${cookie}; ${first}` : first;
     }
-
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get("location");
-      if (!loc) return { html: await res.text(), status: res.status };
+      if (!loc) break;
       url = new URL(loc, url).toString();
       continue;
     }
-    return { html: await res.text(), status: res.status };
+    const html = await res.text();
+    last = { html, status: res.status, finalUrl: url, mode: "manual" };
+    if (html.includes("JER_filaContenido")) return last;
+    break;
   }
-  throw new Error("Demasiadas redirecciones al consultar la SBS.");
+  return last;
 }
 
 export default {
   fetch: withSupabase({ auth: "user" }, async () => {
     try {
-      const { html, status } = await fetchSbsHtml();
+      const { html, status, finalUrl, mode } = await fetchSbsHtml();
       const rows = parseSbs(html);
       const periodMatch = html.match(/id="lblMes1"[^>]*>\s*([\d]{4}-[\d]{2})/);
       if (rows.length === 0) {
         return Response.json(
-          { error: `La SBS respondió ${status}, pero no se pudo interpretar la tabla.` },
+          {
+            error:
+              `No se pudo leer la tabla. status=${status} modo=${mode} final=${finalUrl} ` +
+              `len=${html.length} JER=${html.includes("JER_filaContenido")} HABITAT=${html.includes("HABITAT")} ` +
+              `head=${html.slice(0, 160).replace(/\s+/g, " ")}`,
+          },
           { status: 502 }
         );
       }
