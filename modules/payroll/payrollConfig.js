@@ -47,14 +47,14 @@ export const RENTA_5TA = {
 
 /* ---- AFP: aporte obligatorio y Remuneración Máxima Asegurable (SBS) ---- */
 export const AFP_APORTE_OBLIGATORIO = 0.1; // 10%
-export const AFP_REM_MAX_ASEGURABLE = 10400; // S/ aprox. (editable)
+export const AFP_REM_MAX_ASEGURABLE = 12732.7; // S/ (actualizado vía SBS)
 
-/* ---- Comisiones y primas de seguro por AFP (referenciales) ---- */
+/* ---- Comisiones y primas de seguro por AFP (valores SBS vigentes) ---- */
 export const AFP_BASE = [
   { afp: 'HABITAT', comisionFlujo: 0.0147, comisionSaldo: 0.0125, primaSeguro: 0.0137 },
-  { afp: 'INTEGRA', comisionFlujo: 0.0155, comisionSaldo: 0.013, primaSeguro: 0.013 },
-  { afp: 'PRIMA', comisionFlujo: 0.016, comisionSaldo: 0.0125, primaSeguro: 0.0125 },
-  { afp: 'PROFUTURO', comisionFlujo: 0.0169, comisionSaldo: 0.012, primaSeguro: 0.012 },
+  { afp: 'INTEGRA', comisionFlujo: 0.0155, comisionSaldo: 0.0078, primaSeguro: 0.0137 },
+  { afp: 'PRIMA', comisionFlujo: 0.016, comisionSaldo: 0.0125, primaSeguro: 0.0137 },
+  { afp: 'PROFUTURO', comisionFlujo: 0.0169, comisionSaldo: 0.0068, primaSeguro: 0.0137 },
 ];
 
 /** Lista de AFPs disponibles. */

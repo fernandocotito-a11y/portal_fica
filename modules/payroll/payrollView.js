@@ -25,6 +25,8 @@ import { renderBenefitsTab } from './benefitsTab.js';
 import { renderLiquidationTab } from './liquidationTab.js';
 import { renderExportTab } from './exportTab.js';
 import { renderAuditTab } from './auditTab.js';
+import { renderAfpTab } from './afpTab.js';
+import { afpRatesService } from './afpRatesService.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
@@ -502,6 +504,7 @@ const TABS = [
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
   { key: 'export', label: 'Exportaciones y Reportes' },
   { key: 'audit', label: 'Auditoría y Cierre Contable' },
+  { key: 'afp', label: 'Parámetros AFP' },
 ];
 
 export default {
@@ -536,6 +539,7 @@ export default {
       else if (key === 'liquidation') renderLiquidationTab(content);
       else if (key === 'export') renderExportTab(content);
       else if (key === 'audit') renderAuditTab(content);
+      else if (key === 'afp') renderAfpTab(content);
     }
 
     tabsBar.addEventListener('click', (e) => {
@@ -555,6 +559,7 @@ export default {
           taxSummaryService.refresh(),
           bonusService.refresh(),
           paymentService.refresh(),
+          afpRatesService.refresh(),
         ]);
         vacationService.setEmployeeGetter((id) => payrollService.getEmployee(id));
       } catch (err) {

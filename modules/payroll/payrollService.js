@@ -10,6 +10,7 @@ import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
 import { taxService } from './taxService.js';
 import { activeCompanyId } from './payrollScope.js';
+import { afpRatesService } from './afpRatesService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv } from './payrollConfig.js';
 
 /* ------------------------------------------------------------ caché en memoria */
@@ -90,8 +91,17 @@ export function calcRenta5taMensual(annualRem, uit) {
 
 /** Parámetros AFP del período. */
 export function getAfpParams(year, month, afp) {
-  const base = AFP_BASE.find((a) => a.afp === afp) || AFP_BASE[0];
-  return { year, month, afp: base.afp, comisionFlujo: base.comisionFlujo, comisionSaldo: base.comisionSaldo, primaSeguro: base.primaSeguro, aporteObligatorio: 0.1, remMaxAsegurable: 10400 };
+  const r = afpRatesService.get(year, month, afp);
+  return {
+    year,
+    month,
+    afp: r.afp,
+    comisionFlujo: r.comisionFlujo,
+    comisionSaldo: r.comisionSaldo,
+    primaSeguro: r.primaSeguro,
+    aporteObligatorio: r.aporteObligatorio,
+    remMaxAsegurable: r.remMaxAsegurable,
+  };
 }
 
 /** Calcula una fila de planilla. */

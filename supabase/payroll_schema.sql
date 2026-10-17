@@ -200,3 +200,31 @@ create policy "payroll_payments_all" on public.payroll_payments
 
 create index if not exists idx_payroll_bonuses_company on public.payroll_bonuses(company_id);
 create index if not exists idx_payroll_payments_company on public.payroll_payments(company_id);
+
+-- ============================================================================
+-- PARÁMETROS AFP por mes (globales; los publica la SBS cada mes)
+-- ============================================================================
+create table if not exists public.afp_rates (
+  id uuid primary key default gen_random_uuid(),
+  year int not null,
+  month int not null,
+  afp text not null,
+  comision_flujo numeric not null default 0,
+  comision_saldo numeric not null default 0,
+  prima_seguro numeric not null default 0,
+  aporte_obligatorio numeric not null default 0.1,
+  rem_max_asegurable numeric not null default 12732.70,
+  updated_at timestamptz not null default now(),
+  unique (year, month, afp)
+);
+
+alter table public.afp_rates enable row level security;
+
+-- Lectura: cualquier usuario autenticado (son parámetros públicos)
+drop policy if exists "afp_rates_select" on public.afp_rates;
+create policy "afp_rates_select" on public.afp_rates for select using (auth.uid() is not null);
+
+-- Escritura: solo el superadministrador
+drop policy if exists "afp_rates_write" on public.afp_rates;
+create policy "afp_rates_write" on public.afp_rates
+  for all using (public.is_superadmin()) with check (public.is_superadmin());
