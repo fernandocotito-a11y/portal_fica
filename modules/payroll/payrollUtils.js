@@ -73,3 +73,49 @@ export function money(n) {
   const v = Number(n) || 0;
   return 'S/ ' + v.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+
+/** Monto en formato numérico plano (ej. 1234.56) para archivos planos. */
+export function amount2(n) {
+  return (Number(n) || 0).toFixed(2);
+}
+
+/** Rellena una cadena a una longitud fija (izquierda por defecto). */
+export function pad(str, len, ch = ' ') {
+  let s = String(str ?? '');
+  if (s.length > len) s = s.slice(0, len);
+  return s + ch.repeat(Math.max(0, len - s.length));
+}
+
+/** Limpia texto para archivos planos (quita acentos y caracteres especiales). */
+export function sanitizeText(str) {
+  return String(str ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9 .,\-/()]/g, '')
+    .trim();
+}
+
+/** Descarga un texto como archivo (Blob). */
+export function downloadText(filename, text, mime = 'text/plain') {
+  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Descarga un Blob ya construido. */
+export function downloadBlob(filename, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

@@ -196,6 +196,10 @@ export const payrollService = {
       baseSalary: num(data.baseSalary),
       pensionType: data.pensionType === 'AFP' ? 'AFP' : 'ONP',
       afp: data.pensionType === 'AFP' ? data.afp || 'HABITAT' : null,
+      cuspp: String(data.cuspp || '').trim(),
+      bankName: String(data.bankName || '').trim(),
+      bankAccount: String(data.bankAccount || '').trim(),
+      bankCci: String(data.bankCci || '').trim(),
       asignacionFamiliar: !!data.asignacionFamiliar,
       active: data.active !== false,
       createdAt: new Date().toISOString(),
@@ -223,6 +227,14 @@ export const payrollService = {
   getPeriodInputs(year, month) {
     const periods = read(K_PERIODS, {});
     return periods[this.periodKey(year, month)] || { closed: false, rows: {} };
+  },
+  /** Devuelve todos los períodos guardados { 'YYYY-MM': { closed, rows } }. */
+  listPeriods() {
+    return read(K_PERIODS, {});
+  },
+  /** ¿La planilla de un período está cerrada? */
+  isPeriodClosed(year, month) {
+    return !!this.getPeriodInputs(year, month).closed;
   },
   /** Guarda las entradas editables de un período. */
   savePeriodInputs(year, month, rows, closed = false) {

@@ -14,6 +14,7 @@ import { money } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
 import { renderBenefitsTab } from './benefitsTab.js';
 import { renderLiquidationTab } from './liquidationTab.js';
+import { renderExportTab } from './exportTab.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -114,6 +115,12 @@ function renderPlanillaTab(root) {
             <div class="form-group" style="margin:0;" data-afp-group><label class="form-label">AFP</label><select class="form-input" data-afp>${optionsHtml(AFP_LIST, 'HABITAT')}</select></div>
           </div>
           <div class="form-group"><label class="checkbox"><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Recibe asignación familiar (10% de la RMV)</span></label></div>
+          <div class="form-group" data-cuspp-group><label class="form-label">CUSPP (solo AFP)</label><input class="form-input" data-cuspp placeholder="Ej. 123456789012" /></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
+            <div class="form-group" style="margin:0;"><label class="form-label">Banco</label><input class="form-input" data-bank placeholder="Ej. BCP" /></div>
+            <div class="form-group" style="margin:0;"><label class="form-label">N° de cuenta</label><input class="form-input" data-bankacc placeholder="N° de cuenta" /></div>
+          </div>
+          <div class="form-group"><label class="form-label">CCI interbancario (20 dígitos)</label><input class="form-input" maxlength="20" inputmode="numeric" data-bankcci placeholder="CCI" /></div>
           <div class="form-group" data-active-group hidden style="margin-bottom:0;"><label class="checkbox"><input type="checkbox" data-active /><span class="checkbox__box">${ICONS.check}</span><span>Colaborador activo</span></label></div>
         </div>
         <div class="modal__footer">
@@ -151,6 +158,11 @@ function renderPlanillaTab(root) {
   const errName = root.querySelector('[data-error-name]');
   const errSalary = root.querySelector('[data-error-salary]');
   const errDoc = root.querySelector('[data-error-doc]');
+  const cusppI = root.querySelector('[data-cuspp]');
+  const cusppGroup = root.querySelector('[data-cuspp-group]');
+  const bankI = root.querySelector('[data-bank]');
+  const bankAccI = root.querySelector('[data-bankacc]');
+  const bankCciI = root.querySelector('[data-bankcci]');
 
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
@@ -274,7 +286,9 @@ function renderPlanillaTab(root) {
   }
 
   function updateAfpVisibility() {
-    afpGroup.hidden = pensionI.value !== 'AFP';
+    const isAfp = pensionI.value === 'AFP';
+    afpGroup.hidden = !isAfp;
+    cusppGroup.hidden = !isAfp;
   }
   function openCreate() {
     editingId = null;
@@ -287,6 +301,10 @@ function renderPlanillaTab(root) {
     docTypeI.value = 'DNI';
     activeGroup.hidden = true;
     activeI.checked = true;
+    cusppI.value = '';
+    bankI.value = '';
+    bankAccI.value = '';
+    bankCciI.value = '';
     updateAfpVisibility();
     modal.showModal();
     nameI.focus();
@@ -309,6 +327,10 @@ function renderPlanillaTab(root) {
     pensionI.value = emp.pensionType || 'ONP';
     afpI.value = emp.afp || 'HABITAT';
     asigI.checked = !!emp.asignacionFamiliar;
+    cusppI.value = emp.cuspp || '';
+    bankI.value = emp.bankName || '';
+    bankAccI.value = emp.bankAccount || '';
+    bankCciI.value = emp.bankCci || '';
     activeGroup.hidden = false;
     activeI.checked = emp.active !== false;
     updateAfpVisibility();
@@ -346,6 +368,10 @@ function renderPlanillaTab(root) {
       baseSalary: Number(salaryI.value),
       pensionType: pensionI.value,
       afp: pensionI.value === 'AFP' ? afpI.value : null,
+      cuspp: pensionI.value === 'AFP' ? cusppI.value.trim() : '',
+      bankName: bankI.value.trim(),
+      bankAccount: bankAccI.value.trim(),
+      bankCci: bankCciI.value.trim(),
       asignacionFamiliar: asigI.checked,
       active: activeGroup.hidden ? true : activeI.checked,
     };
@@ -406,6 +432,7 @@ const TABS = [
   { key: 'attendance', label: 'Asistencias y Tardanzas' },
   { key: 'benefits', label: 'CTS y Gratificaciones' },
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
+  { key: 'export', label: 'Exportaciones y Reportes' },
 ];
 
 export default {
@@ -435,6 +462,7 @@ export default {
       else if (key === 'attendance') renderAttendanceTab(content);
       else if (key === 'benefits') renderBenefitsTab(content);
       else if (key === 'liquidation') renderLiquidationTab(content);
+      else if (key === 'export') renderExportTab(content);
     }
 
     tabsBar.addEventListener('click', (e) => {
