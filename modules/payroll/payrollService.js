@@ -200,6 +200,8 @@ export const payrollService = {
       bankName: String(data.bankName || '').trim(),
       bankAccount: String(data.bankAccount || '').trim(),
       bankCci: String(data.bankCci || '').trim(),
+      contractType: data.contractType || 'indeterminado',
+      contractEnd: data.contractEnd || '',
       asignacionFamiliar: !!data.asignacionFamiliar,
       active: data.active !== false,
       createdAt: new Date().toISOString(),

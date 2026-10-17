@@ -15,6 +15,7 @@ import { renderAttendanceTab } from './attendanceTab.js';
 import { renderBenefitsTab } from './benefitsTab.js';
 import { renderLiquidationTab } from './liquidationTab.js';
 import { renderExportTab } from './exportTab.js';
+import { renderAuditTab } from './auditTab.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -117,6 +118,17 @@ function renderPlanillaTab(root) {
           <div class="form-group"><label class="checkbox"><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Recibe asignación familiar (10% de la RMV)</span></label></div>
           <div class="form-group" data-cuspp-group><label class="form-label">CUSPP (solo AFP)</label><input class="form-input" data-cuspp placeholder="Ej. 123456789012" /></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
+            <div class="form-group" style="margin:0;"><label class="form-label">Tipo de contrato</label>
+              <select class="form-input" data-contract>
+                <option value="indeterminado">Plazo indeterminado</option>
+                <option value="plazo_fijo">Plazo fijo</option>
+                <option value="part_time">Jornada parcial</option>
+                <option value="locacion">Locación de servicios</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;" data-contract-end-group><label class="form-label">Fin de contrato</label><input class="form-input" type="date" data-contractend /></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
             <div class="form-group" style="margin:0;"><label class="form-label">Banco</label><input class="form-input" data-bank placeholder="Ej. BCP" /></div>
             <div class="form-group" style="margin:0;"><label class="form-label">N° de cuenta</label><input class="form-input" data-bankacc placeholder="N° de cuenta" /></div>
           </div>
@@ -160,6 +172,9 @@ function renderPlanillaTab(root) {
   const errDoc = root.querySelector('[data-error-doc]');
   const cusppI = root.querySelector('[data-cuspp]');
   const cusppGroup = root.querySelector('[data-cuspp-group]');
+  const contractI = root.querySelector('[data-contract]');
+  const contractEndGroup = root.querySelector('[data-contract-end-group]');
+  const contractEndI = root.querySelector('[data-contractend]');
   const bankI = root.querySelector('[data-bank]');
   const bankAccI = root.querySelector('[data-bankacc]');
   const bankCciI = root.querySelector('[data-bankcci]');
@@ -290,6 +305,9 @@ function renderPlanillaTab(root) {
     afpGroup.hidden = !isAfp;
     cusppGroup.hidden = !isAfp;
   }
+  function updateContractVisibility() {
+    contractEndGroup.hidden = contractI.value !== 'plazo_fijo';
+  }
   function openCreate() {
     editingId = null;
     modalTitle.textContent = 'Nuevo colaborador';
@@ -305,6 +323,9 @@ function renderPlanillaTab(root) {
     bankI.value = '';
     bankAccI.value = '';
     bankCciI.value = '';
+    contractI.value = 'indeterminado';
+    contractEndI.value = '';
+    updateContractVisibility();
     updateAfpVisibility();
     modal.showModal();
     nameI.focus();
@@ -331,6 +352,9 @@ function renderPlanillaTab(root) {
     bankI.value = emp.bankName || '';
     bankAccI.value = emp.bankAccount || '';
     bankCciI.value = emp.bankCci || '';
+    contractI.value = emp.contractType || 'indeterminado';
+    contractEndI.value = emp.contractEnd || '';
+    updateContractVisibility();
     activeGroup.hidden = false;
     activeI.checked = emp.active !== false;
     updateAfpVisibility();
@@ -354,6 +378,7 @@ function renderPlanillaTab(root) {
   root.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
   modal.addEventListener('cancel', (e) => { e.preventDefault(); modal.close(); });
   pensionI.addEventListener('change', updateAfpVisibility);
+  contractI.addEventListener('change', updateContractVisibility);
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -372,6 +397,8 @@ function renderPlanillaTab(root) {
       bankName: bankI.value.trim(),
       bankAccount: bankAccI.value.trim(),
       bankCci: bankCciI.value.trim(),
+      contractType: contractI.value,
+      contractEnd: contractI.value === 'plazo_fijo' ? contractEndI.value : '',
       asignacionFamiliar: asigI.checked,
       active: activeGroup.hidden ? true : activeI.checked,
     };
@@ -433,6 +460,7 @@ const TABS = [
   { key: 'benefits', label: 'CTS y Gratificaciones' },
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
   { key: 'export', label: 'Exportaciones y Reportes' },
+  { key: 'audit', label: 'Auditoría y Cierre Contable' },
 ];
 
 export default {
@@ -463,6 +491,7 @@ export default {
       else if (key === 'benefits') renderBenefitsTab(content);
       else if (key === 'liquidation') renderLiquidationTab(content);
       else if (key === 'export') renderExportTab(content);
+      else if (key === 'audit') renderAuditTab(content);
     }
 
     tabsBar.addEventListener('click', (e) => {
