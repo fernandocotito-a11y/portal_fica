@@ -13,9 +13,24 @@ create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   ruc text not null unique,
+  tipo_contribuyente text not null default 'juridica',   -- 'natural' | 'juridica'
+  tipo_sociedad text,                                    -- SAC, SRL, EIRL, SA, SAA, SCS…
+  regimen_tributario text not null default 'RG',         -- NRUS | RER | RMT | RG
+  afectacion_igv text not null default 'general',        -- general | amazonia | igv_justo
+  agente_retencion boolean not null default false,
+  agente_percepcion boolean not null default false,
   active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+-- (Migración) añade las columnas nuevas a instalaciones ya existentes ---------
+alter table public.companies
+  add column if not exists tipo_contribuyente text not null default 'juridica',
+  add column if not exists tipo_sociedad text,
+  add column if not exists regimen_tributario text not null default 'RG',
+  add column if not exists afectacion_igv text not null default 'general',
+  add column if not exists agente_retencion boolean not null default false,
+  add column if not exists agente_percepcion boolean not null default false;
 
 -- 2) Tabla de perfiles (1:1 con auth.users) ---------------------------------
 create table if not exists public.profiles (

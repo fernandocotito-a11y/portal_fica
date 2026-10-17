@@ -1,11 +1,23 @@
 /* ============================================================================
    companies.js — Módulo de Gestión de Empresas (CRUD, Supabase)
    ----------------------------------------------------------------------------
-   Superadministrador: crea, edita, activa/desactiva y elimina empresas.
+   Superadministrador: crea, edita, activa/desactiva y elimina empresas, con
+   sus datos tributarios (tipo de contribuyente, régimen, IGV, agentes).
    ========================================================================== */
 
 import { companyService } from '../../services/companyService.js';
+import { COMPANY_OPTIONS, optionLabel } from '../../js/config.js';
 import { ICONS, initials, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
+
+/** Genera las <option> de un catálogo. */
+function optionsHtml(list, selected) {
+  return list
+    .map(
+      (o) =>
+        `<option value="${escapeHtml(o.value)}"${o.value === selected ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+    )
+    .join('');
+}
 
 export default {
   title: 'Gestión de Empresas',
@@ -18,7 +30,7 @@ export default {
       <div class="page-heading">
         <div>
           <h2 class="page-heading__title">Gestión de Empresas</h2>
-          <p class="page-heading__subtitle">Crea y administra las empresas que accederán al portal.</p>
+          <p class="page-heading__subtitle">Crea y administra las empresas y sus datos tributarios.</p>
         </div>
         <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Nueva empresa</button>
       </div>
@@ -38,6 +50,7 @@ export default {
                 <tr>
                   <th>Empresa</th>
                   <th>RUC</th>
+                  <th>Régimen</th>
                   <th>Estado</th>
                   <th style="text-align:right;">Acciones</th>
                 </tr>
@@ -56,15 +69,60 @@ export default {
           </div>
           <div class="modal__body">
             <div class="form-group">
-              <label class="form-label">Razón social <span class="req">*</span></label>
+              <label class="form-label">Razón social / Nombre comercial <span class="req">*</span></label>
               <input class="form-input" name="name" placeholder="Ej. Empresa Ejemplo S.A.C." data-name />
               <span class="field-error" data-error-name></span>
             </div>
+
             <div class="form-group">
               <label class="form-label">RUC <span class="req">*</span></label>
               <input class="form-input" name="ruc" inputmode="numeric" maxlength="11" placeholder="11 dígitos" data-ruc />
               <span class="field-error" data-error-ruc></span>
             </div>
+
+            <div class="form-group">
+              <label class="form-label">Tipo de contribuyente <span class="req">*</span></label>
+              <select class="form-input" data-tipo>
+                ${optionsHtml(COMPANY_OPTIONS.tipoContribuyente, 'juridica')}
+              </select>
+            </div>
+
+            <div class="form-group" data-sociedad-group>
+              <label class="form-label">Tipo de sociedad</label>
+              <select class="form-input" data-sociedad>
+                <option value="">— Selecciona —</option>
+                ${optionsHtml(COMPANY_OPTIONS.tipoSociedad, '')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Régimen tributario <span class="req">*</span></label>
+              <select class="form-input" data-regimen>
+                ${optionsHtml(COMPANY_OPTIONS.regimenTributario, 'RG')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Afectación IGV / IVA <span class="req">*</span></label>
+              <select class="form-input" data-igv>
+                ${optionsHtml(COMPANY_OPTIONS.afectacionIgv, 'general')}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Agente de Retención / Percepción (SUNAT)</label>
+              <label class="checkbox" style="margin-bottom: var(--space-2);">
+                <input type="checkbox" data-retencion />
+                <span class="checkbox__box">${ICONS.check}</span>
+                <span>Agente de Retención (3% IGV)</span>
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" data-percepcion />
+                <span class="checkbox__box">${ICONS.check}</span>
+                <span>Agente de Percepción</span>
+              </label>
+            </div>
+
             <div class="form-group" data-active-group hidden>
               <label class="checkbox">
                 <input type="checkbox" data-active />
@@ -90,17 +148,41 @@ export default {
     const submitBtn = container.querySelector('[data-submit]');
     const nameInput = container.querySelector('[data-name]');
     const rucInput = container.querySelector('[data-ruc]');
+    const tipoSelect = container.querySelector('[data-tipo]');
+    const sociedadGroup = container.querySelector('[data-sociedad-group]');
+    const sociedadSelect = container.querySelector('[data-sociedad]');
+    const regimenSelect = container.querySelector('[data-regimen]');
+    const igvSelect = container.querySelector('[data-igv]');
+    const retencionInput = container.querySelector('[data-retencion]');
+    const percepcionInput = container.querySelector('[data-percepcion]');
     const activeGroup = container.querySelector('[data-active-group]');
     const activeInput = container.querySelector('[data-active]');
     const nameError = container.querySelector('[data-error-name]');
     const rucError = container.querySelector('[data-error-ruc]');
 
+    /* --------------------------- Helpers ------------------------------- */
     function filteredCompanies() {
       const term = searchTerm.trim().toLowerCase();
       return companyService.list().filter((c) => {
         if (!term) return true;
         return c.name.toLowerCase().includes(term) || c.ruc.includes(term);
       });
+    }
+
+    function updateSociedadVisibility() {
+      sociedadGroup.hidden = tipoSelect.value !== 'juridica';
+    }
+
+    function regimenBadge(value) {
+      const label = optionLabel(COMPANY_OPTIONS.regimenTributario, value);
+      return `<span class="badge badge--gold" title="${escapeHtml(label)}">${escapeHtml(value)}</span>`;
+    }
+
+    function agentChips(c) {
+      const chips = [];
+      if (c.agente_retencion) chips.push('<span class="chip">Retención</span>');
+      if (c.agente_percepcion) chips.push('<span class="chip">Percepción</span>');
+      return chips.join('');
     }
 
     function renderTable() {
@@ -110,7 +192,7 @@ export default {
       if (companies.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="4">
+            <td colspan="5">
               <div class="empty-state">
                 <span class="empty-state__icon">${ICONS.building}</span>
                 <div class="empty-state__title">Sin resultados</div>
@@ -128,10 +210,17 @@ export default {
               <td>
                 <div class="table__cell-user">
                   <span class="table__avatar" style="background:linear-gradient(135deg,var(--color-gold),var(--color-gold-bright));">${escapeHtml(initials(c.name))}</span>
-                  <div><div class="table__name">${escapeHtml(c.name)}</div></div>
+                  <div>
+                    <div class="table__name">${escapeHtml(c.name)}</div>
+                    <div class="table__email">${escapeHtml(
+                      optionLabel(COMPANY_OPTIONS.tipoContribuyente, c.tipo_contribuyente) +
+                        (c.tipo_sociedad ? ' · ' + c.tipo_sociedad : '')
+                    )}</div>
+                  </div>
                 </div>
               </td>
               <td><code>${escapeHtml(c.ruc)}</code></td>
+              <td>${regimenBadge(c.regimen_tributario)} ${agentChips(c)}</td>
               <td>
                 <label class="switch" title="${c.active ? 'Desactivar' : 'Activar'}">
                   <input type="checkbox" data-toggle="${escapeHtml(c.id)}" ${c.active ? 'checked' : ''} />
@@ -168,23 +257,36 @@ export default {
       submitBtn.textContent = 'Crear empresa';
       form.reset();
       clearErrors();
+      tipoSelect.value = 'juridica';
+      regimenSelect.value = 'RG';
+      igvSelect.value = 'general';
+      retencionInput.checked = false;
+      percepcionInput.checked = false;
       activeGroup.hidden = true;
       activeInput.checked = true;
+      updateSociedadVisibility();
       modal.showModal();
       nameInput.focus();
     }
 
     function openEdit(id) {
-      const company = companyService.getById(id);
-      if (!company) return;
+      const c = companyService.getById(id);
+      if (!c) return;
       editingId = id;
       modalTitle.textContent = 'Editar empresa';
       submitBtn.textContent = 'Guardar cambios';
       clearErrors();
-      nameInput.value = company.name;
-      rucInput.value = company.ruc;
+      nameInput.value = c.name || '';
+      rucInput.value = c.ruc || '';
+      tipoSelect.value = c.tipo_contribuyente || 'juridica';
+      sociedadSelect.value = c.tipo_sociedad || '';
+      regimenSelect.value = c.regimen_tributario || 'RG';
+      igvSelect.value = c.afectacion_igv || 'general';
+      retencionInput.checked = !!c.agente_retencion;
+      percepcionInput.checked = !!c.agente_percepcion;
       activeGroup.hidden = false;
-      activeInput.checked = company.active;
+      activeInput.checked = c.active;
+      updateSociedadVisibility();
       modal.showModal();
       nameInput.focus();
     }
@@ -217,6 +319,7 @@ export default {
       return valid;
     }
 
+    /* ---------------------------- Eventos ------------------------------ */
     container.querySelector('[data-add]').addEventListener('click', openCreate);
     container.querySelector('[data-close]').addEventListener('click', closeModal);
     container.querySelector('[data-cancel]').addEventListener('click', closeModal);
@@ -225,14 +328,20 @@ export default {
       closeModal();
     });
 
+    // Auto-detección del tipo de contribuyente por el prefijo del RUC.
+    rucInput.addEventListener('input', () => {
+      rucInput.classList.remove('is-invalid');
+      rucError.textContent = '';
+      const v = rucInput.value.trim();
+      if (v.startsWith('10')) tipoSelect.value = 'natural';
+      else if (v.startsWith('20')) tipoSelect.value = 'juridica';
+      updateSociedadVisibility();
+    });
     nameInput.addEventListener('input', () => {
       nameInput.classList.remove('is-invalid');
       nameError.textContent = '';
     });
-    rucInput.addEventListener('input', () => {
-      rucInput.classList.remove('is-invalid');
-      rucError.textContent = '';
-    });
+    tipoSelect.addEventListener('change', updateSociedadVisibility);
 
     searchInput.addEventListener('input', () => {
       searchTerm = searchInput.value;
@@ -243,16 +352,24 @@ export default {
       e.preventDefault();
       if (!validate()) return;
 
-      const name = nameInput.value.trim();
-      const ruc = rucInput.value.trim();
+      const fields = {
+        name: nameInput.value.trim(),
+        ruc: rucInput.value.trim(),
+        tipo_contribuyente: tipoSelect.value,
+        tipo_sociedad: tipoSelect.value === 'juridica' ? sociedadSelect.value || null : null,
+        regimen_tributario: regimenSelect.value,
+        afectacion_igv: igvSelect.value,
+        agente_retencion: retencionInput.checked,
+        agente_percepcion: percepcionInput.checked,
+      };
       submitBtn.disabled = true;
 
       try {
         if (editingId) {
-          await companyService.update(editingId, { name, ruc, active: activeInput.checked });
+          await companyService.update(editingId, { ...fields, active: activeInput.checked });
           showToast('Empresa actualizada correctamente.');
         } else {
-          await companyService.create({ name, ruc });
+          await companyService.create(fields);
           showToast('Empresa creada correctamente.');
         }
         closeModal();

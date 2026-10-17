@@ -136,3 +136,39 @@ export function getModule(key) {
 export function assignableModules() {
   return MODULES.filter((m) => !m.adminOnly && m.key !== 'dashboard');
 }
+
+/* ---------------------------------------------------------------------------
+   Catálogos de datos tributarios de la empresa.
+   -------------------------------------------------------------------------- */
+export const COMPANY_OPTIONS = {
+  tipoContribuyente: [
+    { value: 'juridica', label: 'Persona Jurídica (RUC 20)' },
+    { value: 'natural', label: 'Persona Natural con Negocio (RUC 10)' },
+  ],
+  tipoSociedad: [
+    { value: 'SAC', label: 'S.A.C. — Sociedad Anónima Cerrada' },
+    { value: 'SRL', label: 'S.R.L. — Sociedad Comercial de Responsabilidad Limitada' },
+    { value: 'EIRL', label: 'E.I.R.L. — Empresa Individual de Responsabilidad Limitada' },
+    { value: 'SA', label: 'S.A. — Sociedad Anónima' },
+    { value: 'SAA', label: 'S.A.A. — Sociedad Anónima Abierta' },
+    { value: 'SCS', label: 'S.C.S. — Sociedad en Comandita Simple' },
+    { value: 'OTRO', label: 'Otra forma societaria' },
+  ],
+  regimenTributario: [
+    { value: 'NRUS', label: 'NRUS — Nuevo Régimen Único Simplificado' },
+    { value: 'RER', label: 'RER — Régimen Especial de Renta' },
+    { value: 'RMT', label: 'RMT — Régimen MYPE Tributario' },
+    { value: 'RG', label: 'RG — Régimen General' },
+  ],
+  afectacionIgv: [
+    { value: 'general', label: 'General (18%)' },
+    { value: 'amazonia', label: 'Amazonía / Exonerado' },
+    { value: 'igv_justo', label: 'IGV Justo (prórroga 90 días)' },
+  ],
+};
+
+/** Devuelve la etiqueta legible de una opción de catálogo. */
+export function optionLabel(list, value) {
+  const found = list.find((o) => o.value === value);
+  return found ? found.label : value || '—';
+}

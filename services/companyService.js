@@ -57,10 +57,20 @@ export const companyService = {
     return cache.find((c) => String(c.ruc).trim() === n) || null;
   },
 
-  async create({ name, ruc }) {
+  async create(fields) {
+    const payload = {
+      name: String(fields.name || '').trim(),
+      ruc: String(fields.ruc || '').trim(),
+      tipo_contribuyente: fields.tipo_contribuyente || 'juridica',
+      tipo_sociedad: fields.tipo_sociedad || null,
+      regimen_tributario: fields.regimen_tributario || 'RG',
+      afectacion_igv: fields.afectacion_igv || 'general',
+      agente_retencion: !!fields.agente_retencion,
+      agente_percepcion: !!fields.agente_percepcion,
+    };
     const { data, error } = await supabase
       .from('companies')
-      .insert({ name: String(name).trim(), ruc: String(ruc).trim() })
+      .insert(payload)
       .select()
       .single();
     if (error) throw new Error(mapError(error));
