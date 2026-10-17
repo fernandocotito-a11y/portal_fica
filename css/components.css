@@ -581,6 +581,68 @@ button.module-card:hover {
   gap: var(--space-2);
 }
 
+/* ---- Tabla de planilla (ancha y con celdas editables) ---- */
+.table--payroll {
+  min-width: 1720px;
+}
+.table--payroll .table__group th {
+  background: var(--color-cream-dark);
+  text-align: center;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.table--payroll th,
+.table--payroll td {
+  padding: var(--space-2) var(--space-3);
+  vertical-align: middle;
+}
+.table--payroll tfoot td {
+  background: var(--color-cream);
+  font-weight: 600;
+  border-top: 2px solid var(--color-border-strong);
+  white-space: nowrap;
+}
+.cell-num {
+  text-align: right;
+  white-space: nowrap;
+}
+.cell-strong {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.cell-neto {
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.cell-input {
+  width: 82px;
+  padding: 5px 8px;
+  font-size: var(--font-size-sm);
+  text-align: right;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.cell-input:focus {
+  outline: none;
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px var(--color-gold-soft);
+}
+.cell-input:disabled {
+  background: var(--color-cream);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+.cell-input::-webkit-outer-spin-button,
+.cell-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cell-input[type='number'] {
+  -moz-appearance: textfield;
+}
+
 /* ---- Chips de permisos ---- */
 .chip {
   display: inline-flex;

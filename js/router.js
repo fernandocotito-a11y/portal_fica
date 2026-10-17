@@ -59,6 +59,13 @@ const routes = [
     loader: () => import('../modules/companies/companies.js'),
   },
   {
+    pattern: /^\/payroll\/?$/,
+    guard: 'auth',
+    company: true,
+    permission: 'planillas',
+    loader: () => import('../modules/payroll/payrollView.js'),
+  },
+  {
     pattern: /^\/module\/([\w-]+)\/?$/,
     guard: 'auth',
     company: true,
@@ -155,6 +162,13 @@ async function handleRoute() {
   // Requisito de empresa seleccionada.
   if (route.company && !authService.activeCompany()) {
     window.location.hash = '#/select-company';
+    return;
+  }
+
+  // Requisito de permiso sobre un módulo concreto (p. ej. Planillas).
+  if (route.permission && !authService.can(route.permission)) {
+    showToast('No tienes permisos para acceder a ese módulo.', 'error');
+    window.location.hash = homeHash();
     return;
   }
 

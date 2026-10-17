@@ -69,7 +69,7 @@ export const MODULES = [
     name: 'Planillas',
     description: 'Control de planillas PLAME / T-Registro.',
     icon: ic('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2.5h6v3H9z"/><path d="M8.5 10h7M8.5 14h7M8.5 18h4"/>'),
-    status: 'config',
+    status: 'active',
     adminOnly: false,
     group: 'operations',
   },
@@ -181,5 +181,6 @@ export function moduleHash(key) {
   if (key === 'dashboard') return '#/dashboard';
   if (key === 'users') return '#/users';
   if (key === 'companies') return '#/companies';
+  if (key === 'planillas') return '#/payroll';
   return `#/module/${key}`;
 }
