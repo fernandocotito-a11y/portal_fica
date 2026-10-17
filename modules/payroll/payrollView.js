@@ -15,7 +15,7 @@ import { liquidationService } from './liquidationService.js';
 import { taxSummaryService } from './taxSummaryService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
-import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION, laborRules } from './payrollConfig.js';
+import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION, COMMISSION_TYPES, laborRules } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
 import { renderVacationTab } from './vacationTab.js';
@@ -128,6 +128,7 @@ function renderPlanillaTab(root) {
             <div class="form-group" style="margin:0;"><label class="form-label">Régimen de pensiones <span class="req">*</span></label><select class="form-input" data-pension>${optionsHtml(REGIMENES_PENSION, 'ONP')}</select></div>
             <div class="form-group" style="margin:0;" data-afp-group><label class="form-label">AFP</label><select class="form-input" data-afp>${optionsHtml(AFP_LIST, 'HABITAT')}</select></div>
           </div>
+          <div class="form-group" data-commission-group><label class="form-label">Tipo de comisión AFP</label><select class="form-input" data-commission>${optionsHtml(COMMISSION_TYPES, 'flujo')}</select></div>
           <div class="form-group"><label class="checkbox"><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Recibe asignación familiar (10% de la RMV)</span></label></div>
           <div class="form-group" data-cuspp-group><label class="form-label">CUSPP (solo AFP)</label><input class="form-input" data-cuspp placeholder="Ej. 123456789012" /></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
@@ -186,6 +187,8 @@ function renderPlanillaTab(root) {
   const errDoc = root.querySelector('[data-error-doc]');
   const cusppI = root.querySelector('[data-cuspp]');
   const cusppGroup = root.querySelector('[data-cuspp-group]');
+  const commissionI = root.querySelector('[data-commission]');
+  const commissionGroup = root.querySelector('[data-commission-group]');
   const contractI = root.querySelector('[data-contract]');
   const contractEndGroup = root.querySelector('[data-contract-end-group]');
   const contractEndI = root.querySelector('[data-contractend]');
@@ -334,6 +337,7 @@ function renderPlanillaTab(root) {
     const isAfp = pensionI.value === 'AFP';
     afpGroup.hidden = !isAfp;
     cusppGroup.hidden = !isAfp;
+    commissionGroup.hidden = !isAfp;
   }
   function updateContractVisibility() {
     contractEndGroup.hidden = contractI.value !== 'plazo_fijo';
@@ -350,6 +354,7 @@ function renderPlanillaTab(root) {
     activeGroup.hidden = true;
     activeI.checked = true;
     cusppI.value = '';
+    commissionI.value = 'flujo';
     bankI.value = '';
     bankAccI.value = '';
     bankCciI.value = '';
@@ -380,6 +385,7 @@ function renderPlanillaTab(root) {
     afpI.value = emp.afp || 'HABITAT';
     asigI.checked = !!emp.asignacionFamiliar;
     cusppI.value = emp.cuspp || '';
+    commissionI.value = emp.commissionType || 'flujo';
     bankI.value = emp.bankName || '';
     bankAccI.value = emp.bankAccount || '';
     bankCciI.value = emp.bankCci || '';
@@ -425,6 +431,7 @@ function renderPlanillaTab(root) {
       pensionType: pensionI.value,
       afp: pensionI.value === 'AFP' ? afpI.value : null,
       cuspp: pensionI.value === 'AFP' ? cusppI.value.trim() : '',
+      commissionType: pensionI.value === 'AFP' ? commissionI.value : '',
       bankName: bankI.value.trim(),
       bankAccount: bankAccI.value.trim(),
       bankCci: bankCciI.value.trim(),

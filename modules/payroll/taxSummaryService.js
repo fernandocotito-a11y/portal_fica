@@ -6,7 +6,7 @@
 
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
-import { getRmv } from './payrollConfig.js';
+import { getRmv, monthlyCommission } from './payrollConfig.js';
 import { getAfpParams } from './payrollService.js';
 import { activeCompanyId } from './payrollScope.js';
 
@@ -70,7 +70,7 @@ export const taxSummaryService = {
         const base = Math.min(num(calc.remAsegurable), num(params.remMaxAsegurable, num(calc.remAsegurable)));
         if (!afpMap[key]) afpMap[key] = { afp: key, fondo: 0, comision: 0, prima: 0, total: 0, afiliados: 0 };
         afpMap[key].fondo = round2(afpMap[key].fondo + base * params.aporteObligatorio);
-        afpMap[key].comision = round2(afpMap[key].comision + base * params.comisionFlujo);
+        afpMap[key].comision = round2(afpMap[key].comision + base * monthlyCommission(employee.commissionType, params));
         afpMap[key].prima = round2(afpMap[key].prima + base * params.primaSeguro);
         afpMap[key].total = round2(afpMap[key].fondo + afpMap[key].comision + afpMap[key].prima);
         afpMap[key].afiliados += 1;

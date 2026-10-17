@@ -11,7 +11,7 @@ import { num, round2 } from './payrollUtils.js';
 import { taxService } from './taxService.js';
 import { activeCompanyId } from './payrollScope.js';
 import { afpRatesService } from './afpRatesService.js';
-import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv } from './payrollConfig.js';
+import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission } from './payrollConfig.js';
 
 /* ------------------------------------------------------------ caché en memoria */
 let employeesCache = [];
@@ -29,6 +29,7 @@ function mapEmployee(r) {
     baseSalary: num(r.base_salary),
     pensionType: r.pension_type || 'ONP',
     afp: r.afp || null,
+    commissionType: r.commission_type || 'flujo',
     cuspp: r.cuspp || '',
     bankName: r.bank_name || '',
     bankAccount: r.bank_account || '',
@@ -54,6 +55,7 @@ function toEmployeeRow(d) {
     base_salary: num(d.baseSalary),
     pension_type: d.pensionType || 'ONP',
     afp: d.pensionType === 'AFP' ? d.afp || 'HABITAT' : null,
+    commission_type: d.pensionType === 'AFP' ? d.commissionType || 'flujo' : null,
     cuspp: d.pensionType === 'AFP' ? d.cuspp || null : null,
     bank_name: d.bankName || null,
     bank_account: d.bankAccount || null,
@@ -126,8 +128,9 @@ export function calcRow(emp, inputs = {}, year, month) {
   } else if (emp.pensionType === 'AFP') {
     const p = getAfpParams(year, month, emp.afp);
     const baseAfp = Math.min(remAsegurable, num(p.remMaxAsegurable, remAsegurable));
-    pension = round2(baseAfp * (p.aporteObligatorio + p.comisionFlujo + p.primaSeguro));
-    pensionLabel = `AFP ${emp.afp || ''}`.trim();
+    const comision = monthlyCommission(emp.commissionType, p);
+    pension = round2(baseAfp * (p.aporteObligatorio + comision + p.primaSeguro));
+    pensionLabel = `AFP ${emp.afp || ''} · ${emp.commissionType === 'mixta' ? 'mixta' : 'flujo'}`.trim();
   }
 
   const gratProyectada = round2((month <= 7 ? remAsegurable : 0) + remAsegurable);

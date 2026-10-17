@@ -72,6 +72,7 @@ export const attendanceService = {
   async update(id, patch) {
     const merged = { ...(this.getById(id) || {}), ...patch };
     const row = {
+      employee_id: merged.employeeId || null,
       date: merged.date || null,
       entry: merged.entry || null,
       exit_time: merged.exit || null,

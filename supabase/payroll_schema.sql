@@ -161,6 +161,10 @@ alter table public.companies
 alter table public.payroll_employees
   add column if not exists cese date;
 
+-- Tipo de comisión AFP del afiliado: 'flujo' | 'mixta'
+alter table public.payroll_employees
+  add column if not exists commission_type text default 'flujo';
+
 -- Bonificaciones / ingresos adicionales del mes
 create table if not exists public.payroll_bonuses (
   id uuid primary key default gen_random_uuid(),

@@ -133,3 +133,19 @@ export const LABOR_RULES = {
 export function laborRules(regimen) {
   return LABOR_RULES[regimen] || LABOR_RULES.general;
 }
+
+/* ---- Tipo de comisión AFP del afiliado ---- */
+export const COMMISSION_TYPES = [
+  { value: 'flujo', label: 'Comisión sobre flujo (se descuenta la comisión)' },
+  { value: 'mixta', label: 'Comisión mixta (flujo 0% — no se descuenta comisión)' },
+];
+
+/** Comisión mensual (sobre flujo) según el tipo de comisión del afiliado. */
+export function monthlyCommission(commissionType, afpParams) {
+  return commissionType === 'mixta' ? 0 : num(afpParams.comisionFlujo);
+}
+
+function num(v, def = 0) {
+  const n = parseFloat(v);
+  return Number.isFinite(n) ? n : def;
+}
