@@ -65,6 +65,7 @@ export const companyService = {
       tipo_sociedad: fields.tipo_sociedad || null,
       regimen_tributario: fields.regimen_tributario || 'RG',
       afectacion_igv: fields.afectacion_igv || 'general',
+      regimen_laboral: fields.regimen_laboral || 'general',
       agente_retencion: !!fields.agente_retencion,
       agente_percepcion: !!fields.agente_percepcion,
     };

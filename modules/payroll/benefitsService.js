@@ -33,10 +33,10 @@ export const benefitsService = {
    * Gratificación semestral.
    * @param {Object} opts { year, mesesCompletos (0-6), tipoBono ('ESSALUD'|'EPS') }
    */
-  calcGratificacion(emp, { year, mesesCompletos = 6, tipoBono = 'ESSALUD' } = {}) {
+  calcGratificacion(emp, { year, mesesCompletos = 6, tipoBono = 'ESSALUD', factor = 1 } = {}) {
     const base = this.gratificacionBase(emp, year);
     const meses = clamp(num(mesesCompletos, 6), 0, 6);
-    const monto = round2((base / 6) * meses);
+    const monto = round2((base / 6) * meses * num(factor, 1));
     const tasaBono = tipoBono === 'EPS' ? 0.0675 : 0.09;
     const bonificacion = round2(monto * tasaBono);
     return {
@@ -53,12 +53,13 @@ export const benefitsService = {
    * CTS semestral (mayo / noviembre).
    * @param {Object} opts { year, diasComputables (180), ultimaGratificacion }
    */
-  calcCts(emp, { year, diasComputables = 180, ultimaGratificacion = null } = {}) {
+  calcCts(emp, { year, diasComputables = 180, ultimaGratificacion = null, factor = 1, hasCts = true } = {}) {
     const asig = this.asignacionFamiliar(emp, year);
     const gratiRef = ultimaGratificacion == null ? round2(num(emp.baseSalary) + asig) : num(ultimaGratificacion);
     const sexto = round2(gratiRef / 6);
     const base = round2(num(emp.baseSalary) + asig + sexto);
-    const monto = round2((base / 360) * num(diasComputables, 180));
-    return { base, sexto, diasComputables, monto };
+    if (!hasCts) return { base, sexto, diasComputables: num(diasComputables, 180), monto: 0, hasCts: false };
+    const monto = round2((base / 360) * num(diasComputables, 180) * num(factor, 1));
+    return { base, sexto, diasComputables: num(diasComputables, 180), monto, hasCts: true };
   },
 };

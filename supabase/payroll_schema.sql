@@ -148,3 +148,55 @@ create index if not exists idx_payroll_employees_company on public.payroll_emplo
 create index if not exists idx_payroll_attendance_company on public.payroll_attendance(company_id);
 create index if not exists idx_payroll_vacations_company on public.payroll_vacations(company_id);
 create index if not exists idx_payroll_liquidations_company on public.payroll_liquidations(company_id);
+
+-- ============================================================================
+-- ADICIONES: régimen laboral (MYPE), cese, bonificaciones y pagos/adelantos
+-- ============================================================================
+
+-- Régimen laboral de la empresa: 'general' | 'microempresa' (Ley MYPE)
+alter table public.companies
+  add column if not exists regimen_laboral text not null default 'general';
+
+-- Fecha de cese del colaborador (fin de vínculo laboral)
+alter table public.payroll_employees
+  add column if not exists cese date;
+
+-- Bonificaciones / ingresos adicionales del mes
+create table if not exists public.payroll_bonuses (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  employee_id uuid not null references public.payroll_employees(id) on delete cascade,
+  year int not null,
+  month int not null,
+  concepto text,
+  monto numeric not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- Control de pagos: pagos de conceptos, adelantos y préstamos (descuentos)
+create table if not exists public.payroll_payments (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  employee_id uuid not null references public.payroll_employees(id) on delete cascade,
+  year int not null,
+  month int not null,
+  tipo text not null default 'adelanto',   -- 'pago_concepto' | 'adelanto' | 'prestamo'
+  concepto text,
+  monto numeric not null default 0,
+  comprobante text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.payroll_bonuses enable row level security;
+alter table public.payroll_payments enable row level security;
+
+drop policy if exists "payroll_bonuses_all" on public.payroll_bonuses;
+create policy "payroll_bonuses_all" on public.payroll_bonuses
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
+drop policy if exists "payroll_payments_all" on public.payroll_payments;
+create policy "payroll_payments_all" on public.payroll_payments
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
+create index if not exists idx_payroll_bonuses_company on public.payroll_bonuses(company_id);
+create index if not exists idx_payroll_payments_company on public.payroll_payments(company_id);

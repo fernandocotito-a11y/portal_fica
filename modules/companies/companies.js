@@ -6,7 +6,7 @@
    ========================================================================== */
 
 import { companyService } from '../../services/companyService.js';
-import { COMPANY_OPTIONS, optionLabel } from '../../js/config.js';
+import { COMPANY_OPTIONS, REGIMEN_LABORAL, optionLabel } from '../../js/config.js';
 import { ICONS, initials, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
 /** Genera las <option> de un catálogo. */
@@ -110,6 +110,14 @@ export default {
             </div>
 
             <div class="form-group">
+              <label class="form-label">Régimen laboral <span class="req">*</span></label>
+              <select class="form-input" data-labor>
+                ${optionsHtml(REGIMEN_LABORAL, 'general')}
+              </select>
+              <p class="form-hint">Afecta vacaciones, gratificaciones y CTS según la Ley MYPE.</p>
+            </div>
+
+            <div class="form-group">
               <label class="form-label">Agente de Retención / Percepción (SUNAT)</label>
               <label class="checkbox" style="margin-bottom: var(--space-2);">
                 <input type="checkbox" data-retencion />
@@ -153,6 +161,7 @@ export default {
     const sociedadSelect = container.querySelector('[data-sociedad]');
     const regimenSelect = container.querySelector('[data-regimen]');
     const igvSelect = container.querySelector('[data-igv]');
+    const laborSelect = container.querySelector('[data-labor]');
     const retencionInput = container.querySelector('[data-retencion]');
     const percepcionInput = container.querySelector('[data-percepcion]');
     const activeGroup = container.querySelector('[data-active-group]');
@@ -260,6 +269,7 @@ export default {
       tipoSelect.value = 'juridica';
       regimenSelect.value = 'RG';
       igvSelect.value = 'general';
+      laborSelect.value = 'general';
       retencionInput.checked = false;
       percepcionInput.checked = false;
       activeGroup.hidden = true;
@@ -282,6 +292,7 @@ export default {
       sociedadSelect.value = c.tipo_sociedad || '';
       regimenSelect.value = c.regimen_tributario || 'RG';
       igvSelect.value = c.afectacion_igv || 'general';
+      laborSelect.value = c.regimen_laboral || 'general';
       retencionInput.checked = !!c.agente_retencion;
       percepcionInput.checked = !!c.agente_percepcion;
       activeGroup.hidden = false;
@@ -359,6 +370,7 @@ export default {
         tipo_sociedad: tipoSelect.value === 'juridica' ? sociedadSelect.value || null : null,
         regimen_tributario: regimenSelect.value,
         afectacion_igv: igvSelect.value,
+        regimen_laboral: laborSelect.value,
         agente_retencion: retencionInput.checked,
         agente_percepcion: percepcionInput.checked,
       };

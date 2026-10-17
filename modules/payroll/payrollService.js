@@ -34,6 +34,7 @@ function mapEmployee(r) {
     bankCci: r.bank_cci || '',
     contractType: r.contract_type || 'indeterminado',
     contractEnd: r.contract_end || '',
+    cese: r.cese || '',
     asignacionFamiliar: !!r.asignacion_familiar,
     active: r.active !== false,
     createdAt: r.created_at,
@@ -58,6 +59,7 @@ function toEmployeeRow(d) {
     bank_cci: d.bankCci || null,
     contract_type: d.contractType || 'indeterminado',
     contract_end: d.contractType === 'plazo_fijo' ? d.contractEnd || null : null,
+    cese: d.cese || null,
     asignacion_familiar: !!d.asignacionFamiliar,
     active: d.active !== false,
   };
@@ -159,6 +161,22 @@ export function calcRow(emp, inputs = {}, year, month) {
     totalAportes,
     neto,
   };
+}
+
+/** Suma totales de un conjunto de filas. */
+/** ¿El colaborador está activo dentro del período (por fecha de inicio/cese)? */
+export function inPeriod(emp, year, month) {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  if (emp.startDate) {
+    const s = new Date(emp.startDate);
+    if (s > end) return false;
+  }
+  if (emp.cese) {
+    const c = new Date(emp.cese);
+    if (c < start) return false;
+  }
+  return true;
 }
 
 /** Suma totales de un conjunto de filas. */

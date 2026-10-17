@@ -4,7 +4,9 @@
 
 import { payrollService } from './payrollService.js';
 import { benefitsService, BENEFIT_BONOS } from './benefitsService.js';
+import { laborRules } from './payrollConfig.js';
 import { money, num } from './payrollUtils.js';
+import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml } from '../../js/utils.js';
 
 const Y = new Date().getFullYear();
@@ -15,13 +17,15 @@ export function renderBenefitsTab(root) {
   let mesesGrati = 6;
   let diasCts = 180;
   let tipoBono = 'ESSALUD';
+  const company = authService.activeCompany ? authService.activeCompany() : null;
+  const rules = laborRules(company && company.regimen_laboral);
 
   root.innerHTML = `
     <div class="card">
       <div class="card__header">
         <div>
           <h3 class="card__title">CTS y Gratificaciones</h3>
-          <p class="card__subtitle">Gratificación (jul/dic) y CTS (may/nov) por colaborador.</p>
+          <p class="card__subtitle">Régimen <strong>${escapeHtml(rules.label)}</strong> · beneficios ${Math.round(rules.benefitFactor * 100)}%${rules.hasCts ? '' : ' · sin CTS'}.</p>
         </div>
       </div>
       <div class="card__body">
@@ -71,8 +75,8 @@ export function renderBenefitsTab(root) {
     }
     tbody.innerHTML = emps
       .map((emp) => {
-        const g = benefitsService.calcGratificacion(emp, { year, mesesCompletos: mesesGrati, tipoBono });
-        const c = benefitsService.calcCts(emp, { year, diasComputables: diasCts });
+        const g = benefitsService.calcGratificacion(emp, { year, mesesCompletos: mesesGrati, tipoBono, factor: rules.benefitFactor });
+        const c = benefitsService.calcCts(emp, { year, diasComputables: diasCts, factor: rules.benefitFactor, hasCts: rules.hasCts });
         return `
           <tr>
             <td><div class="table__name">${escapeHtml(emp.name)}</div></td>

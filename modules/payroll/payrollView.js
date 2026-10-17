@@ -8,18 +8,24 @@
      4. Liquidaciones (LBS)        (liquidationTab)
    ========================================================================== */
 
-import { payrollService, calcRow, sumTotals } from './payrollService.js';
+import { payrollService, calcRow, sumTotals, inPeriod } from './payrollService.js';
 import { attendanceService } from './attendanceService.js';
 import { vacationService } from './vacationService.js';
 import { liquidationService } from './liquidationService.js';
 import { taxSummaryService } from './taxSummaryService.js';
-import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION } from './payrollConfig.js';
-import { money } from './payrollUtils.js';
+import { bonusService } from './bonusService.js';
+import { paymentService } from './paymentService.js';
+import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION, laborRules } from './payrollConfig.js';
+import { money, round2 } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
+import { renderVacationTab } from './vacationTab.js';
+import { renderBonusesTab } from './bonusesTab.js';
+import { renderPaymentsTab } from './paymentsTab.js';
 import { renderBenefitsTab } from './benefitsTab.js';
 import { renderLiquidationTab } from './liquidationTab.js';
 import { renderExportTab } from './exportTab.js';
 import { renderAuditTab } from './auditTab.js';
+import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -114,6 +120,7 @@ function renderPlanillaTab(root) {
             <div class="form-group" style="margin:0;"><label class="form-label">Fecha de inicio</label><input class="form-input" type="date" data-start /></div>
             <div class="form-group" style="margin:0;"><label class="form-label">Cargo</label><input class="form-input" data-position placeholder="Ej. Asistente contable" /></div>
           </div>
+          <div class="form-group"><label class="form-label">Fecha de cese (si aplica)</label><input class="form-input" type="date" data-cese /></div>
           <div class="form-group"><label class="form-label">Sueldo básico (S/) <span class="req">*</span></label><input class="form-input" type="number" min="0" step="0.01" data-salary placeholder="Ej. 1200.00" /><span class="field-error" data-error-salary></span></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
             <div class="form-group" style="margin:0;"><label class="form-label">Régimen de pensiones <span class="req">*</span></label><select class="form-input" data-pension>${optionsHtml(REGIMENES_PENSION, 'ONP')}</select></div>
@@ -163,6 +170,7 @@ function renderPlanillaTab(root) {
   const docNumI = root.querySelector('[data-docnum]');
   const nameI = root.querySelector('[data-name]');
   const startI = root.querySelector('[data-start]');
+  const ceseI = root.querySelector('[data-cese]');
   const positionI = root.querySelector('[data-position]');
   const salaryI = root.querySelector('[data-salary]');
   const pensionI = root.querySelector('[data-pension]');
@@ -186,12 +194,26 @@ function renderPlanillaTab(root) {
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
-  function computeAll() {
-    return employees().map((emp) => ({ emp, calc: calcRow(emp, inputs[emp.id] || {}, year, month) }));
+  function employeesForPeriod() {
+    return employees().filter((e) => inPeriod(e, year, month));
   }
-  function val(empId, field, def = 0) {
-    const r = inputs[empId] || {};
-    return r[field] !== undefined && r[field] !== '' ? r[field] : def;
+  /** Conceptos del mes derivados de los controles (asistencia, vacaciones, bonos, pagos). */
+  function deriveInputs(emp) {
+    const att = attendanceService.summarize(emp.id, year, month, emp.baseSalary);
+    const vacDays = vacationService.takenInMonth(emp.id, year, month);
+    const days = Math.min(30, Math.max(0, 30 - att.absentWithoutPay - vacDays));
+    const vacation = round2(vacDays * (emp.baseSalary / 30));
+    return {
+      days,
+      vacation,
+      bonuses: bonusService.sumFor(emp.id, year, month),
+      tardanzas: att.tardinessDiscount,
+      loans: paymentService.sumDeductionsFor(emp.id, year, month),
+      vidaLey: 0,
+    };
+  }
+  function computeAll() {
+    return employeesForPeriod().map((emp) => ({ emp, calc: calcRow(emp, deriveInputs(emp), year, month) }));
   }
 
   function fmtDate(iso) {
@@ -202,7 +224,6 @@ function renderPlanillaTab(root) {
   }
 
   function rowHtml(emp, calc) {
-    const dis = closed ? 'disabled' : '';
     return `
       <tr data-emp="${escapeHtml(emp.id)}">
         <td>${escapeHtml(emp.code) || '—'}</td>
@@ -210,19 +231,19 @@ function renderPlanillaTab(root) {
         <td><div class="table__name">${escapeHtml(emp.name)}</div></td>
         <td>${fmtDate(emp.startDate)}</td>
         <td>${escapeHtml(emp.position) || '—'}</td>
-        <td><input class="cell-input" type="number" min="0" max="30" data-input="days" value="${val(emp.id, 'days', 30)}" ${dis} /></td>
+        <td class="cell-num" data-cell="days">${calc.days}</td>
         <td class="cell-num" data-cell="basico">${money(calc.basico)}</td>
         <td class="cell-num" data-cell="asigFamiliar">${money(calc.asigFamiliar)}</td>
-        <td><input class="cell-input" type="number" min="0" step="0.01" data-input="vacation" value="${val(emp.id, 'vacation')}" ${dis} /></td>
-        <td><input class="cell-input" type="number" min="0" step="0.01" data-input="bonuses" value="${val(emp.id, 'bonuses')}" ${dis} /></td>
+        <td class="cell-num" data-cell="vacaciones">${money(calc.vacaciones)}</td>
+        <td class="cell-num" data-cell="bonificaciones">${money(calc.bonificaciones)}</td>
         <td class="cell-num cell-strong" data-cell="totalBruto">${money(calc.totalBruto)}</td>
         <td class="cell-num" data-cell="pension" title="${escapeHtml(calc.pensionLabel)}">${money(calc.pension)}</td>
         <td class="cell-num" data-cell="renta5ta">${money(calc.renta5ta)}</td>
-        <td><input class="cell-input" type="number" min="0" step="0.01" data-input="tardanzas" value="${val(emp.id, 'tardanzas')}" ${dis} /></td>
-        <td><input class="cell-input" type="number" min="0" step="0.01" data-input="loans" value="${val(emp.id, 'loans')}" ${dis} /></td>
+        <td class="cell-num" data-cell="tardanzas">${money(calc.tardanzas)}</td>
+        <td class="cell-num" data-cell="prestamos">${money(calc.prestamos)}</td>
         <td class="cell-num cell-strong" data-cell="totalRetenciones">${money(calc.totalRetenciones)}</td>
         <td class="cell-num" data-cell="essalud">${money(calc.essalud)}</td>
-        <td><input class="cell-input" type="number" min="0" step="0.01" data-input="vidaLey" value="${val(emp.id, 'vidaLey')}" ${dis} /></td>
+        <td class="cell-num" data-cell="vidaLey">${money(calc.vidaLey)}</td>
         <td class="cell-num" data-cell="totalAportes">${money(calc.totalAportes)}</td>
         <td class="cell-num cell-neto" data-cell="neto">${money(calc.neto)}</td>
         <td><div class="table__actions"><button type="button" class="icon-btn" data-edit="${escapeHtml(emp.id)}" title="Editar">${ICONS.edit}</button><button type="button" class="icon-btn icon-btn--danger" data-del="${escapeHtml(emp.id)}" title="Eliminar">${ICONS.trash}</button></div></td>
@@ -302,7 +323,6 @@ function renderPlanillaTab(root) {
   }
   function loadPeriod() {
     const p = payrollService.getPeriodInputs(year, month);
-    inputs = p.rows || {};
     closed = !!p.closed;
     applyClosedState();
     renderTable();
@@ -351,6 +371,7 @@ function renderPlanillaTab(root) {
     docNumI.value = emp.docNumber || '';
     nameI.value = emp.name || '';
     startI.value = emp.startDate || '';
+    ceseI.value = emp.cese || '';
     positionI.value = emp.position || '';
     salaryI.value = emp.baseSalary ?? '';
     pensionI.value = emp.pensionType || 'ONP';
@@ -407,6 +428,7 @@ function renderPlanillaTab(root) {
       bankCci: bankCciI.value.trim(),
       contractType: contractI.value,
       contractEnd: contractI.value === 'plazo_fijo' ? contractEndI.value : '',
+      cese: ceseI.value,
       asignacionFamiliar: asigI.checked,
       active: activeGroup.hidden ? true : activeI.checked,
     };
@@ -422,17 +444,8 @@ function renderPlanillaTab(root) {
     }
   });
 
-  tbody.addEventListener('input', (e) => {
-    const input = e.target.closest('[data-input]');
-    if (!input || closed) return;
-    const tr = input.closest('[data-emp]');
-    const emp = payrollService.getEmployee(tr.dataset.emp);
-    if (!emp) return;
-    inputs[emp.id] = { ...(inputs[emp.id] || {}), [input.dataset.input]: input.value };
-    recalcRow(tr, emp);
-    recalcAll();
-    persist();
-  });
+  // Nota: los conceptos de la planilla se calculan automáticamente desde los
+  // controles (asistencias, vacaciones, bonificaciones, pagos y adelantos).
 
   tbody.addEventListener('click', async (e) => {
     const editBtn = e.target.closest('[data-edit]');
@@ -462,7 +475,7 @@ function renderPlanillaTab(root) {
     const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.neto)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
     if (ok) {
       try {
-        await payrollService.closePeriod(year, month, inputs);
+        await payrollService.closePeriod(year, month, {});
         closed = true;
         applyClosedState();
         showToast('Planilla del mes cerrada.');
@@ -482,6 +495,9 @@ function renderPlanillaTab(root) {
 const TABS = [
   { key: 'planilla', label: 'Planilla Mensual' },
   { key: 'attendance', label: 'Asistencias y Tardanzas' },
+  { key: 'vacation', label: 'Vacaciones' },
+  { key: 'bonuses', label: 'Bonificaciones' },
+  { key: 'payments', label: 'Pagos y Adelantos' },
   { key: 'benefits', label: 'CTS y Gratificaciones' },
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
   { key: 'export', label: 'Exportaciones y Reportes' },
@@ -513,6 +529,9 @@ export default {
       tabsBar.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === key));
       if (key === 'planilla') renderPlanillaTab(content);
       else if (key === 'attendance') renderAttendanceTab(content);
+      else if (key === 'vacation') renderVacationTab(content);
+      else if (key === 'bonuses') renderBonusesTab(content);
+      else if (key === 'payments') renderPaymentsTab(content);
       else if (key === 'benefits') renderBenefitsTab(content);
       else if (key === 'liquidation') renderLiquidationTab(content);
       else if (key === 'export') renderExportTab(content);
@@ -534,7 +553,10 @@ export default {
           vacationService.refresh(),
           liquidationService.refresh(),
           taxSummaryService.refresh(),
+          bonusService.refresh(),
+          paymentService.refresh(),
         ]);
+        vacationService.setEmployeeGetter((id) => payrollService.getEmployee(id));
       } catch (err) {
         showToast('Error al cargar la planilla: ' + err.message, 'error');
       }

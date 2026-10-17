@@ -87,9 +87,32 @@ export const vacationService = {
   takenInPeriod(employeeId, period) {
     return round2(this.list(employeeId).filter((r) => r.period === period).reduce((s, r) => s + num(r.daysTaken), 0));
   },
-  balance(employeeId, period) {
+  balance(employeeId, period, baseDays = DIAS_LEGALES) {
     const taken = this.takenInPeriod(employeeId, period);
-    return { period, base: DIAS_LEGALES, taken, pending: round2(Math.max(0, DIAS_LEGALES - taken)) };
+    const base = num(baseDays, DIAS_LEGALES);
+    return { period, base, taken, pending: round2(Math.max(0, base - taken)) };
+  },
+
+  /** Acumulación de vacaciones por antigüedad (según baseDays del régimen). */
+  accrual(employeeId, baseDays = DIAS_LEGALES, today = new Date()) {
+    const emp = this._emp(employeeId);
+    if (!emp || !emp.startDate) {
+      const taken0 = round2(this.list(employeeId).reduce((s, r) => s + num(r.daysTaken), 0));
+      return { months: 0, accrued: 0, taken: taken0, pending: round2(Math.max(0, -taken0)), base: num(baseDays, DIAS_LEGALES) };
+    }
+    const start = new Date(emp.startDate);
+    const months = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth());
+    const accrued = round2((Math.max(0, months) / 12) * num(baseDays, DIAS_LEGALES));
+    const taken = round2(this.list(employeeId).reduce((s, r) => s + num(r.daysTaken), 0));
+    return { months, accrued, taken, pending: round2(Math.max(0, accrued - taken)), base: num(baseDays, DIAS_LEGALES) };
+  },
+
+  _emp(employeeId) {
+    // Evita dependencia circular: se inyecta desde el servicio de planilla.
+    return this._employeeGetter ? this._employeeGetter(employeeId) : null;
+  },
+  setEmployeeGetter(fn) {
+    this._employeeGetter = fn;
   },
   takenInMonth(employeeId, year, month) {
     return round2(

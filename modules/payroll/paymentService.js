@@ -1,0 +1,78 @@
+/* ============================================================================
+   paymentService.js — Control de pagos, adelantos y préstamos (Supabase)
+   ========================================================================== */
+
+import { supabase } from '../../js/supabase.js';
+import { num, round2 } from './payrollUtils.js';
+import { activeCompanyId } from './payrollScope.js';
+
+let cache = [];
+
+export const PAYMENT_TYPES = [
+  { value: 'pago_concepto', label: 'Pago de concepto remunerativo' },
+  { value: 'adelanto', label: 'Adelanto de remuneración' },
+  { value: 'prestamo', label: 'Préstamo (cuota)' },
+];
+
+function map(r) {
+  return {
+    id: r.id,
+    employeeId: r.employee_id,
+    year: r.year,
+    month: r.month,
+    tipo: r.tipo || 'adelanto',
+    concepto: r.concepto || '',
+    monto: num(r.monto),
+    comprobante: r.comprobante || '',
+  };
+}
+
+export const paymentService = {
+  async refresh() {
+    const cid = activeCompanyId();
+    if (!cid) {
+      cache = [];
+      return;
+    }
+    const { data } = await supabase.from('payroll_payments').select('*').eq('company_id', cid);
+    cache = (data || []).map(map);
+  },
+
+  list(employeeId = null) {
+    return employeeId ? cache.filter((p) => p.employeeId === employeeId) : cache.slice();
+  },
+  forMonth(employeeId, year, month) {
+    return cache.filter((p) => p.employeeId === employeeId && p.year === year && p.month === month);
+  },
+  /** Descuentos del mes (adelantos + cuotas de préstamo). */
+  sumDeductionsFor(employeeId, year, month) {
+    return round2(
+      this.forMonth(employeeId, year, month)
+        .filter((p) => p.tipo === 'adelanto' || p.tipo === 'prestamo')
+        .reduce((s, p) => s + num(p.monto), 0)
+    );
+  },
+
+  async create(data) {
+    const row = {
+      company_id: activeCompanyId(),
+      employee_id: data.employeeId,
+      year: data.year,
+      month: data.month,
+      tipo: data.tipo || 'adelanto',
+      concepto: data.concepto || null,
+      monto: num(data.monto),
+      comprobante: data.comprobante || null,
+    };
+    const { data: saved, error } = await supabase.from('payroll_payments').insert(row).select().single();
+    if (error) throw new Error(error.message);
+    const rec = map(saved);
+    cache.push(rec);
+    return rec;
+  },
+  async remove(id) {
+    const { error } = await supabase.from('payroll_payments').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    cache = cache.filter((p) => p.id !== id);
+  },
+};

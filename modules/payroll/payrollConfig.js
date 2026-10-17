@@ -113,3 +113,23 @@ export const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
+
+/* ---------------------------------------------------------------------------
+   Régimen laboral (Ley MYPE): afecta vacaciones, gratificaciones y CTS.
+   - general: 30 días de vacaciones, beneficios 100%, con CTS.
+   - microempresa: 15 días de vacaciones, beneficios 50%, SIN CTS.
+   -------------------------------------------------------------------------- */
+export const REGIMEN_LABORAL = [
+  { value: 'general', label: 'Régimen general (30 días vac., beneficios 100%, con CTS)' },
+  { value: 'microempresa', label: 'Microempresa / MYPE (15 días vac., beneficios 50%, sin CTS)' },
+];
+
+export const LABOR_RULES = {
+  general: { vacationDays: 30, benefitFactor: 1, hasCts: true, label: 'Régimen general' },
+  microempresa: { vacationDays: 15, benefitFactor: 0.5, hasCts: false, label: 'Microempresa' },
+};
+
+/** Reglas laborales según el régimen de la empresa. */
+export function laborRules(regimen) {
+  return LABOR_RULES[regimen] || LABOR_RULES.general;
+}
