@@ -2,7 +2,7 @@
    afpTab.js — Parámetros AFP por mes (SBS) con importación automática
    ========================================================================== */
 
-import { afpRatesService } from './afpRatesService.js';
+import { afpRatesService, parseSbsHtml } from './afpRatesService.js';
 import { MESES } from './payrollConfig.js';
 import { num } from './payrollUtils.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
@@ -31,6 +31,11 @@ export function renderAfpTab(root) {
         </div>
       </div>
       <div class="card__body">
+        <div class="form-group" style="margin-bottom:var(--space-4);">
+          <label class="form-label">Pegar tabla de la SBS (método recomendado)</label>
+          <textarea class="form-input" data-paste rows="3" placeholder="Abre la SBS en tu navegador → selecciona las 4 filas (HABITAT…PROFUTURO) → Ctrl+C → pega aquí (Ctrl+V)."></textarea>
+          <p class="form-hint">La SBS bloquea los accesos automáticos desde la nube (Incapsula), pero tu navegador sí entra. Copia y pega la tabla, y se llena sola.</p>
+        </div>
         <div class="table-wrap">
           <table class="table" style="min-width:820px;">
             <thead><tr>
@@ -90,6 +95,36 @@ export function renderAfpTab(root) {
 
   yearSel.addEventListener('change', () => { year = Number(yearSel.value); render(); });
   monthSel.addEventListener('change', () => { month = Number(monthSel.value); render(); });
+
+  // Pegado de la tabla copiada desde la SBS -> llena las filas automáticamente
+  const pasteArea = root.querySelector('[data-paste]');
+  function fillRows(rows) {
+    rows.forEach((r) => {
+      const tr = tbody.querySelector(`tr[data-afp="${r.afp}"]`);
+      if (!tr) return;
+      const set = (f, v, mul = 100) => { const el = tr.querySelector(`[data-field="${f}"]`); if (el) el.value = (num(v) * mul).toFixed(2); };
+      set('comisionFlujo', r.comisionFlujo);
+      set('comisionSaldo', r.comisionSaldo);
+      set('primaSeguro', r.primaSeguro);
+      set('aporteObligatorio', r.aporteObligatorio);
+      set('remMaxAsegurable', r.remMaxAsegurable, 1);
+    });
+  }
+  pasteArea.addEventListener('paste', (e) => {
+    const html = e.clipboardData ? e.clipboardData.getData('text/html') : '';
+    if (!html || !html.includes('<td')) {
+      showToast('Copia la tabla completa (no solo el texto) para reconocerla.', 'info');
+      return;
+    }
+    const rows = parseSbsHtml(html);
+    if (rows.length === 0) {
+      showToast('No se reconocieron los AFP. Asegúrate de copiar la tabla con los 4 AFP.', 'error');
+      return;
+    }
+    e.preventDefault();
+    fillRows(rows);
+    showToast('Datos de la SBS cargados. Revisa y pulsa Guardar.');
+  });
 
   root.querySelector('[data-save]').addEventListener('click', async () => {
     try {

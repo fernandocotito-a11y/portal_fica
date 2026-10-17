@@ -29,8 +29,8 @@ function numPe(s) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Parsea el HTML de la SBS y devuelve las 4 filas de AFP. */
-function parseSbs(html) {
+/** Parsea el HTML de la SBS (o el HTML copiado desde el navegador). */
+export function parseSbsHtml(html) {
   const rows = [];
   const chunks = String(html).split('JER_filaContenido');
   for (const chunk of chunks) {
