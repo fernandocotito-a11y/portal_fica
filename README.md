@@ -35,7 +35,9 @@ Abre **http://localhost:3000**.
 1. Crea un proyecto en **supabase.com** y copia **Project URL** y **anon key**
    (las dejo en `js/supabase.js`).
 2. En **SQL Editor**, ejecuta `supabase/schema.sql` (crea tablas, RLS, trigger y
-   empresa inicial). Si ya lo habías ejecutado, añade la columna `email`:
+   empresa inicial) y luego `supabase/payroll_schema.sql` (tablas del módulo de
+   **Planillas**, aisladas por empresa). Si ya habías ejecutado el primero, añade
+   la columna `email`:
 
    ```sql
    alter table public.profiles add column if not exists email text;
