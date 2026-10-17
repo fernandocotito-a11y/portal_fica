@@ -6,12 +6,12 @@
    tabla global `afp_rates` y se pueden importar desde la web de la SBS.
    ========================================================================== */
 
-import { supabase } from '../../js/supabase.js';
+import { supabase, SUPABASE_ANON_KEY } from '../../js/supabase.js';
 import { num } from './payrollUtils.js';
 import { AFP_BASE, AFP_REM_MAX_ASEGURABLE } from './payrollConfig.js';
 
 const AFPS = ['HABITAT', 'INTEGRA', 'PRIMA', 'PROFUTURO'];
-const SBS_URL = 'https://www.sbs.gob.pe/app/spp/empleadores/comisiones_spp/paginas/comision_prima.aspx';
+const SBS_FUNCTION_URL = 'https://kiogxgcrexgpgumfpgnq.supabase.co/functions/v1/sbs-rates';
 
 let cache = {}; // 'YYYY-MM' -> [ { afp, comisionFlujo, ... } ]
 
@@ -107,17 +107,25 @@ export const afpRatesService = {
   },
 
   /**
-   * Importa los parámetros vigentes desde la web de la SBS (usa un proxy CORS
-   * porque el navegador no puede llamar directo al sitio de la SBS).
+   * Importa los parámetros vigentes desde la web de la SBS a través de la Edge
+   * Function `sbs-rates` (que consulta la SBS del lado del servidor).
    */
   async fetchFromSBS() {
-    const proxy = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(SBS_URL);
-    const res = await fetch(proxy, { cache: 'no-store' });
-    if (!res.ok) throw new Error('No se pudo consultar la SBS (proxy).');
-    const html = await res.text();
-    const periodMatch = html.match(/id="lblMes1"[^>]*>\s*([\d]{4}-[\d]{2})/);
-    const rows = parseSbs(html);
-    if (rows.length === 0) throw new Error('No se pudieron leer los datos de la SBS.');
-    return { period: periodMatch ? periodMatch[1] : null, rows };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('No hay sesión activa.');
+    const res = await fetch(SBS_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({}),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.rows || json.rows.length === 0) {
+      throw new Error(json.error || 'No se pudo consultar la SBS (verifica la Edge Function "sbs-rates").');
+    }
+    return { period: json.period, rows: json.rows };
   },
 };
