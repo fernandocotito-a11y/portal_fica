@@ -172,10 +172,14 @@ create table if not exists public.payroll_bonuses (
   employee_id uuid not null references public.payroll_employees(id) on delete cascade,
   year int not null,
   month int not null,
+  tipo text not null default 'regular',   -- 'regular' (afecta) | 'extraordinaria' (no afecta)
   concepto text,
   monto numeric not null default 0,
   created_at timestamptz not null default now()
 );
+
+alter table public.payroll_bonuses
+  add column if not exists tipo text not null default 'regular';
 
 -- Control de pagos: pagos de conceptos, adelantos y préstamos (descuentos)
 create table if not exists public.payroll_payments (

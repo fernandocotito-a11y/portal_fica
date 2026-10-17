@@ -116,9 +116,12 @@ export function calcRow(emp, inputs = {}, year, month) {
   const asigFamiliar = emp.asignacionFamiliar ? round2(rmv * TASAS.asignacionFamiliar) : 0;
   const vacaciones = round2(num(inputs.vacation));
   const bonificaciones = round2(num(inputs.bonuses));
+  const bonifAfectas = round2(num(inputs.bonusesAfectas));
   const totalBruto = round2(basico + asigFamiliar + vacaciones + bonificaciones);
 
-  const remAsegurable = round2(basico + asigFamiliar);
+  // Base afecta (pensiones, EsSalud y Renta 5ta): básico + asig. familiar + vacaciones + bonif. REGULARES.
+  // La bonificación extraordinaria NO es afecta (no entra aquí).
+  const remAsegurable = round2(basico + asigFamiliar + vacaciones + bonifAfectas);
 
   let pension = 0;
   let pensionLabel = '—';

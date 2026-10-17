@@ -9,7 +9,7 @@ import { activeCompanyId } from './payrollScope.js';
 let cache = [];
 
 function map(r) {
-  return { id: r.id, employeeId: r.employee_id, year: r.year, month: r.month, concepto: r.concepto || '', monto: num(r.monto) };
+  return { id: r.id, employeeId: r.employee_id, year: r.year, month: r.month, tipo: r.tipo || 'regular', concepto: r.concepto || '', monto: num(r.monto) };
 }
 
 export const bonusService = {
@@ -29,8 +29,21 @@ export const bonusService = {
   forMonth(employeeId, year, month) {
     return cache.filter((b) => b.employeeId === employeeId && b.year === year && b.month === month);
   },
-  sumFor(employeeId, year, month) {
-    return round2(this.forMonth(employeeId, year, month).reduce((s, b) => s + num(b.monto), 0));
+  /** Suma de bonificaciones REGULARES (afectas a pensiones/EsSalud). */
+  sumRegular(employeeId, year, month) {
+    return round2(
+      this.forMonth(employeeId, year, month)
+        .filter((b) => b.tipo !== 'extraordinaria')
+        .reduce((s, b) => s + num(b.monto), 0)
+    );
+  },
+  /** Suma de bonificaciones EXTRAORDINARIAS (no afectas). */
+  sumExtraordinaria(employeeId, year, month) {
+    return round2(
+      this.forMonth(employeeId, year, month)
+        .filter((b) => b.tipo === 'extraordinaria')
+        .reduce((s, b) => s + num(b.monto), 0)
+    );
   },
 
   async create(data) {
@@ -39,6 +52,7 @@ export const bonusService = {
       employee_id: data.employeeId,
       year: data.year,
       month: data.month,
+      tipo: data.tipo || 'regular',
       concepto: data.concepto || null,
       monto: num(data.monto),
     };

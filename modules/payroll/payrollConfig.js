@@ -140,6 +140,12 @@ export const COMMISSION_TYPES = [
   { value: 'mixta', label: 'Comisión mixta (flujo 0% — no se descuenta comisión)' },
 ];
 
+/* ---- Tipo de bonificación (afectación a pensiones) ---- */
+export const BONUS_TYPES = [
+  { value: 'regular', label: 'Bonificación regular (AFECTA a pensiones/EsSalud)' },
+  { value: 'extraordinaria', label: 'Bonificación extraordinaria (NO afecta)' },
+];
+
 /** Comisión mensual (sobre flujo) según el tipo de comisión del afiliado. */
 export function monthlyCommission(commissionType, afpParams) {
   return commissionType === 'mixta' ? 0 : num(afpParams.comisionFlujo);

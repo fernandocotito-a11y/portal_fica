@@ -208,10 +208,13 @@ function renderPlanillaTab(root) {
     const vacDays = vacationService.takenInMonth(emp.id, year, month);
     const days = Math.min(30, Math.max(0, 30 - att.absentWithoutPay - vacDays));
     const vacation = round2(vacDays * (emp.baseSalary / 30));
+    const bonifAfectas = bonusService.sumRegular(emp.id, year, month);
+    const bonifExtra = bonusService.sumExtraordinaria(emp.id, year, month);
     return {
       days,
       vacation,
-      bonuses: bonusService.sumFor(emp.id, year, month),
+      bonuses: round2(bonifAfectas + bonifExtra),
+      bonusesAfectas: bonifAfectas,
       tardanzas: att.tardinessDiscount,
       loans: paymentService.sumDeductionsFor(emp.id, year, month),
       vidaLey: 0,
