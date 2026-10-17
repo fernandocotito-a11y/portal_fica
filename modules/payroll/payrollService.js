@@ -16,6 +16,7 @@ import {
   getRmv,
 } from './payrollConfig.js';
 import { taxService } from './taxService.js';
+import { scopedKey } from './payrollScope.js';
 
 /* ------------------------------------------------------------------ utils */
 function num(v, def = 0) {
@@ -34,9 +35,10 @@ function uuid() {
 }
 
 /* --------------------------------------------------------- localStorage */
-const K_EMPLOYEES = 'fica.payroll.employees';
-const K_AFPTABLE = 'fica.payroll.afpTable';
-const K_PERIODS = 'fica.payroll.periods';
+/* Claves base del módulo (se prefijan por EMPRESA vía scopedKey) */
+const K_EMPLOYEES = 'employees';
+const K_PERIODS = 'periods';
+const K_AFPTABLE = 'fica.payroll.afpTable'; // parámetros globales (SUNAT/SBS)
 
 function read(key, fallback) {
   try {
@@ -53,6 +55,12 @@ function write(key, val) {
     /* noop */
   }
 }
+
+/* Accesos por empresa (colaboradores y períodos) */
+const readEmp = (fb) => read(scopedKey(K_EMPLOYEES), fb);
+const writeEmp = (v) => write(scopedKey(K_EMPLOYEES), v);
+const readPeriods = (fb) => read(scopedKey(K_PERIODS), fb);
+const writePeriods = (v) => write(scopedKey(K_PERIODS), v);
 
 /* ================================================================ MOTOR === */
 
@@ -178,13 +186,13 @@ export const payrollService = {
 
   /* --------------------------- Colaboradores --------------------------- */
   listEmployees() {
-    return read(K_EMPLOYEES, []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    return readEmp([]).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   },
   getEmployee(id) {
-    return read(K_EMPLOYEES, []).find((e) => e.id === id) || null;
+    return readEmp([]).find((e) => e.id === id) || null;
   },
   createEmployee(data) {
-    const list = read(K_EMPLOYEES, []);
+    const list = readEmp([]);
     const emp = {
       id: uuid(),
       code: String(data.code || '').trim(),
@@ -207,19 +215,19 @@ export const payrollService = {
       createdAt: new Date().toISOString(),
     };
     list.push(emp);
-    write(K_EMPLOYEES, list);
+    writeEmp( list);
     return emp;
   },
   updateEmployee(id, patch) {
-    const list = read(K_EMPLOYEES, []);
+    const list = readEmp([]);
     const i = list.findIndex((e) => e.id === id);
     if (i === -1) throw new Error('Colaborador no encontrado.');
     list[i] = { ...list[i], ...patch, id };
-    write(K_EMPLOYEES, list);
+    writeEmp( list);
     return list[i];
   },
   removeEmployee(id) {
-    write(K_EMPLOYEES, read(K_EMPLOYEES, []).filter((e) => e.id !== id));
+    writeEmp( readEmp([]).filter((e) => e.id !== id));
   },
 
   /* ------------------------ Planillas por período ---------------------- */
@@ -227,12 +235,12 @@ export const payrollService = {
     return `${year}-${String(month).padStart(2, '0')}`;
   },
   getPeriodInputs(year, month) {
-    const periods = read(K_PERIODS, {});
+    const periods = readPeriods({});
     return periods[this.periodKey(year, month)] || { closed: false, rows: {} };
   },
   /** Devuelve todos los períodos guardados { 'YYYY-MM': { closed, rows } }. */
   listPeriods() {
-    return read(K_PERIODS, {});
+    return readPeriods({});
   },
   /** ¿La planilla de un período está cerrada? */
   isPeriodClosed(year, month) {
@@ -240,10 +248,10 @@ export const payrollService = {
   },
   /** Guarda las entradas editables de un período. */
   savePeriodInputs(year, month, rows, closed = false) {
-    const periods = read(K_PERIODS, {});
+    const periods = readPeriods({});
     const key = this.periodKey(year, month);
     periods[key] = { closed, rows };
-    write(K_PERIODS, periods);
+    writePeriods(periods);
   },
   /** Marca la planilla del mes como cerrada. */
   closePeriod(year, month, rows) {

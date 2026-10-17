@@ -8,8 +8,11 @@
    ========================================================================== */
 
 import { num, round2, uuid, storeRead, storeWrite, dateInMonth } from './payrollUtils.js';
+import { scopedKey } from './payrollScope.js';
 
-const K = 'fica.payroll.vacations';
+const K = 'vacations';
+const readS = (fb) => storeRead(scopedKey(K), fb);
+const writeS = (v) => storeWrite(scopedKey(K), v);
 const DIAS_LEGALES = 30;
 
 /** Período laboral correspondiente a una fecha (ej. '2025-2026'). */
@@ -19,12 +22,12 @@ export function periodOfYear(year) {
 
 export const vacationService = {
   list(employeeId = null) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     return employeeId ? all.filter((r) => r.employeeId === employeeId) : all.slice();
   },
 
   create(data) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     const rec = {
       id: uuid(),
       employeeId: data.employeeId,
@@ -36,21 +39,21 @@ export const vacationService = {
       note: String(data.note || '').trim(),
     };
     all.push(rec);
-    storeWrite(K, all);
+    writeS( all);
     return rec;
   },
 
   update(id, patch) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     const i = all.findIndex((r) => r.id === id);
     if (i === -1) throw new Error('Registro de vacaciones no encontrado.');
     all[i] = { ...all[i], ...patch, id };
-    storeWrite(K, all);
+    writeS( all);
     return all[i];
   },
 
   remove(id) {
-    storeWrite(K, storeRead(K, []).filter((r) => r.id !== id));
+    writeS( readS( []).filter((r) => r.id !== id));
   },
 
   /* ------------------------------- Cálculos ------------------------------ */

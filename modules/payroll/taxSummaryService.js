@@ -11,8 +11,11 @@
 import { num, round2, storeRead, storeWrite } from './payrollUtils.js';
 import { getRmv, MESES } from './payrollConfig.js';
 import { getAfpParams } from './payrollService.js';
+import { scopedKey } from './payrollScope.js';
 
-const K = 'fica.payroll.taxState';
+const K = 'taxState';
+const readS = (fb) => storeRead(scopedKey(K), fb);
+const writeS = (v) => storeWrite(scopedKey(K), v);
 
 /* Cronograma referencial SUNAT: día límite (mes siguiente) según último dígito del RUC.
    Debe actualizarse con el cronograma oficial del año. */
@@ -20,13 +23,13 @@ const RUC_DIGIT_DAY = { 0: 13, 1: 14, 2: 15, 3: 16, 4: 17, 5: 18, 6: 19, 7: 20, 
 
 export const taxSummaryService = {
   getState(year, month) {
-    const all = storeRead(K, {});
+    const all = readS( {});
     return all[`${year}-${String(month).padStart(2, '0')}`] || 'pendiente';
   },
   setState(year, month, state) {
-    const all = storeRead(K, {});
+    const all = readS( {});
     all[`${year}-${String(month).padStart(2, '0')}`] = state;
-    storeWrite(K, all);
+    writeS( all);
   },
 
   /** Fecha límite de pago (referencial) según el último dígito del RUC. */

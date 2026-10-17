@@ -11,8 +11,11 @@
 
 import { num, round2, uuid, storeRead, storeWrite } from './payrollUtils.js';
 import { getRmv, TASAS } from './payrollConfig.js';
+import { scopedKey } from './payrollScope.js';
 
-const K = 'fica.payroll.liquidations';
+const K = 'liquidations';
+const readS = (fb) => storeRead(scopedKey(K), fb);
+const writeS = (v) => storeWrite(scopedKey(K), v);
 
 export const MOTIVOS_CESE = [
   { value: 'renuncia', label: 'Renuncia voluntaria' },
@@ -24,19 +27,19 @@ export const MOTIVOS_CESE = [
 
 export const liquidationService = {
   list() {
-    return storeRead(K, []).slice().reverse();
+    return readS( []).slice().reverse();
   },
 
   save(liq) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     const rec = { id: uuid(), createdAt: new Date().toISOString(), ...liq };
     all.push(rec);
-    storeWrite(K, all);
+    writeS( all);
     return rec;
   },
 
   remove(id) {
-    storeWrite(K, storeRead(K, []).filter((r) => r.id !== id));
+    writeS( readS( []).filter((r) => r.id !== id));
   },
 
   /**

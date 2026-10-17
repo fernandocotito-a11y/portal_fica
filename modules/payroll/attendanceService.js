@@ -10,8 +10,11 @@
    ========================================================================== */
 
 import { num, round2, uuid, storeRead, storeWrite, dateInMonth } from './payrollUtils.js';
+import { scopedKey } from './payrollScope.js';
 
-const K = 'fica.payroll.attendance';
+const K = 'attendance';
+const readS = (fb) => storeRead(scopedKey(K), fb);
+const writeS = (v) => storeWrite(scopedKey(K), v);
 
 export const ATTENDANCE_TYPES = [
   { value: 'normal', label: 'Asistencia normal' },
@@ -23,18 +26,18 @@ export const ATTENDANCE_TYPES = [
 
 export const attendanceService = {
   list(employeeId = null) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     return (employeeId ? all.filter((r) => r.employeeId === employeeId) : all.slice()).sort(
       (a, b) => (a.date || '').localeCompare(b.date || '')
     );
   },
 
   getById(id) {
-    return storeRead(K, []).find((r) => r.id === id) || null;
+    return readS( []).find((r) => r.id === id) || null;
   },
 
   create(data) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     const rec = {
       id: uuid(),
       employeeId: data.employeeId,
@@ -48,21 +51,21 @@ export const attendanceService = {
       note: String(data.note || '').trim(),
     };
     all.push(rec);
-    storeWrite(K, all);
+    writeS( all);
     return rec;
   },
 
   update(id, patch) {
-    const all = storeRead(K, []);
+    const all = readS( []);
     const i = all.findIndex((r) => r.id === id);
     if (i === -1) throw new Error('Registro no encontrado.');
     all[i] = { ...all[i], ...patch, id };
-    storeWrite(K, all);
+    writeS( all);
     return all[i];
   },
 
   remove(id) {
-    storeWrite(K, storeRead(K, []).filter((r) => r.id !== id));
+    writeS( readS( []).filter((r) => r.id !== id));
   },
 
   /* ------------------------------- Cálculos ------------------------------ */
