@@ -16,6 +16,7 @@ export function renderVacationTab(root) {
   const company = authService.activeCompany ? authService.activeCompany() : null;
   const rules = laborRules(company && company.regimen_laboral);
   let year = new Date().getFullYear();
+  let editingId = null;
 
   root.innerHTML = `
     <div class="card">
@@ -33,6 +34,7 @@ export function renderVacationTab(root) {
           <div class="form-group" style="margin:0;min-width:140px;"><label class="form-label">Desde</label><input class="form-input" type="date" data-from /></div>
           <div class="form-group" style="margin:0;min-width:140px;"><label class="form-label">Hasta</label><input class="form-input" type="date" data-to /></div>
           <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Registrar</button>
+          <button type="button" class="btn" data-cancel hidden>Cancelar</button>
         </div>
         <div class="table-wrap">
           <table class="table" style="min-width:760px;">
@@ -62,6 +64,30 @@ export function renderVacationTab(root) {
   const toI = root.querySelector('[data-to]');
   const tbody = root.querySelector('[data-tbody]');
   const report = root.querySelector('[data-report]');
+  const addBtn = root.querySelector('[data-add]');
+  const cancelBtn = root.querySelector('[data-cancel]');
+
+  function resetForm() {
+    editingId = null;
+    addBtn.innerHTML = `${ICONS.plus} Registrar`;
+    cancelBtn.hidden = true;
+    daysI.value = '0';
+    fromI.value = '';
+    toI.value = '';
+  }
+
+  function startEdit(id) {
+    const r = vacationService.list().find((x) => x.id === id);
+    if (!r) return;
+    editingId = id;
+    addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
+    cancelBtn.hidden = false;
+    empSel.value = r.employeeId;
+    periodI.value = r.period || '';
+    daysI.value = r.daysTaken;
+    fromI.value = r.dateFrom || '';
+    toI.value = r.dateTo || '';
+  }
 
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
@@ -87,7 +113,7 @@ export function renderVacationTab(root) {
             <td class="cell-num">${r.daysTaken}</td>
             <td>${r.dateFrom ? fmtDate(r.dateFrom) : '—'}</td>
             <td>${r.dateTo ? fmtDate(r.dateTo) : '—'}</td>
-            <td><button class="icon-btn icon-btn--danger" data-del="${escapeHtml(r.id)}" title="Eliminar">${ICONS.trash}</button></td>
+            <td><div class="table__actions"><button class="icon-btn" data-edit="${escapeHtml(r.id)}" title="Editar">${ICONS.edit}</button><button class="icon-btn icon-btn--danger" data-del="${escapeHtml(r.id)}" title="Eliminar">${ICONS.trash}</button></div></td>
           </tr>`;
       })
       .join('');
@@ -120,21 +146,22 @@ export function renderVacationTab(root) {
     renderReport();
   }
 
+  cancelBtn.addEventListener('click', resetForm);
+
   root.querySelector('[data-add]').addEventListener('click', async () => {
     if (!empSel.value) { showToast('Selecciona un colaborador.', 'error'); return; }
+    const data = {
+      employeeId: empSel.value,
+      period: periodI.value.trim(),
+      daysTaken: num(daysI.value),
+      dateFrom: fromI.value,
+      dateTo: toI.value,
+      monthYear: (fromI.value || '').slice(0, 7),
+    };
     try {
-      await vacationService.create({
-        employeeId: empSel.value,
-        period: periodI.value.trim(),
-        daysTaken: num(daysI.value),
-        dateFrom: fromI.value,
-        dateTo: toI.value,
-        monthYear: (fromI.value || '').slice(0, 7),
-      });
-      showToast('Vacaciones registradas.');
-      daysI.value = '0';
-      fromI.value = '';
-      toI.value = '';
+      if (editingId) { await vacationService.update(editingId, data); showToast('Vacaciones actualizadas.'); }
+      else { await vacationService.create(data); showToast('Vacaciones registradas.'); }
+      resetForm();
       render();
     } catch (err) {
       showToast(err.message, 'error');
@@ -142,11 +169,13 @@ export function renderVacationTab(root) {
   });
 
   tbody.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('[data-edit]');
     const del = e.target.closest('[data-del]');
+    if (editBtn) { startEdit(editBtn.dataset.edit); return; }
     if (!del) return;
     const ok = await confirmDialog({ title: 'Eliminar vacaciones', message: '¿Eliminar este registro?', confirmText: 'Eliminar', danger: true });
     if (ok) {
-      try { await vacationService.remove(del.dataset.del); showToast('Registro eliminado.'); } catch (err) { showToast(err.message, 'error'); }
+      try { await vacationService.remove(del.dataset.del); showToast('Registro eliminado.'); if (editingId === del.dataset.del) resetForm(); } catch (err) { showToast(err.message, 'error'); }
       render();
     }
   });

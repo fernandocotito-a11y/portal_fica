@@ -62,6 +62,22 @@ export const bonusService = {
     cache.push(rec);
     return rec;
   },
+  async update(id, patch) {
+    const merged = { ...(cache.find((b) => b.id === id) || {}), ...patch };
+    const row = {
+      year: num(merged.year),
+      month: num(merged.month),
+      tipo: merged.tipo || 'regular',
+      concepto: merged.concepto || null,
+      monto: num(merged.monto),
+    };
+    const { data: saved, error } = await supabase.from('payroll_bonuses').update(row).eq('id', id).select().single();
+    if (error) throw new Error(error.message);
+    const rec = map(saved);
+    const i = cache.findIndex((b) => b.id === id);
+    if (i >= 0) cache[i] = rec;
+    return rec;
+  },
   async remove(id) {
     const { error } = await supabase.from('payroll_bonuses').delete().eq('id', id);
     if (error) throw new Error(error.message);

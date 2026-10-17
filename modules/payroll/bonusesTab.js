@@ -1,8 +1,5 @@
 /* ============================================================================
-   bonusesTab.js — Control de bonificaciones (con catálogo de conceptos)
-   ----------------------------------------------------------------------------
-   Eliges el CONCEPTO del catálogo y la AFECTACIÓN (regular/extraordinaria) se
-   pone sola. La regular afecta a pensiones/EsSalud; la extraordinaria no.
+   bonusesTab.js — Control de bonificaciones (agregar / EDITAR / eliminar)
    ========================================================================== */
 
 import { payrollService } from './payrollService.js';
@@ -15,6 +12,7 @@ export function renderBonusesTab(root) {
   const now = new Date();
   let year = now.getFullYear();
   let month = now.getMonth() + 1;
+  let editingId = null;
 
   root.innerHTML = `
     <div class="card">
@@ -34,10 +32,11 @@ export function renderBonusesTab(root) {
           <div class="form-group" style="margin:0;min-width:250px;"><label class="form-label">Afectación</label><select class="form-input" data-tipo>${BONUS_TYPES.map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
           <div class="form-group" style="margin:0;min-width:120px;"><label class="form-label">Monto (S/)</label><input class="form-input" type="number" min="0" step="0.01" value="0" data-monto /></div>
           <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Agregar</button>
+          <button type="button" class="btn" data-cancel hidden>Cancelar</button>
         </div>
         <div class="table-wrap">
-          <table class="table" style="min-width:820px;">
-            <thead><tr><th>Colaborador</th><th>Período</th><th>Tipo</th><th>Concepto</th><th style="text-align:right;">Monto</th><th></th></tr></thead>
+          <table class="table" style="min-width:880px;">
+            <thead><tr><th>Colaborador</th><th>Período</th><th>Tipo</th><th>Concepto</th><th style="text-align:right;">Monto</th><th>Acciones</th></tr></thead>
             <tbody data-tbody></tbody>
           </table>
         </div>
@@ -53,25 +52,56 @@ export function renderBonusesTab(root) {
   const tipoSel = root.querySelector('[data-tipo]');
   const montoI = root.querySelector('[data-monto]');
   const tbody = root.querySelector('[data-tbody]');
+  const addBtn = root.querySelector('[data-add]');
+  const cancelBtn = root.querySelector('[data-cancel]');
 
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
-
   function applyConcept() {
     const c = BONUS_CONCEPTS.find((x) => x.value === catSel.value);
-    if (catSel.value === 'otro') {
-      customGroup.hidden = false;
-    } else {
+    customGroup.hidden = catSel.value !== 'otro';
+    if (catSel.value !== 'otro') customI.value = '';
+    if (c) tipoSel.value = c.tipo;
+  }
+
+  function resetForm() {
+    editingId = null;
+    addBtn.textContent = `${ICONS.plus} Agregar`;
+    addBtn.innerHTML = `${ICONS.plus} Agregar`;
+    cancelBtn.hidden = true;
+    customI.value = '';
+    montoI.value = '0';
+    catSel.value = BONUS_CONCEPTS[0].value;
+    tipoSel.value = BONUS_CONCEPTS[0].tipo;
+    applyConcept();
+  }
+
+  function startEdit(id) {
+    const b = bonusService.list().find((x) => x.id === id);
+    if (!b) return;
+    editingId = id;
+    addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
+    cancelBtn.hidden = false;
+    empSel.value = b.employeeId;
+    yearI.value = b.year;
+    monthSel.value = String(b.month);
+    const c = BONUS_CONCEPTS.find((x) => x.label === b.concepto);
+    if (c) {
+      catSel.value = c.value;
       customGroup.hidden = true;
       customI.value = '';
+    } else {
+      catSel.value = 'otro';
+      customGroup.hidden = false;
+      customI.value = b.concepto || '';
     }
-    if (c) tipoSel.value = c.tipo;
+    tipoSel.value = b.tipo || 'regular';
+    montoI.value = b.monto;
   }
 
   function render() {
     empSel.innerHTML = employees().map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
-    applyConcept();
     const recs = bonusService.list();
     if (recs.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state" style="padding:var(--space-4);"><div class="empty-state__desc">Sin bonificaciones registradas.</div></div></td></tr>`;
@@ -87,25 +117,29 @@ export function renderBonusesTab(root) {
           <td>${escapeHtml(tipoLabel)}</td>
           <td>${escapeHtml(b.concepto || '—')}</td>
           <td class="cell-num">${money(b.monto)}</td>
-          <td><button class="icon-btn icon-btn--danger" data-del="${escapeHtml(b.id)}" title="Eliminar">${ICONS.trash}</button></td>
+          <td><div class="table__actions">
+            <button class="icon-btn" data-edit="${escapeHtml(b.id)}" title="Editar">${ICONS.edit}</button>
+            <button class="icon-btn icon-btn--danger" data-del="${escapeHtml(b.id)}" title="Eliminar">${ICONS.trash}</button>
+          </div></td>
         </tr>`;
       })
       .join('');
   }
 
   catSel.addEventListener('change', applyConcept);
+  cancelBtn.addEventListener('click', resetForm);
 
-  root.querySelector('[data-add]').addEventListener('click', async () => {
+  addBtn.addEventListener('click', async () => {
     if (!empSel.value) { showToast('Selecciona un colaborador.', 'error'); return; }
     if (num(montoI.value) <= 0) { showToast('Ingresa un monto válido.', 'error'); return; }
     const c = BONUS_CONCEPTS.find((x) => x.value === catSel.value);
     const concepto = catSel.value === 'otro' ? customI.value.trim() : (c ? c.label : '');
     if (!concepto) { showToast('Escribe el concepto.', 'error'); customI.focus(); return; }
+    const data = { employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto, monto: num(montoI.value) };
     try {
-      await bonusService.create({ employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto, monto: num(montoI.value) });
-      showToast('Bonificación agregada.');
-      customI.value = '';
-      montoI.value = '0';
+      if (editingId) { await bonusService.update(editingId, data); showToast('Bonificación actualizada.'); }
+      else { await bonusService.create(data); showToast('Bonificación agregada.'); }
+      resetForm();
       render();
     } catch (err) {
       showToast(err.message, 'error');
@@ -113,11 +147,18 @@ export function renderBonusesTab(root) {
   });
 
   tbody.addEventListener('click', async (e) => {
-    const del = e.target.closest('[data-del]');
-    if (!del) return;
-    const ok = await confirmDialog({ title: 'Eliminar bonificación', message: '¿Eliminar este registro?', confirmText: 'Eliminar', danger: true });
-    if (ok) { try { await bonusService.remove(del.dataset.del); showToast('Registro eliminado.'); } catch (err) { showToast(err.message, 'error'); } render(); }
+    const editBtn = e.target.closest('[data-edit]');
+    const delBtn = e.target.closest('[data-del]');
+    if (editBtn) { startEdit(editBtn.dataset.edit); return; }
+    if (delBtn) {
+      const ok = await confirmDialog({ title: 'Eliminar bonificación', message: '¿Eliminar este registro?', confirmText: 'Eliminar', danger: true });
+      if (ok) {
+        try { await bonusService.remove(delBtn.dataset.del); showToast('Registro eliminado.'); if (editingId === delBtn.dataset.del) resetForm(); } catch (err) { showToast(err.message, 'error'); }
+        render();
+      }
+    }
   });
 
   render();
+  resetForm();
 }

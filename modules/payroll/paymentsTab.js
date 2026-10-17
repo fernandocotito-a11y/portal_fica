@@ -1,5 +1,5 @@
 /* ============================================================================
-   paymentsTab.js — Control de pagos, adelantos y préstamos
+   paymentsTab.js — Control de pagos, adelantos y préstamos (agregar/EDITAR/eliminar)
    ========================================================================== */
 
 import { payrollService } from './payrollService.js';
@@ -12,6 +12,7 @@ export function renderPaymentsTab(root) {
   const now = new Date();
   let year = now.getFullYear();
   let month = now.getMonth() + 1;
+  let editingId = null;
 
   root.innerHTML = `
     <div class="card">
@@ -26,14 +27,15 @@ export function renderPaymentsTab(root) {
           <div class="form-group" style="margin:0;min-width:190px;"><label class="form-label">Colaborador</label><select class="form-input" data-emp></select></div>
           <div class="form-group" style="margin:0;min-width:100px;"><label class="form-label">Año</label><input class="form-input" type="number" value="${year}" data-year /></div>
           <div class="form-group" style="margin:0;min-width:130px;"><label class="form-label">Mes</label><select class="form-input" data-month>${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
-          <div class="form-group" style="margin:0;min-width:190px;"><label class="form-label">Tipo</label><select class="form-input" data-tipo>${PAYMENT_TYPES.map((t) => `<option value="${t.value}">${t.label}</option>`).join('')}</select></div>
+          <div class="form-group" style="margin:0;min-width:210px;"><label class="form-label">Tipo</label><select class="form-input" data-tipo>${PAYMENT_TYPES.map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
           <div class="form-group" style="margin:0;min-width:160px;"><label class="form-label">Concepto / voucher</label><input class="form-input" data-concepto placeholder="Ej. Voucher 0012" /></div>
           <div class="form-group" style="margin:0;min-width:110px;"><label class="form-label">Monto (S/)</label><input class="form-input" type="number" min="0" step="0.01" value="0" data-monto /></div>
           <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Registrar</button>
+          <button type="button" class="btn" data-cancel hidden>Cancelar</button>
         </div>
         <div class="table-wrap">
-          <table class="table" style="min-width:820px;">
-            <thead><tr><th>Colaborador</th><th>Período</th><th>Tipo</th><th>Concepto</th><th style="text-align:right;">Monto</th><th></th></tr></thead>
+          <table class="table" style="min-width:900px;">
+            <thead><tr><th>Colaborador</th><th>Período</th><th>Tipo</th><th>Concepto</th><th style="text-align:right;">Monto</th><th>Acciones</th></tr></thead>
             <tbody data-tbody></tbody>
           </table>
         </div>
@@ -47,10 +49,35 @@ export function renderPaymentsTab(root) {
   const conceptoI = root.querySelector('[data-concepto]');
   const montoI = root.querySelector('[data-monto]');
   const tbody = root.querySelector('[data-tbody]');
+  const addBtn = root.querySelector('[data-add]');
+  const cancelBtn = root.querySelector('[data-cancel]');
 
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
+
+  function resetForm() {
+    editingId = null;
+    addBtn.innerHTML = `${ICONS.plus} Registrar`;
+    cancelBtn.hidden = true;
+    conceptoI.value = '';
+    montoI.value = '0';
+  }
+
+  function startEdit(id) {
+    const p = paymentService.list().find((x) => x.id === id);
+    if (!p) return;
+    editingId = id;
+    addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
+    cancelBtn.hidden = false;
+    empSel.value = p.employeeId;
+    yearI.value = p.year;
+    monthSel.value = String(p.month);
+    tipoSel.value = p.tipo;
+    conceptoI.value = p.concepto || '';
+    montoI.value = p.monto;
+  }
+
   function render() {
     empSel.innerHTML = employees().map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
     const recs = paymentService.list();
@@ -68,20 +95,25 @@ export function renderPaymentsTab(root) {
           <td>${escapeHtml(tipoLabel)}</td>
           <td>${escapeHtml(p.concepto || '—')}</td>
           <td class="cell-num">${money(p.monto)}</td>
-          <td><button class="icon-btn icon-btn--danger" data-del="${escapeHtml(p.id)}" title="Eliminar">${ICONS.trash}</button></td>
+          <td><div class="table__actions">
+            <button class="icon-btn" data-edit="${escapeHtml(p.id)}" title="Editar">${ICONS.edit}</button>
+            <button class="icon-btn icon-btn--danger" data-del="${escapeHtml(p.id)}" title="Eliminar">${ICONS.trash}</button>
+          </div></td>
         </tr>`;
       })
       .join('');
   }
 
-  root.querySelector('[data-add]').addEventListener('click', async () => {
+  cancelBtn.addEventListener('click', resetForm);
+
+  addBtn.addEventListener('click', async () => {
     if (!empSel.value) { showToast('Selecciona un colaborador.', 'error'); return; }
     if (num(montoI.value) <= 0) { showToast('Ingresa un monto válido.', 'error'); return; }
+    const data = { employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto: conceptoI.value.trim(), monto: num(montoI.value) };
     try {
-      await paymentService.create({ employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto: conceptoI.value.trim(), monto: num(montoI.value) });
-      showToast('Pago registrado.');
-      conceptoI.value = '';
-      montoI.value = '0';
+      if (editingId) { await paymentService.update(editingId, data); showToast('Registro actualizado.'); }
+      else { await paymentService.create(data); showToast('Pago registrado.'); }
+      resetForm();
       render();
     } catch (err) {
       showToast(err.message, 'error');
@@ -89,11 +121,18 @@ export function renderPaymentsTab(root) {
   });
 
   tbody.addEventListener('click', async (e) => {
-    const del = e.target.closest('[data-del]');
-    if (!del) return;
-    const ok = await confirmDialog({ title: 'Eliminar registro', message: '¿Eliminar este registro?', confirmText: 'Eliminar', danger: true });
-    if (ok) { try { await paymentService.remove(del.dataset.del); showToast('Registro eliminado.'); } catch (err) { showToast(err.message, 'error'); } render(); }
+    const editBtn = e.target.closest('[data-edit]');
+    const delBtn = e.target.closest('[data-del]');
+    if (editBtn) { startEdit(editBtn.dataset.edit); return; }
+    if (delBtn) {
+      const ok = await confirmDialog({ title: 'Eliminar registro', message: '¿Eliminar este registro?', confirmText: 'Eliminar', danger: true });
+      if (ok) {
+        try { await paymentService.remove(delBtn.dataset.del); showToast('Registro eliminado.'); if (editingId === delBtn.dataset.del) resetForm(); } catch (err) { showToast(err.message, 'error'); }
+        render();
+      }
+    }
   });
 
   render();
+  resetForm();
 }
