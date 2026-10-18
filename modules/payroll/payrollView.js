@@ -101,6 +101,7 @@ function renderPlanillaTab(root) {
             <tfoot data-tfoot></tfoot>
           </table>
         </div>
+        <p class="text-muted" data-period-note style="font-size:var(--font-size-sm);margin-top:var(--space-3);"></p>
       </div>
     </div>
 
@@ -268,17 +269,29 @@ function renderPlanillaTab(root) {
   }
 
   function renderTable() {
+    const all = employees();
     const data = computeAll();
+    const periodNote = root.querySelector('[data-period-note]');
     if (data.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="21"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span><div class="empty-state__title">Sin colaboradores</div><div class="empty-state__desc">Agrega tu primer colaborador para generar la planilla.</div></div></td></tr>`;
+      const detalle = all.length > 0
+        ? `<div class="empty-state__title">Sin colaboradores en ${MESES[month - 1]} ${year}</div><div class="empty-state__desc">Hay ${all.length} colaborador(es) registrado(s), pero ninguno está activo en este período (fecha de inicio posterior o cese anterior). Cambia el mes/año para verlos.</div>`
+        : `<div class="empty-state__title">Sin colaboradores</div><div class="empty-state__desc">Agrega tu primer colaborador para generar la planilla.</div>`;
+      tbody.innerHTML = `<tr><td colspan="21"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span>${detalle}</div></td></tr>`;
       tfoot.innerHTML = '';
       summaryEl.textContent = '';
+      if (periodNote) periodNote.textContent = '';
       return;
     }
     tbody.innerHTML = data.map(({ emp, calc }) => rowHtml(emp, calc)).join('');
     const totals = sumTotals(data.map((d) => d.calc));
     tfoot.innerHTML = footHtml(totals, data.length);
     summaryEl.textContent = `Neto total a pagar: ${money(totals.neto)}`;
+    if (periodNote) {
+      const ocultos = all.length - data.length;
+      periodNote.textContent = ocultos > 0
+        ? `Mostrando ${data.length} colaborador(es) activo(s) en ${MESES[month - 1]} ${year}. ${ocultos} oculto(s) por fecha de inicio/cese fuera del período.`
+        : '';
+    }
   }
 
   function setCell(tr, field, value) {
