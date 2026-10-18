@@ -6,7 +6,7 @@
    usando el MISMO motor (payrollService.calcRow + taxService) de la planilla.
    ========================================================================== */
 
-import { payrollService } from './payrollService.js';
+import { payrollService, calcRow } from './payrollService.js';
 import { taxService } from './taxService.js';
 import { paramsService } from './paramsService.js';
 import { MESES, TASAS, getRmv } from './payrollConfig.js';
@@ -70,7 +70,7 @@ export function renderRentaSimTab(root) {
     const schedule = [];
     let totalRetenido = 0;
     for (let m = 1; m <= 12; m++) {
-      const row = payrollService.calcRow(emp, payrollService.deriveMonthInputs(emp, year, m), year, m);
+      const row = calcRow(emp, payrollService.deriveMonthInputs(emp, year, m), year, m);
       schedule.push({ m, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta });
       totalRetenido = round2(totalRetenido + row.renta5ta);
     }
