@@ -5,7 +5,7 @@
    abonado), préstamos/adelantos, vacaciones y asistencias.
    ========================================================================== */
 
-import { payrollService, calcRow } from './payrollService.js';
+import { payrollService, calcRow, inPeriod } from './payrollService.js';
 import { vacationService } from './vacationService.js';
 import { attendanceService } from './attendanceService.js';
 import { num, round2 } from './payrollUtils.js';
@@ -29,6 +29,10 @@ export const accountStatementService = {
     for (let m = 1; m <= 12; m++) {
       const key = `${year}-${String(m).padStart(2, '0')}`;
       const p = periods[key];
+      if (!inPeriod(employee, year, m)) {
+        months.push({ month: m, name: MESES[m - 1], abierto: false, bruto: 0, retenciones: 0, neto: 0, abonado: 0 });
+        continue;
+      }
       const calc = calcRow(employee, payrollService.deriveMonthInputs(employee, year, m), year, m);
       const abonado = p ? calc.neto : 0;
       months.push({

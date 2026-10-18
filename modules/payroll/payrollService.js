@@ -111,7 +111,7 @@ export function getAfpParams(year, month, afp) {
 }
 
 /** Cálculo interno de una fila (con las acumuladas del año ya resueltas). */
-function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0) {
+function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gratAcum = 0) {
   const uit = getUit(year);
   const rmv = getRmv(year);
 
@@ -140,15 +140,20 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0) {
     pensionLabel = `AFP ${emp.afp || ''} · ${emp.commissionType === 'mixta' ? 'mixta' : 'flujo'}`.trim();
   }
 
-  const gratProyectada = round2((month <= 7 ? remAsegurable : 0) + remAsegurable);
+  // Gratificaciones del año (julio + diciembre) sobre la remuneración computable.
+  // La de julio, si ya se pagó, entra como acumulado; el resto se proyecta.
+  // Así la Renta Bruta Anual proyectada es consistente todos los meses.
+  const gratBase = round2(num(inputs.gratificacion, remAsegurable));
+  const gratProyectada = round2(gratBase * (month <= 7 ? 2 : 1));
+  const gratTotal = round2(gratAcum + gratProyectada);
   const renta5ta = taxService
     .retencionMensual({
       remuneracionMensual: remAsegurable,
-      remuneracionesAcumuladas: remAcum, // percibido en meses anteriores del año
+      remuneracionesAcumuladas: round2(remAcum + gratAcum), // percibido en meses anteriores
       mes: month,
       year,
       gratificacionesProyectadas: gratProyectada,
-      bonifExtraordinaria: round2(gratProyectada * TASAS.essalud),
+      bonifExtraordinaria: round2(gratTotal * TASAS.essalud),
       retencionesAcumuladas: retAcum, // regularización: retenido en meses anteriores
     })
     .retencionMes;
@@ -211,11 +216,14 @@ export function deriveMonthInputs(emp, year, month) {
   const vacation = round2(vacDays * (emp.baseSalary / 30));
   const bAfectas = bonusService.sumRegular(emp.id, year, month);
   const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
+  const basico = round2(num(emp.baseSalary) * (days / 30));
+  const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year) * TASAS.asignacionFamiliar) : 0;
   return {
     days,
     vacation,
     bonuses: round2(bAfectas + bExtra),
     bonusesAfectas: bAfectas,
+    gratificacion: round2(basico + asigFamiliar), // remuneración computable (julio/diciembre)
     tardanzas: att.tardinessDiscount,
     loans: paymentService.sumDeductionsFor(emp.id, year, month),
     vidaLey: 0,
@@ -229,12 +237,16 @@ export function deriveMonthInputs(emp, year, month) {
 function yearContext(emp, year, month) {
   let retAcum = 0;
   let remAcum = 0;
+  let gratAcum = 0;
   for (let mm = 1; mm < month; mm++) {
-    const row = computeRow(emp, deriveMonthInputs(emp, year, mm), year, mm, retAcum, remAcum);
+    if (!inPeriod(emp, year, mm)) continue;
+    const inputs = deriveMonthInputs(emp, year, mm);
+    const row = computeRow(emp, inputs, year, mm, retAcum, remAcum, gratAcum);
     retAcum = round2(retAcum + row.renta5ta);
     remAcum = round2(remAcum + row.remAsegurable);
+    if (mm === 7) gratAcum = round2(gratAcum + num(inputs.gratificacion)); // gratificación de julio ya pagada
   }
-  return { retAcum, remAcum };
+  return { retAcum, remAcum, gratAcum };
 }
 
 /**
@@ -242,8 +254,8 @@ function yearContext(emp, year, month) {
  * retenciones ya efectuadas en los meses anteriores del mismo ejercicio.
  */
 export function calcRow(emp, inputs = {}, year, month) {
-  const { retAcum, remAcum } = yearContext(emp, year, month);
-  return computeRow(emp, inputs, year, month, retAcum, remAcum);
+  const { retAcum, remAcum, gratAcum } = yearContext(emp, year, month);
+  return computeRow(emp, inputs, year, month, retAcum, remAcum, gratAcum);
 }
 
 /** Suma totales de un conjunto de filas. */
