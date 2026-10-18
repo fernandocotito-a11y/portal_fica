@@ -1,9 +1,11 @@
 /* ============================================================================
-   rentaSimTab.js — Simulador de Renta de 5ª Categoría
+   rentaSimTab.js — Simulador / Verificador de Renta de 5ª Categoría
    ----------------------------------------------------------------------------
-   Permite verificar el cálculo de la planilla: con un sueldo, muestra el
-   desglose del impuesto anual (escala por tramos) y la retención mes a mes,
-   usando el MISMO motor (payrollService.calcRow + taxService) de la planilla.
+   Dos modos:
+   - Manual: escribes un sueldo y ves el desglose del impuesto anual.
+   - Colaborador: eliges a un trabajador de la planilla y verificas SU Renta 5ª
+     (usa sus datos reales: sueldo, asignación familiar, bonos, asistencias).
+   Ambos usan el MISMO motor de la Planilla Mensual (calcRow + taxService).
    ========================================================================== */
 
 import { payrollService, calcRow } from './payrollService.js';
@@ -24,7 +26,7 @@ export function renderRentaSimTab(root) {
     <div class="page-heading" style="padding-bottom:0;">
       <div>
         <h3 class="card__title" style="margin:0;">Simulador de Renta de 5ª Categoría</h3>
-        <p class="card__subtitle" style="margin:0;">Verifica el cálculo: usa el mismo motor que la Planilla Mensual.</p>
+        <p class="card__subtitle" style="margin:0;">Verifica el cálculo: mismo motor que la Planilla Mensual. Se actualiza solo.</p>
       </div>
     </div>
 
@@ -35,12 +37,13 @@ export function renderRentaSimTab(root) {
             <select class="form-input" data-year style="max-width:110px;"></select></div>
           <div class="form-group" style="margin:0;"><label class="form-label">Mes</label>
             <select class="form-input" data-month style="max-width:160px;">${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
-          <div class="form-group" style="margin:0;"><label class="form-label">Sueldo mensual (S/)</label>
+          <div class="form-group" style="margin:0;"><label class="form-label">Verificar colaborador (opcional)</label>
+            <select class="form-input" data-empleado style="min-width:230px;"><option value="">— Sueldo manual —</option></select></div>
+          <div class="form-group" style="margin:0;" data-manual><label class="form-label">Sueldo mensual (S/)</label>
             <input class="form-input" type="number" min="0" step="0.01" data-sueldo value="${sueldo}" style="max-width:150px;" /></div>
-          <label class="checkbox" style="margin:0 0 6px;"><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Asignación familiar (10% RMV)</span></label>
-          <button type="button" class="btn btn--primary" data-calc style="margin-bottom:6px;">${ICONS.check} Calcular</button>
+          <label class="checkbox" style="margin:0 0 6px;" data-manual><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Asignación familiar (10% RMV)</span></label>
         </div>
-        <p class="form-hint" style="margin-top:var(--space-2);">El cálculo se actualiza solo al escribir; también puedes pulsar <strong>Calcular</strong>.</p>
+        <p class="form-hint" style="margin-top:var(--space-2);">Elige un colaborador para verificar su Renta 5ª con sus datos reales, o déjalo en “Sueldo manual” y escribe un monto.</p>
       </div>
     </div>
 
@@ -49,6 +52,7 @@ export function renderRentaSimTab(root) {
 
   const yearSel = root.querySelector('[data-year]');
   const monthSel = root.querySelector('[data-month]');
+  const empSel = root.querySelector('[data-empleado]');
   const sueldoI = root.querySelector('[data-sueldo]');
   const asigI = root.querySelector('[data-asig]');
   const results = root.querySelector('[data-results]');
@@ -58,15 +62,36 @@ export function renderRentaSimTab(root) {
       .map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('');
   }
 
+  function fillEmpleados() {
+    const emps = payrollService.listEmployees().filter((e) => e.active !== false);
+    empSel.innerHTML = '<option value="">— Sueldo manual —</option>' +
+      emps.map((e) => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)}</option>`).join('');
+  }
+
+  function toggleManual(manual) {
+    root.querySelectorAll('[data-manual]').forEach((el) => { el.style.display = manual ? '' : 'none'; });
+  }
+
+  function currentEmp() {
+    if (empSel.value) {
+      const e = payrollService.getEmployee(empSel.value);
+      if (e) return e;
+    }
+    return { id: 'sim-5ta', baseSalary: sueldo, pensionType: 'ONP', asignacionFamiliar: asig };
+  }
+
   function simulacion() {
     sueldo = Number(sueldoI.value) || 0;
     asig = asigI.checked;
-    if (!(sueldo > 0)) {
-      results.innerHTML = `<p class="text-muted">Ingresa un sueldo mensual para simular.</p>`;
+    const manual = !empSel.value;
+    toggleManual(manual);
+
+    if (manual && !(sueldo > 0)) {
+      results.innerHTML = `<p class="text-muted">Ingresa un sueldo mensual o elige un colaborador para simular.</p>`;
       return;
     }
 
-    const emp = { id: 'sim-5ta', baseSalary: sueldo, pensionType: 'ONP', asignacionFamiliar: asig };
+    const emp = currentEmp();
     const schedule = [];
     let totalRetenido = 0;
     for (let m = 1; m <= 12; m++) {
@@ -95,6 +120,10 @@ export function renderRentaSimTab(root) {
     });
     const tramos = taxService.detalleImpuestoAnual(det.rni, det.uit);
 
+    const fuente = manual
+      ? `Sueldo manual: ${money(sueldo)}${asig ? ' · con asignación familiar' : ''}`
+      : `Colaborador: ${escapeHtml(emp.name || '')} · sueldo ${money(emp.baseSalary)}${emp.asignacionFamiliar ? ' · con asignación familiar' : ''}`;
+
     const filasTramos = tramos.map((t) => `
       <tr>
         <td>Tramo ${t.tramo}</td>
@@ -104,17 +133,22 @@ export function renderRentaSimTab(root) {
       </tr>`).join('');
 
     const filasMeses = schedule.map((r) => `
-      <tr${r.m === month ? ' style="background:var(--gold-50, #faf3e0);"' : ''}>
+      <tr${r.m === month ? ' style="background:#faf3e0;"' : ''}>
         <td>${MESES[r.m - 1]}${r.m === month ? ' ◀' : ''}</td>
         <td class="cell-num">${money(r.remAsegurable)}</td>
         <td class="cell-num">${money(r.renta5ta)}</td>
       </tr>`).join('');
 
     const coincide = Math.abs(det.retencionMes - sel.renta5ta) < 0.01;
+    const cuadraAnio = Math.abs(totalRetenido - det.impuestoAnualProyectado) < 0.01;
 
     results.innerHTML = `
       <div class="card" style="margin-top:var(--space-4);">
-        <div class="card__header"><h3 class="card__title">Resumen anual ${year}</h3>
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Resumen ${MESES[month - 1]} ${year}</h3>
+            <p class="card__subtitle" style="margin:0;">${fuente}</p>
+          </div>
           <span class="badge badge--gold">UIT ${money(det.uit)} · RMV ${money(getRmv(year))}</span>
         </div>
         <div class="card__body">
@@ -151,7 +185,7 @@ export function renderRentaSimTab(root) {
             <tbody>${filasMeses}</tbody>
             <tfoot><tr><td>Total retenido en el año</td><td></td><td class="cell-num cell-strong">${money(totalRetenido)}</td></tr></tfoot>
           </table></div>
-          <p class="form-hint" style="margin-top:var(--space-3);">El total del año (${money(totalRetenido)}) debe ser igual al impuesto anual (${money(det.impuestoAnualProyectado)}). ${Math.abs(totalRetenido - det.impuestoAnualProyectado) < 0.01 ? '✅ Cuadra exacto.' : '⚠ Revisar.'}</p>
+          <p class="form-hint" style="margin-top:var(--space-3);">El total del año (${money(totalRetenido)}) debe ser igual al impuesto anual (${money(det.impuestoAnualProyectado)}). ${cuadraAnio ? '✅ Cuadra exacto.' : '⚠ Revisar.'}</p>
         </div>
       </div>
     `;
@@ -168,10 +202,11 @@ export function renderRentaSimTab(root) {
 
   yearSel.addEventListener('change', () => { year = Number(yearSel.value); simulacion(); });
   monthSel.addEventListener('change', () => { month = Number(monthSel.value); simulacion(); });
+  empSel.addEventListener('change', simulacion);
   sueldoI.addEventListener('input', simulacion);
   asigI.addEventListener('change', simulacion);
-  root.querySelector('[data-calc]').addEventListener('click', simulacion);
 
   fillYears();
+  fillEmpleados();
   simulacion();
 }
