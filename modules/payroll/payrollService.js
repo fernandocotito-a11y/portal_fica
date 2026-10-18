@@ -295,6 +295,9 @@ export const payrollService = {
     return employeesCache.find((e) => e.id === id) || null;
   },
 
+  /** Deriva los conceptos de un mes (asistencia, vacaciones, bonos, pagos). */
+  deriveMonthInputs,
+
   async createEmployee(data) {
     const { data: row, error } = await supabase.from('payroll_employees').insert(toEmployeeRow(data)).select().single();
     if (error) throw new Error(error.message);
