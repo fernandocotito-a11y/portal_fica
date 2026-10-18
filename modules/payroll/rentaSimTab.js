@@ -38,7 +38,9 @@ export function renderRentaSimTab(root) {
           <div class="form-group" style="margin:0;"><label class="form-label">Sueldo mensual (S/)</label>
             <input class="form-input" type="number" min="0" step="0.01" data-sueldo value="${sueldo}" style="max-width:150px;" /></div>
           <label class="checkbox" style="margin:0 0 6px;"><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Asignación familiar (10% RMV)</span></label>
+          <button type="button" class="btn btn--primary" data-calc style="margin-bottom:6px;">${ICONS.check} Calcular</button>
         </div>
+        <p class="form-hint" style="margin-top:var(--space-2);">El cálculo se actualiza solo al escribir; también puedes pulsar <strong>Calcular</strong>.</p>
       </div>
     </div>
 
@@ -168,6 +170,7 @@ export function renderRentaSimTab(root) {
   monthSel.addEventListener('change', () => { month = Number(monthSel.value); simulacion(); });
   sueldoI.addEventListener('input', simulacion);
   asigI.addEventListener('change', simulacion);
+  root.querySelector('[data-calc]').addEventListener('click', simulacion);
 
   fillYears();
   simulacion();
