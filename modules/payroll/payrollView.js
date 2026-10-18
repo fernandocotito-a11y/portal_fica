@@ -202,23 +202,9 @@ function renderPlanillaTab(root) {
   function employeesForPeriod() {
     return employees().filter((e) => inPeriod(e, year, month));
   }
-  /** Conceptos del mes derivados de los controles (asistencia, vacaciones, bonos, pagos). */
+  /** Conceptos del mes (delegado al servicio, que ya regulariza la Renta 5ta). */
   function deriveInputs(emp) {
-    const att = attendanceService.summarize(emp.id, year, month, emp.baseSalary);
-    const vacDays = vacationService.takenInMonth(emp.id, year, month);
-    const days = Math.min(30, Math.max(0, 30 - att.absentWithoutPay - vacDays));
-    const vacation = round2(vacDays * (emp.baseSalary / 30));
-    const bonifAfectas = bonusService.sumRegular(emp.id, year, month);
-    const bonifExtra = bonusService.sumExtraordinaria(emp.id, year, month);
-    return {
-      days,
-      vacation,
-      bonuses: round2(bonifAfectas + bonifExtra),
-      bonusesAfectas: bonifAfectas,
-      tardanzas: att.tardinessDiscount,
-      loans: paymentService.sumDeductionsFor(emp.id, year, month),
-      vidaLey: 0,
-    };
+    return payrollService.deriveMonthInputs(emp, year, month);
   }
   function computeAll() {
     return employeesForPeriod().map((emp) => ({ emp, calc: calcRow(emp, deriveInputs(emp), year, month) }));

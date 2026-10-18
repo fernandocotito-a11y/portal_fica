@@ -95,11 +95,10 @@ export function renderAuditTab(root) {
   const period = () => ({ year, month });
 
   function buildRows() {
-    const p = payrollService.getPeriodInputs(year, month);
     return payrollService
       .listEmployees()
       .filter((e) => e.active !== false)
-      .map((emp) => ({ employee: emp, calc: calcRow(emp, p.rows?.[emp.id] || {}, year, month) }));
+      .map((emp) => ({ employee: emp, calc: calcRow(emp, payrollService.deriveMonthInputs(emp, year, month), year, month) }));
   }
 
   function obligCard(label, value, sub) {

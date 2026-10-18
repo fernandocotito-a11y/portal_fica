@@ -11,6 +11,10 @@ import { num, round2 } from './payrollUtils.js';
 import { taxService } from './taxService.js';
 import { activeCompanyId } from './payrollScope.js';
 import { afpRatesService } from './afpRatesService.js';
+import { attendanceService } from './attendanceService.js';
+import { vacationService } from './vacationService.js';
+import { bonusService } from './bonusService.js';
+import { paymentService } from './paymentService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission } from './payrollConfig.js';
 
 /* ------------------------------------------------------------ caché en memoria */
@@ -106,8 +110,8 @@ export function getAfpParams(year, month, afp) {
   };
 }
 
-/** Calcula una fila de planilla. */
-export function calcRow(emp, inputs = {}, year, month) {
+/** Cálculo interno de una fila (con las acumuladas del año ya resueltas). */
+function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0) {
   const uit = getUit(year);
   const rmv = getRmv(year);
 
@@ -138,13 +142,14 @@ export function calcRow(emp, inputs = {}, year, month) {
 
   const gratProyectada = round2((month <= 7 ? remAsegurable : 0) + remAsegurable);
   const renta5ta = taxService
-    .calcRetencionMensual({
+    .retencionMensual({
       remuneracionMensual: remAsegurable,
+      remuneracionesAcumuladas: remAcum, // percibido en meses anteriores del año
       mes: month,
       year,
       gratificacionesProyectadas: gratProyectada,
       bonifExtraordinaria: round2(gratProyectada * TASAS.essalud),
-      retencionesAnteriores: num(inputs.retencionesAnteriores),
+      retencionesAcumuladas: retAcum, // regularización: retenido en meses anteriores
     })
     .retencionMes;
 
@@ -193,6 +198,52 @@ export function inPeriod(emp, year, month) {
     if (c < start) return false;
   }
   return true;
+}
+
+/**
+ * Deriva los conceptos de un mes desde los controles (asistencia, vacaciones,
+ * bonificaciones y pagos/adelantos). Todo automático (no se ingresa a mano).
+ */
+export function deriveMonthInputs(emp, year, month) {
+  const att = attendanceService.summarize(emp.id, year, month, emp.baseSalary);
+  const vacDays = vacationService.takenInMonth(emp.id, year, month);
+  const days = Math.min(30, Math.max(0, 30 - att.absentWithoutPay - vacDays));
+  const vacation = round2(vacDays * (emp.baseSalary / 30));
+  const bAfectas = bonusService.sumRegular(emp.id, year, month);
+  const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
+  return {
+    days,
+    vacation,
+    bonuses: round2(bAfectas + bExtra),
+    bonusesAfectas: bAfectas,
+    tardanzas: att.tardinessDiscount,
+    loans: paymentService.sumDeductionsFor(emp.id, year, month),
+    vidaLey: 0,
+  };
+}
+
+/**
+ * Acumulados del año (remuneraciones y retenciones) hasta el mes ANTERIOR,
+ * recalculados secuencialmente para que la regularización sea exacta.
+ */
+function yearContext(emp, year, month) {
+  let retAcum = 0;
+  let remAcum = 0;
+  for (let mm = 1; mm < month; mm++) {
+    const row = computeRow(emp, deriveMonthInputs(emp, year, mm), year, mm, retAcum, remAcum);
+    retAcum = round2(retAcum + row.renta5ta);
+    remAcum = round2(remAcum + row.remAsegurable);
+  }
+  return { retAcum, remAcum };
+}
+
+/**
+ * Calcula una fila de planilla. La Renta 5ta se regulariza restando las
+ * retenciones ya efectuadas en los meses anteriores del mismo ejercicio.
+ */
+export function calcRow(emp, inputs = {}, year, month) {
+  const { retAcum, remAcum } = yearContext(emp, year, month);
+  return computeRow(emp, inputs, year, month, retAcum, remAcum);
 }
 
 /** Suma totales de un conjunto de filas. */

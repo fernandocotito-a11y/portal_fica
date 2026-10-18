@@ -92,10 +92,9 @@ export function renderExportTab(root) {
   }
 
   function buildRows() {
-    const p = payrollService.getPeriodInputs(year, month);
     return employees().map((emp) => ({
       employee: emp,
-      calc: calcRow(emp, p.rows?.[emp.id] || {}, year, month),
+      calc: calcRow(emp, payrollService.deriveMonthInputs(emp, year, month), year, month),
       attendance: attendanceService.summarize(emp.id, year, month, emp.baseSalary),
     }));
   }
@@ -212,8 +211,7 @@ export function renderExportTab(root) {
   root.querySelector('[data-stmt-pdf]').addEventListener('click', async () => {
     const emp = payrollService.getEmployee(stmtEmployeeId);
     if (!emp) { showToast('Selecciona un colaborador.', 'error'); return; }
-    const p = payrollService.getPeriodInputs(year, month);
-    const calc = calcRow(emp, p.rows?.[emp.id] || {}, year, month);
+    const calc = calcRow(emp, payrollService.deriveMonthInputs(emp, year, month), year, month);
     try {
       await pdfReportsService.downloadPayslip(emp, period(), calc, company);
       showToast('Boleta PDF generada.');

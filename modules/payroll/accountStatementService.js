@@ -29,8 +29,7 @@ export const accountStatementService = {
     for (let m = 1; m <= 12; m++) {
       const key = `${year}-${String(m).padStart(2, '0')}`;
       const p = periods[key];
-      const inputs = p?.rows?.[employeeId] || {};
-      const calc = calcRow(employee, inputs, year, m);
+      const calc = calcRow(employee, payrollService.deriveMonthInputs(employee, year, m), year, m);
       const abonado = p ? calc.neto : 0;
       months.push({
         month: m,
