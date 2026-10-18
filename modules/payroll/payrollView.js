@@ -203,6 +203,23 @@ function renderPlanillaTab(root) {
   function employeesForPeriod() {
     return employees().filter((e) => inPeriod(e, year, month));
   }
+  /**
+   * Si el período actual no tiene colaboradores, busca el más cercano (pasado o
+   * futuro) que sí tenga, para que la planilla nunca se abra vacía por error.
+   */
+  function pickDefaultPeriod() {
+    const all = employees();
+    if (all.length === 0 || all.some((e) => inPeriod(e, year, month))) return null;
+    for (let i = 1; i <= 24; i += 1) {
+      for (const dir of [-1, 1]) {
+        const d = new Date(year, month - 1 + dir * i, 1);
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        if (YEARS.includes(y) && all.some((e) => inPeriod(e, y, m))) return { year: y, month: m };
+      }
+    }
+    return null;
+  }
   /** Conceptos del mes (delegado al servicio, que ya regulariza la Renta 5ta). */
   function deriveInputs(emp) {
     return payrollService.deriveMonthInputs(emp, year, month);
@@ -496,6 +513,12 @@ function renderPlanillaTab(root) {
     }
   });
 
+  const mejorPeriodo = pickDefaultPeriod();
+  if (mejorPeriodo) {
+    year = mejorPeriodo.year;
+    month = mejorPeriodo.month;
+  }
+  yearSel.value = String(year);
   monthSel.value = String(month);
   loadPeriod();
 }
