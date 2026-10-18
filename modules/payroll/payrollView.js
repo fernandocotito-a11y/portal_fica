@@ -53,6 +53,7 @@ function renderPlanillaTab(root) {
   let inputs = {};
   let closed = false;
   let editingId = null;
+  let showAll = false;
 
   root.innerHTML = `
     <div class="page-heading">
@@ -75,6 +76,7 @@ function renderPlanillaTab(root) {
           <div class="form-group" style="margin:0;min-width:170px;"><label class="form-label">Mes</label>
             <select class="form-input" data-month>${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
           <div class="text-muted" style="font-size:var(--font-size-sm);margin-bottom:6px;" data-summary></div>
+          <label class="checkbox" style="margin:0 0 6px;" title="Listar a todos los colaboradores activos, incluso los que están fuera del período por su fecha de inicio/cese"><input type="checkbox" data-showall /><span class="checkbox__box">${ICONS.check}</span><span>Mostrar todos</span></label>
         </div>
       </div>
       <div class="card__body" style="padding-top:0;">
@@ -224,8 +226,20 @@ function renderPlanillaTab(root) {
   function deriveInputs(emp) {
     return payrollService.deriveMonthInputs(emp, year, month);
   }
+  function zeroCalc() {
+    return { days: 0, basico: 0, asigFamiliar: 0, vacaciones: 0, bonificaciones: 0, totalBruto: 0, remAsegurable: 0, pension: 0, pensionLabel: '—', renta5ta: 0, tardanzas: 0, prestamos: 0, totalRetenciones: 0, essalud: 0, vidaLey: 0, totalAportes: 0, neto: 0, fueraPeriodo: true };
+  }
   function computeAll() {
-    return employeesForPeriod().map((emp) => ({ emp, calc: calcRow(emp, deriveInputs(emp), year, month) }));
+    const lista = showAll ? employees() : employeesForPeriod();
+    return lista.map((emp) => {
+      if (!inPeriod(emp, year, month)) return { emp, calc: zeroCalc() };
+      try {
+        return { emp, calc: calcRow(emp, deriveInputs(emp), year, month) };
+      } catch (err) {
+        console.error('Error calculando fila de', emp.name, err);
+        return { emp, calc: zeroCalc(), error: err.message };
+      }
+    });
   }
 
   function fmtDate(iso) {
@@ -235,13 +249,18 @@ function renderPlanillaTab(root) {
     return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
-  function rowHtml(emp, calc) {
+  function rowHtml(emp, calc, error) {
+    if (error) {
+      return `<tr data-emp="${escapeHtml(emp.id)}"><td colspan="21"><span style="color:#b91c1c;font-size:var(--font-size-sm);">⚠ ${escapeHtml(emp.name)}: ${escapeHtml(error)}</span></td></tr>`;
+    }
+    const fuera = !!calc.fueraPeriodo;
+    const badge = fuera ? ' <span class="badge badge--muted">Fuera de período</span>' : '';
     return `
-      <tr data-emp="${escapeHtml(emp.id)}">
+      <tr data-emp="${escapeHtml(emp.id)}"${fuera ? ' style="opacity:.5"' : ''}>
         <td>${escapeHtml(emp.code) || '—'}</td>
         <td>${escapeHtml(emp.docType)} ${escapeHtml(emp.docNumber)}</td>
         <td><div class="table__name">${escapeHtml(emp.name)}</div></td>
-        <td>${fmtDate(emp.startDate)}</td>
+        <td>${fmtDate(emp.startDate)}${badge}</td>
         <td>${escapeHtml(emp.position) || '—'}</td>
         <td class="cell-num" data-cell="days">${calc.days}</td>
         <td class="cell-num" data-cell="basico">${money(calc.basico)}</td>
@@ -286,12 +305,23 @@ function renderPlanillaTab(root) {
   }
 
   function renderTable() {
-    const all = employees();
-    const data = computeAll();
+    let all, data;
+    try {
+      all = employees();
+      data = computeAll();
+    } catch (err) {
+      console.error(err);
+      tbody.innerHTML = `<tr><td colspan="21"><div class="empty-state"><span class="empty-state__icon">⚠️</span><div class="empty-state__title">Error al generar la planilla</div><div class="empty-state__desc">${escapeHtml(err.message)}</div></div></td></tr>`;
+      tfoot.innerHTML = '';
+      summaryEl.textContent = '';
+      const n = root.querySelector('[data-period-note]'); if (n) n.textContent = '';
+      return;
+    }
     const periodNote = root.querySelector('[data-period-note]');
+    const visibles = data.filter((d) => !d.calc.fueraPeriodo);
     if (data.length === 0) {
       const detalle = all.length > 0
-        ? `<div class="empty-state__title">Sin colaboradores en ${MESES[month - 1]} ${year}</div><div class="empty-state__desc">Hay ${all.length} colaborador(es) registrado(s), pero ninguno está activo en este período (fecha de inicio posterior o cese anterior). Cambia el mes/año para verlos.</div>`
+        ? `<div class="empty-state__title">Sin colaboradores en ${MESES[month - 1]} ${year}</div><div class="empty-state__desc">Hay ${all.length} colaborador(es) registrado(s), pero ninguno está activo en este período (fecha de inicio posterior o cese anterior). Activa “Mostrar todos” o cambia el mes/año.</div>`
         : `<div class="empty-state__title">Sin colaboradores</div><div class="empty-state__desc">Agrega tu primer colaborador para generar la planilla.</div>`;
       tbody.innerHTML = `<tr><td colspan="21"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span>${detalle}</div></td></tr>`;
       tfoot.innerHTML = '';
@@ -299,14 +329,14 @@ function renderPlanillaTab(root) {
       if (periodNote) periodNote.textContent = '';
       return;
     }
-    tbody.innerHTML = data.map(({ emp, calc }) => rowHtml(emp, calc)).join('');
-    const totals = sumTotals(data.map((d) => d.calc));
-    tfoot.innerHTML = footHtml(totals, data.length);
+    tbody.innerHTML = data.map(({ emp, calc, error }) => rowHtml(emp, calc, error)).join('');
+    const totals = sumTotals(visibles.map((d) => d.calc));
+    tfoot.innerHTML = footHtml(totals, visibles.length);
     summaryEl.textContent = `Neto total a pagar: ${money(totals.neto)}`;
     if (periodNote) {
-      const ocultos = all.length - data.length;
+      const ocultos = all.length - visibles.length;
       periodNote.textContent = ocultos > 0
-        ? `Mostrando ${data.length} colaborador(es) activo(s) en ${MESES[month - 1]} ${year}. ${ocultos} oculto(s) por fecha de inicio/cese fuera del período.`
+        ? `Mostrando ${visibles.length} colaborador(es) activo(s) en ${MESES[month - 1]} ${year}. ${ocultos} fuera del período.`
         : '';
     }
   }
@@ -322,7 +352,7 @@ function renderPlanillaTab(root) {
     if (pen) pen.setAttribute('title', calc.pensionLabel);
   }
   function recalcAll() {
-    const data = computeAll();
+    const data = computeAll().filter((d) => !d.calc.fueraPeriodo);
     const totals = sumTotals(data.map((d) => d.calc));
     Object.keys(totals).forEach((k) => {
       const el = tfoot.querySelector(`[data-total="${k}"]`);
@@ -429,6 +459,7 @@ function renderPlanillaTab(root) {
 
   yearSel.addEventListener('change', () => { year = Number(yearSel.value); loadPeriod(); });
   monthSel.addEventListener('change', () => { month = Number(monthSel.value); loadPeriod(); });
+  root.querySelector('[data-showall]').addEventListener('change', (e) => { showAll = e.target.checked; renderTable(); });
   addBtn.addEventListener('click', openCreate);
   root.querySelector('[data-close-modal]').addEventListener('click', () => modal.close());
   root.querySelector('[data-cancel]').addEventListener('click', () => modal.close());
@@ -497,7 +528,7 @@ function renderPlanillaTab(root) {
   });
 
   closeBtn.addEventListener('click', async () => {
-    const data = computeAll();
+    const data = computeAll().filter((d) => !d.calc.fueraPeriodo);
     if (data.length === 0) { showToast('No hay colaboradores para cerrar.', 'error'); return; }
     const totals = sumTotals(data.map((d) => d.calc));
     const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.neto)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
