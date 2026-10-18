@@ -154,18 +154,15 @@ export const MESES = [
 ];
 
 /* ---------------------------------------------------------------------------
-   Régimen laboral (Ley MYPE): afecta vacaciones, gratificaciones y CTS.
-   - general: 30 días de vacaciones, beneficios 100%, con CTS.
-   - microempresa: 15 días de vacaciones, beneficios 50%, SIN CTS.
+   Régimen laboral (Ley MYPE - Ley 28015 / Ley 30056):
+   - general:         30 días vac., gratificaciones y CTS al 100%.
+   - pequena_empresa: 15 días vac., gratificaciones y CTS al 50%.
+   - microempresa:    15 días vac., SIN gratificaciones ni CTS.
    -------------------------------------------------------------------------- */
-export const REGIMEN_LABORAL = [
-  { value: 'general', label: 'Régimen general (30 días vac., beneficios 100%, con CTS)' },
-  { value: 'microempresa', label: 'Microempresa / MYPE (15 días vac., beneficios 50%, sin CTS)' },
-];
-
 export const LABOR_RULES = {
   general: { vacationDays: 30, benefitFactor: 1, hasCts: true, label: 'Régimen general' },
-  microempresa: { vacationDays: 15, benefitFactor: 0.5, hasCts: false, label: 'Microempresa' },
+  pequena_empresa: { vacationDays: 15, benefitFactor: 0.5, hasCts: true, label: 'Pequeña empresa' },
+  microempresa: { vacationDays: 15, benefitFactor: 0, hasCts: false, label: 'Microempresa' },
 };
 
 /** Reglas laborales según el régimen de la empresa. */

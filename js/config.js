@@ -167,6 +167,18 @@ export const COMPANY_OPTIONS = {
   ],
 };
 
+/* ---------------------------------------------------------------------------
+   Regímenes laborales (Ley MYPE - Ley 28015 / Ley 30056):
+   - Microempresa (≤10 trabajadores): 15 días vac., SIN gratificaciones ni CTS.
+   - Pequeña empresa (11-100 trabajadores): 15 días vac., gratif. y CTS al 50%.
+   - Régimen general (>100 trabajadores): 30 días vac., gratif. y CTS al 100%.
+   -------------------------------------------------------------------------- */
+export const REGIMEN_LABORAL = [
+  { value: 'general', label: 'Régimen general (30 días vac., gratif. y CTS 100%)' },
+  { value: 'pequena_empresa', label: 'Pequeña empresa (15 días vac., gratif. y CTS 50%)' },
+  { value: 'microempresa', label: 'Microempresa (15 días vac., sin gratificaciones ni CTS)' },
+];
+
 /** Devuelve la etiqueta legible de una opción de catálogo. */
 export function optionLabel(list, value) {
   const found = list.find((o) => o.value === value);
