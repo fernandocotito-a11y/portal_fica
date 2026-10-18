@@ -9,6 +9,11 @@ import { authService } from '../../services/authService.js';
 
 /** Devuelve el ID de la empresa activa (o null si no hay ninguna). */
 export function activeCompanyId() {
-  const c = authService.activeCompany ? authService.activeCompany() : null;
+  const c = activeCompany();
   return c && c.id ? c.id : null;
+}
+
+/** Devuelve el objeto de la empresa activa (o null). */
+export function activeCompany() {
+  return authService.activeCompany ? authService.activeCompany() : null;
 }

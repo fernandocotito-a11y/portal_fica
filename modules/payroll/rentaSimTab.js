@@ -11,7 +11,7 @@
 import { payrollService, calcRow } from './payrollService.js';
 import { taxService } from './taxService.js';
 import { paramsService } from './paramsService.js';
-import { MESES, TASAS, getRmv } from './payrollConfig.js';
+import { MESES, getRmv } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';
 import { ICONS, escapeHtml } from '../../js/utils.js';
 
@@ -96,28 +96,13 @@ export function renderRentaSimTab(root) {
     let totalRetenido = 0;
     for (let m = 1; m <= 12; m++) {
       const row = calcRow(emp, payrollService.deriveMonthInputs(emp, year, m), year, m);
-      schedule.push({ m, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta });
+      schedule.push({ m, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta, detalle: row.detalle5ta });
       totalRetenido = round2(totalRetenido + row.renta5ta);
     }
 
-    // Desglose del mes seleccionado (reconstruye los acumulados igual que el motor)
+    // Desglose del mes seleccionado: lo entrega el propio motor (detalle5ta).
     const sel = schedule[month - 1];
-    const remAcum = round2(schedule.slice(0, month - 1).reduce((s, r) => s + r.remAsegurable, 0));
-    const gratAcum = month > 7 ? (schedule[6] ? schedule[6].remAsegurable : 0) : 0;
-    const gratBase = sel.remAsegurable;
-    const gratProyectada = round2(gratBase * (month <= 7 ? 2 : 1));
-    const gratTotal = round2(gratAcum + gratProyectada);
-    const retAcumPrev = round2(schedule.slice(0, month - 1).reduce((s, r) => s + r.renta5ta, 0));
-
-    const det = taxService.retencionMensual({
-      remuneracionMensual: sel.remAsegurable,
-      remuneracionesAcumuladas: round2(remAcum + gratAcum),
-      mes: month,
-      year,
-      gratificacionesProyectadas: gratProyectada,
-      bonifExtraordinaria: round2(gratTotal * TASAS.essalud),
-      retencionesAcumuladas: retAcumPrev,
-    });
+    const det = sel.detalle;
     const tramos = taxService.detalleImpuestoAnual(det.rni, det.uit);
 
     const fuente = manual

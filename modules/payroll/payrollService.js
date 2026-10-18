@@ -9,13 +9,13 @@
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
 import { taxService } from './taxService.js';
-import { activeCompanyId } from './payrollScope.js';
+import { activeCompanyId, activeCompany } from './payrollScope.js';
 import { afpRatesService } from './afpRatesService.js';
 import { attendanceService } from './attendanceService.js';
 import { vacationService } from './vacationService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
-import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission } from './payrollConfig.js';
+import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission, laborRules } from './payrollConfig.js';
 
 /* ------------------------------------------------------------ caché en memoria */
 let employeesCache = [];
@@ -110,6 +110,12 @@ export function getAfpParams(year, month, afp) {
   };
 }
 
+/** Factor de beneficios del régimen laboral de la empresa activa (MYPE = 50%). */
+function benefitFactor() {
+  const c = activeCompany();
+  return laborRules(c && c.regimen_laboral).benefitFactor;
+}
+
 /** Cálculo interno de una fila (con las acumuladas del año ya resueltas). */
 function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gratAcum = 0) {
   const uit = getUit(year);
@@ -140,23 +146,25 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
     pensionLabel = `AFP ${emp.afp || ''} · ${emp.commissionType === 'mixta' ? 'mixta' : 'flujo'}`.trim();
   }
 
-  // Gratificaciones del año (julio + diciembre) sobre la remuneración computable.
-  // La de julio, si ya se pagó, entra como acumulado; el resto se proyecta.
-  // Así la Renta Bruta Anual proyectada es consistente todos los meses.
-  const gratBase = round2(num(inputs.gratificacion, remAsegurable));
+  // Renta de 5ª — proyección anual (Art. 40°):
+  //   · La proyección mensual usa la BASE RECURRENTE (básico + asignación familiar);
+  //     las bonificaciones y vacaciones del mes se suman UNA SOLA VEZ (no se anualizan).
+  //   · Gratificaciones (julio + diciembre) sobre la remuneración computable,
+  //     con el factor del régimen laboral (microempresa = 50%).
+  const factor = benefitFactor();
+  const gratBase = round2(num(inputs.gratificacion, basico + asigFamiliar) * factor);
   const gratProyectada = round2(gratBase * (month <= 7 ? 2 : 1));
   const gratTotal = round2(gratAcum + gratProyectada);
-  const renta5ta = taxService
-    .retencionMensual({
-      remuneracionMensual: remAsegurable,
-      remuneracionesAcumuladas: round2(remAcum + gratAcum), // percibido en meses anteriores
-      mes: month,
-      year,
-      gratificacionesProyectadas: gratProyectada,
-      bonifExtraordinaria: round2(gratTotal * TASAS.essalud),
-      retencionesAcumuladas: retAcum, // regularización: retenido en meses anteriores
-    })
-    .retencionMes;
+  const detalle5ta = taxService.retencionMensual({
+    remuneracionMensual: round2(basico + asigFamiliar), // base recurrente (sin bonos/vacaciones puntuales)
+    remuneracionesAcumuladas: round2(remAcum + gratAcum + vacaciones + bonifAfectas), // percibido + puntuales del mes
+    mes: month,
+    year,
+    gratificacionesProyectadas: gratProyectada,
+    bonifExtraordinaria: round2(gratTotal * TASAS.essalud),
+    retencionesAcumuladas: retAcum, // regularización: retenido en meses anteriores
+  });
+  const renta5ta = detalle5ta.retencionMes;
 
   const tardanzas = round2(num(inputs.tardanzas));
   const prestamos = round2(num(inputs.loans));
@@ -179,6 +187,7 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
     pension,
     pensionLabel,
     renta5ta,
+    detalle5ta,
     tardanzas,
     prestamos,
     totalRetenciones,
@@ -244,7 +253,7 @@ function yearContext(emp, year, month) {
     const row = computeRow(emp, inputs, year, mm, retAcum, remAcum, gratAcum);
     retAcum = round2(retAcum + row.renta5ta);
     remAcum = round2(remAcum + row.remAsegurable);
-    if (mm === 7) gratAcum = round2(gratAcum + num(inputs.gratificacion)); // gratificación de julio ya pagada
+    if (mm === 7) gratAcum = round2(gratAcum + num(inputs.gratificacion) * benefitFactor()); // gratificación de julio (con factor del régimen)
   }
   return { retAcum, remAcum, gratAcum };
 }
