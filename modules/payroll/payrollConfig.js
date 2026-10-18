@@ -26,6 +26,35 @@ export const RMV = {
   2026: 1130,
 };
 
+/* ---------------------------------------------------------------------------
+   Overrides dinámicos (configurables desde la pestaña "Parámetros UIT / RMV").
+   Se cargan desde Supabase (tabla `payroll_params`) y pisan el mapa estático.
+   -------------------------------------------------------------------------- */
+let UIT_OVERRIDES = {};
+let RMV_OVERRIDES = {};
+
+/** Establece la UIT de un año (override dinámico). */
+export function setUitYear(year, val) {
+  const v = num(val);
+  const y = Number(year);
+  if (Number.isFinite(y) && v > 0) UIT_OVERRIDES[y] = v;
+  else delete UIT_OVERRIDES[y];
+}
+
+/** Establece la RMV de un año (override dinámico). */
+export function setRmvYear(year, val) {
+  const v = num(val);
+  const y = Number(year);
+  if (Number.isFinite(y) && v > 0) RMV_OVERRIDES[y] = v;
+  else delete RMV_OVERRIDES[y];
+}
+
+/** Limpia los overrides (se invoca antes de recargar desde Supabase). */
+export function resetParams() {
+  UIT_OVERRIDES = {};
+  RMV_OVERRIDES = {};
+}
+
 /* ---- Tasas generales ---- */
 export const TASAS = {
   essalud: 0.09, // aporte del empleador
@@ -86,14 +115,24 @@ export function buildAfpTable(years = [2025, 2026]) {
   return rows;
 }
 
-/** Devuelve la UIT de un año (con fallback al más reciente definido). */
+/** UIT de un año (override > mapa estático > año más reciente definido). */
 export function getUit(year) {
-  return UIT[year] ?? UIT[2026];
+  const y = Number(year) || new Date().getFullYear();
+  for (let i = y; i >= y - 10; i -= 1) {
+    const v = UIT_OVERRIDES[i] ?? UIT[i];
+    if (v != null) return v;
+  }
+  return UIT[2026] ?? 5350;
 }
 
-/** Devuelve la RMV de un año (con fallback al más reciente definido). */
+/** RMV de un año (override > mapa estático > año más reciente definido). */
 export function getRmv(year) {
-  return RMV[year] ?? RMV[2026];
+  const y = Number(year) || new Date().getFullYear();
+  for (let i = y; i >= y - 10; i -= 1) {
+    const v = RMV_OVERRIDES[i] ?? RMV[i];
+    if (v != null) return v;
+  }
+  return RMV[2026] ?? 1130;
 }
 
 /* ---- Catálogos auxiliares ---- */

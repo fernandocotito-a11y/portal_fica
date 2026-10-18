@@ -236,3 +236,25 @@ create policy "afp_rates_select" on public.afp_rates for select using (auth.uid(
 drop policy if exists "afp_rates_write" on public.afp_rates;
 create policy "afp_rates_write" on public.afp_rates
   for all using (public.is_superadmin()) with check (public.is_superadmin());
+
+-- ============================================================================
+-- PARÁMETROS LEGALES POR AÑO (UIT y RMV) — globales
+-- ============================================================================
+create table if not exists public.payroll_params (
+  year integer primary key,
+  uit numeric,
+  rmv numeric,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.payroll_params enable row level security;
+
+-- Lectura: cualquier usuario autenticado (parámetros públicos)
+drop policy if exists "payroll_params_select" on public.payroll_params;
+create policy "payroll_params_select" on public.payroll_params
+  for select using (auth.uid() is not null);
+
+-- Escritura: solo el superadministrador
+drop policy if exists "payroll_params_write" on public.payroll_params;
+create policy "payroll_params_write" on public.payroll_params
+  for all using (public.is_superadmin()) with check (public.is_superadmin());

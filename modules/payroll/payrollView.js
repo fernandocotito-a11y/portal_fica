@@ -27,6 +27,9 @@ import { renderExportTab } from './exportTab.js';
 import { renderAuditTab } from './auditTab.js';
 import { renderAfpTab } from './afpTab.js';
 import { afpRatesService } from './afpRatesService.js';
+import { paramsService } from './paramsService.js';
+import { renderRentaSimTab } from './rentaSimTab.js';
+import { renderParamsTab } from './paramsTab.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
@@ -54,6 +57,7 @@ function renderPlanillaTab(root) {
   let closed = false;
   let editingId = null;
   let showAll = false;
+  const years = paramsService.availableYears();
 
   root.innerHTML = `
     <div class="page-heading">
@@ -72,7 +76,7 @@ function renderPlanillaTab(root) {
       <div class="card__body" style="padding-bottom:var(--space-3);">
         <div style="display:flex;gap:var(--space-4);flex-wrap:wrap;align-items:flex-end;">
           <div class="form-group" style="margin:0;min-width:130px;"><label class="form-label">Año</label>
-            <select class="form-input" data-year>${optionsHtml(YEARS.map(String), String(year))}</select></div>
+            <select class="form-input" data-year>${optionsHtml(years.map(String), String(year))}</select></div>
           <div class="form-group" style="margin:0;min-width:170px;"><label class="form-label">Mes</label>
             <select class="form-input" data-month>${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
           <div class="text-muted" style="font-size:var(--font-size-sm);margin-bottom:6px;" data-summary></div>
@@ -217,7 +221,7 @@ function renderPlanillaTab(root) {
         const d = new Date(year, month - 1 + dir * i, 1);
         const y = d.getFullYear();
         const m = d.getMonth() + 1;
-        if (YEARS.includes(y) && all.some((e) => inPeriod(e, y, m))) return { year: y, month: m };
+        if (years.includes(y) && all.some((e) => inPeriod(e, y, m))) return { year: y, month: m };
       }
     }
     return null;
@@ -559,6 +563,7 @@ function renderPlanillaTab(root) {
 /* ========================================================================== */
 const TABS = [
   { key: 'planilla', label: 'Planilla Mensual' },
+  { key: 'rentasim', label: 'Renta 5ta (Simulador)' },
   { key: 'attendance', label: 'Asistencias y Tardanzas' },
   { key: 'vacation', label: 'Vacaciones' },
   { key: 'bonuses', label: 'Bonificaciones' },
@@ -567,6 +572,7 @@ const TABS = [
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
   { key: 'export', label: 'Exportaciones y Reportes' },
   { key: 'audit', label: 'Auditoría y Cierre Contable' },
+  { key: 'params', label: 'Parámetros UIT / RMV' },
   { key: 'afp', label: 'Parámetros AFP' },
 ];
 
@@ -594,6 +600,7 @@ export default {
     function show(key) {
       tabsBar.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.tab === key));
       if (key === 'planilla') renderPlanillaTab(content);
+      else if (key === 'rentasim') renderRentaSimTab(content);
       else if (key === 'attendance') renderAttendanceTab(content);
       else if (key === 'vacation') renderVacationTab(content);
       else if (key === 'bonuses') renderBonusesTab(content);
@@ -602,6 +609,7 @@ export default {
       else if (key === 'liquidation') renderLiquidationTab(content);
       else if (key === 'export') renderExportTab(content);
       else if (key === 'audit') renderAuditTab(content);
+      else if (key === 'params') renderParamsTab(content);
       else if (key === 'afp') renderAfpTab(content);
     }
 
@@ -623,6 +631,7 @@ export default {
           bonusService.refresh(),
           paymentService.refresh(),
           afpRatesService.refresh(),
+          paramsService.refresh(),
         ]);
         vacationService.setEmployeeGetter((id) => payrollService.getEmployee(id));
       } catch (err) {
