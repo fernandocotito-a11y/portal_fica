@@ -65,6 +65,7 @@ export const bonusService = {
   async update(id, patch) {
     const merged = { ...(cache.find((b) => b.id === id) || {}), ...patch };
     const row = {
+      employee_id: merged.employeeId || null,
       year: num(merged.year),
       month: num(merged.month),
       tipo: merged.tipo || 'regular',

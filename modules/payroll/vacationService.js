@@ -61,6 +61,7 @@ export const vacationService = {
   async update(id, patch) {
     const merged = { ...(this.list().find((r) => r.id === id) || {}), ...patch };
     const row = {
+      employee_id: merged.employeeId || null,
       period: merged.period || null,
       days_taken: num(merged.daysTaken),
       date_from: merged.dateFrom || null,

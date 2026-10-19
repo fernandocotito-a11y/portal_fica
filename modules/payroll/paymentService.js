@@ -73,6 +73,7 @@ export const paymentService = {
   async update(id, patch) {
     const merged = { ...(cache.find((p) => p.id === id) || {}), ...patch };
     const row = {
+      employee_id: merged.employeeId || null,
       year: num(merged.year),
       month: num(merged.month),
       tipo: merged.tipo || 'adelanto',
