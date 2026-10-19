@@ -14,6 +14,17 @@ export const PAYMENT_TYPES = [
   { value: 'prestamo', label: 'Préstamo (cuota)' },
 ];
 
+/* Catálogo de conceptos para pagos / adelantos / desembolsos. */
+export const PAYMENT_CONCEPTS = [
+  { value: 'gratificacion', label: 'Pago de gratificación' },
+  { value: 'cts', label: 'Depósito de CTS' },
+  { value: 'liquidacion', label: 'Liquidación de beneficios sociales' },
+  { value: 'vacaciones', label: 'Pago de vacaciones' },
+  { value: 'adelanto', label: 'Adelanto de remuneración' },
+  { value: 'prestamo', label: 'Préstamo (cuota)' },
+  { value: 'otro', label: 'Otro concepto' },
+];
+
 function map(r) {
   return {
     id: r.id,

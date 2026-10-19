@@ -51,6 +51,7 @@ export function renderAfpTab(root) {
           </table>
         </div>
         <p class="form-hint mt-3" data-hint></p>
+        <p class="text-muted" data-history style="font-size:var(--font-size-sm);margin-top:var(--space-2);border-top:1px solid var(--color-border);padding-top:var(--space-2);"></p>
       </div>
     </div>`;
 
@@ -58,6 +59,14 @@ export function renderAfpTab(root) {
   const monthSel = root.querySelector('[data-month]');
   const tbody = root.querySelector('[data-tbody]');
   const hint = root.querySelector('[data-hint]');
+  const historyEl = root.querySelector('[data-history]');
+
+  function renderHistory() {
+    const saved = afpRatesService.savedPeriods();
+    historyEl.textContent = saved.length
+      ? `Períodos guardados: ${saved.join(' · ')}`
+      : 'Aún no hay ningún período guardado (se usan valores base).';
+  }
 
   function render() {
     const rows = afpRatesService.forMonth(year, month);
@@ -78,6 +87,7 @@ export function renderAfpTab(root) {
     hint.textContent = saved
       ? `Parámetros guardados para ${MESES[month - 1]} ${year}.`
       : `Sin datos guardados para ${MESES[month - 1]} ${year}; se muestran valores base. Pulsa "Actualizar desde la SBS" o edita y guarda.`;
+    renderHistory();
   }
 
   function collect() {

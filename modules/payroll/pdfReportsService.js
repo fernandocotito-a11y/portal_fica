@@ -7,7 +7,6 @@
    Usa jsPDF y JSZip cargados desde CDN (ESM) de forma diferida.
    ========================================================================== */
 
-import { APP } from '../../js/config.js';
 import { money, sanitizeText, downloadBlob, fmtDate } from './payrollUtils.js';
 import { MESES } from './payrollConfig.js';
 
@@ -28,7 +27,7 @@ function drawHeader(doc, company, title) {
   doc.setTextColor(255);
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text(company?.name || APP.company, 40, 26);
+  doc.text(company?.name || 'Empresa', 40, 26);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text(`RUC: ${company?.ruc || '—'}`, 40, 42);

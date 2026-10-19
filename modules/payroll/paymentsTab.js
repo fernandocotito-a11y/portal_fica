@@ -3,7 +3,7 @@
    ========================================================================== */
 
 import { payrollService } from './payrollService.js';
-import { paymentService, PAYMENT_TYPES } from './paymentService.js';
+import { paymentService, PAYMENT_TYPES, PAYMENT_CONCEPTS } from './paymentService.js';
 import { MESES } from './payrollConfig.js';
 import { money, num } from './payrollUtils.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -28,7 +28,8 @@ export function renderPaymentsTab(root) {
           <div class="form-group" style="margin:0;min-width:100px;"><label class="form-label">Año</label><input class="form-input" type="number" value="${year}" data-year /></div>
           <div class="form-group" style="margin:0;min-width:130px;"><label class="form-label">Mes</label><select class="form-input" data-month>${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
           <div class="form-group" style="margin:0;min-width:210px;"><label class="form-label">Tipo</label><select class="form-input" data-tipo>${PAYMENT_TYPES.map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
-          <div class="form-group" style="margin:0;min-width:160px;"><label class="form-label">Concepto / voucher</label><input class="form-input" data-concepto placeholder="Ej. Voucher 0012" /></div>
+          <div class="form-group" style="margin:0;min-width:200px;"><label class="form-label">Concepto</label><select class="form-input" data-concepto-cat>${PAYMENT_CONCEPTS.map((c) => `<option value="${c.value}">${escapeHtml(c.label)}</option>`).join('')}</select></div>
+          <div class="form-group" style="margin:0;min-width:150px;" data-custom-group hidden><label class="form-label">Referencia / voucher</label><input class="form-input" data-concepto placeholder="Ej. Voucher 0012" /></div>
           <div class="form-group" style="margin:0;min-width:110px;"><label class="form-label">Monto (S/)</label><input class="form-input" type="number" min="0" step="0.01" value="0" data-monto /></div>
           <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Registrar</button>
           <button type="button" class="btn" data-cancel hidden>Cancelar</button>
@@ -46,6 +47,8 @@ export function renderPaymentsTab(root) {
   const yearI = root.querySelector('[data-year]');
   const monthSel = root.querySelector('[data-month]');
   const tipoSel = root.querySelector('[data-tipo]');
+  const conceptoCat = root.querySelector('[data-concepto-cat]');
+  const customGroup = root.querySelector('[data-custom-group]');
   const conceptoI = root.querySelector('[data-concepto]');
   const montoI = root.querySelector('[data-monto]');
   const tbody = root.querySelector('[data-tbody]');
@@ -60,6 +63,8 @@ export function renderPaymentsTab(root) {
     editingId = null;
     addBtn.innerHTML = `${ICONS.plus} Registrar`;
     cancelBtn.hidden = true;
+    conceptoCat.value = PAYMENT_CONCEPTS[0].value;
+    customGroup.hidden = true;
     conceptoI.value = '';
     montoI.value = '0';
   }
@@ -74,7 +79,16 @@ export function renderPaymentsTab(root) {
     yearI.value = p.year;
     monthSel.value = String(p.month);
     tipoSel.value = p.tipo;
-    conceptoI.value = p.concepto || '';
+    const c = PAYMENT_CONCEPTS.find((x) => x.label === p.concepto);
+    if (c) {
+      conceptoCat.value = c.value;
+      customGroup.hidden = true;
+      conceptoI.value = '';
+    } else {
+      conceptoCat.value = 'otro';
+      customGroup.hidden = false;
+      conceptoI.value = p.concepto || '';
+    }
     montoI.value = p.monto;
   }
 
@@ -105,11 +119,14 @@ export function renderPaymentsTab(root) {
   }
 
   cancelBtn.addEventListener('click', resetForm);
+  conceptoCat.addEventListener('change', () => { customGroup.hidden = conceptoCat.value !== 'otro'; });
 
   addBtn.addEventListener('click', async () => {
     if (!empSel.value) { showToast('Selecciona un colaborador.', 'error'); return; }
     if (num(montoI.value) <= 0) { showToast('Ingresa un monto válido.', 'error'); return; }
-    const data = { employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto: conceptoI.value.trim(), monto: num(montoI.value) };
+    const c = PAYMENT_CONCEPTS.find((x) => x.value === conceptoCat.value);
+    const concepto = conceptoCat.value === 'otro' ? conceptoI.value.trim() : (c ? c.label : '');
+    const data = { employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto, monto: num(montoI.value) };
     try {
       if (editingId) { await paymentService.update(editingId, data); showToast('Registro actualizado.'); }
       else { await paymentService.create(data); showToast('Pago registrado.'); }

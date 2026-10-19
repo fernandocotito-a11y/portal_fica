@@ -106,6 +106,13 @@ export const afpRatesService = {
     return !!(cache[k] && cache[k].length);
   },
 
+  /** Períodos con datos guardados (YYYY-MM), ordenados de forma descendente. */
+  savedPeriods() {
+    return Object.keys(cache)
+      .filter((k) => cache[k] && cache[k].length)
+      .sort((a, b) => b.localeCompare(a));
+  },
+
   /**
    * Importa los parámetros vigentes desde la web de la SBS a través de la Edge
    * Function `sbs-rates` (que consulta la SBS del lado del servidor).
