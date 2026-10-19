@@ -11,7 +11,7 @@
 import { payrollService, calcRow } from './payrollService.js';
 import { taxService } from './taxService.js';
 import { paramsService } from './paramsService.js';
-import { MESES, getRmv } from './payrollConfig.js';
+import { MESES, TASAS, getRmv } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';
 import { ICONS, escapeHtml } from '../../js/utils.js';
 
@@ -96,7 +96,7 @@ export function renderRentaSimTab(root) {
     let totalRetenido = 0;
     for (let m = 1; m <= 12; m++) {
       const row = calcRow(emp, payrollService.deriveMonthInputs(emp, year, m), year, m);
-      schedule.push({ m, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta, detalle: row.detalle5ta });
+      schedule.push({ m, basico: row.basico, asigFamiliar: row.asigFamiliar, vacaciones: row.vacaciones, bonifAfectas: row.bonifAfectas, gratificacion: row.gratificacion, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta, detalle: row.detalle5ta });
       totalRetenido = round2(totalRetenido + row.renta5ta);
     }
 
@@ -104,6 +104,19 @@ export function renderRentaSimTab(root) {
     const sel = schedule[month - 1];
     const det = sel.detalle;
     const tramos = taxService.detalleImpuestoAnual(det.rni, det.uit);
+
+    // Composición de la renta bruta anual (por concepto)
+    let salario = 0;
+    let vac = 0;
+    let bonif = 0;
+    for (const r of schedule) {
+      salario = round2(salario + r.basico + r.asigFamiliar);
+      vac = round2(vac + r.vacaciones);
+      bonif = round2(bonif + r.bonifAfectas);
+    }
+    const gratificaciones = round2(schedule[0].gratificacion * 2); // julio + diciembre
+    const bonifExtra = round2(gratificaciones * TASAS.essalud);
+    const totalRentaBruta = round2(salario + vac + bonif + gratificaciones + bonifExtra);
 
     const fuente = manual
       ? `Sueldo manual: ${money(sueldo)}${asig ? ' · con asignación familiar' : ''}`
@@ -137,8 +150,18 @@ export function renderRentaSimTab(root) {
           <span class="badge badge--gold">UIT ${money(det.uit)} · RMV ${money(getRmv(year))}</span>
         </div>
         <div class="card__body">
-          <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-4);">
-            ${stat('Renta bruta anual proyectada', det.rentaBruta)}
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Composición de la renta bruta anual</th><th style="text-align:right;">Monto (S/)</th></tr></thead>
+            <tbody>
+              <tr><td>Salario anual (básico + asignación familiar)</td><td class="cell-num">${money(salario)}</td></tr>
+              ${vac > 0 ? `<tr><td>Vacaciones</td><td class="cell-num">${money(vac)}</td></tr>` : ''}
+              ${bonif > 0 ? `<tr><td>Bonificaciones regulares</td><td class="cell-num">${money(bonif)}</td></tr>` : ''}
+              <tr><td>Gratificaciones (julio + diciembre)</td><td class="cell-num">${money(gratificaciones)}</td></tr>
+              <tr><td>Bonificación extraordinaria (9%)</td><td class="cell-num">${money(bonifExtra)}</td></tr>
+            </tbody>
+            <tfoot><tr><td>Renta bruta anual proyectada</td><td class="cell-num cell-strong">${money(totalRentaBruta)}</td></tr></tfoot>
+          </table></div>
+          <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--space-4);margin-top:var(--space-4);">
             ${stat('Deducción (7 UIT)', det.deduccion)}
             ${stat('Renta neta imponible (RNI)', det.rni)}
             ${stat('Impuesto anual proyectado', det.impuestoAnualProyectado)}
