@@ -29,11 +29,16 @@ export const bonusService = {
   forMonth(employeeId, year, month) {
     return cache.filter((b) => b.employeeId === employeeId && b.year === year && b.month === month);
   },
-  /** Suma de bonificaciones REGULARES (afectas a pensiones/EsSalud). */
+  /** ¿Es una bonificación de gratificación (julio/diciembre)? */
+  isGratificacion(b) {
+    const c = String(b.concepto || '').trim().toLowerCase();
+    return c === 'gratificación' || c === 'gratificacion';
+  },
+  /** Suma de bonificaciones REGULARES (afectas a pensiones/EsSalud), sin gratificación. */
   sumRegular(employeeId, year, month) {
     return round2(
       this.forMonth(employeeId, year, month)
-        .filter((b) => b.tipo !== 'extraordinaria')
+        .filter((b) => b.tipo !== 'extraordinaria' && !this.isGratificacion(b))
         .reduce((s, b) => s + num(b.monto), 0)
     );
   },
@@ -42,6 +47,14 @@ export const bonusService = {
     return round2(
       this.forMonth(employeeId, year, month)
         .filter((b) => b.tipo === 'extraordinaria')
+        .reduce((s, b) => s + num(b.monto), 0)
+    );
+  },
+  /** Suma de gratificaciones registradas en el mes (no afectan Renta 5ª: ya se proyectan). */
+  sumGratificacion(employeeId, year, month) {
+    return round2(
+      this.forMonth(employeeId, year, month)
+        .filter((b) => this.isGratificacion(b))
         .reduce((s, b) => s + num(b.monto), 0)
     );
   },

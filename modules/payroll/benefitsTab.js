@@ -2,12 +2,14 @@
    benefitsTab.js — Vista "Cálculo de CTS y Gratificaciones"
    ========================================================================== */
 
-import { payrollService } from './payrollService.js';
+import { payrollService, inPeriod } from './payrollService.js';
 import { benefitsService, BENEFIT_BONOS } from './benefitsService.js';
-import { laborRules } from './payrollConfig.js';
+import { bonusService } from './bonusService.js';
+import { pdfReportsService } from './pdfReportsService.js';
+import { laborRules, MESES } from './payrollConfig.js';
 import { money, num } from './payrollUtils.js';
 import { authService } from '../../services/authService.js';
-import { ICONS, escapeHtml } from '../../js/utils.js';
+import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
 const Y = new Date().getFullYear();
 const YEARS = [Y - 1, Y, Y + 1];
@@ -26,6 +28,10 @@ export function renderBenefitsTab(root) {
         <div>
           <h3 class="card__title">CTS y Gratificaciones</h3>
           <p class="card__subtitle">Régimen <strong>${escapeHtml(rules.label)}</strong> · beneficios ${Math.round(rules.benefitFactor * 100)}%${rules.hasCts ? '' : ' · sin CTS'}.</p>
+        </div>
+        <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">
+          <button type="button" class="btn btn--primary" data-reg-grati>${ICONS.check} Registrar gratificación</button>
+          <button type="button" class="btn" data-reg-cts>${ICONS.arrowRight} Generar boletas CTS</button>
         </div>
       </div>
       <div class="card__body">
@@ -66,6 +72,23 @@ export function renderBenefitsTab(root) {
   const mesesI = root.querySelector('[data-meses]');
   const diasI = root.querySelector('[data-dias]');
   const bonoI = root.querySelector('[data-bono]');
+  const regGratiBtn = root.querySelector('[data-reg-grati]');
+  const regCtsBtn = root.querySelector('[data-reg-cts]');
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  const esMesGrati = currentMonth === 7 || currentMonth === 12;
+  const esMesCts = currentMonth === 5 || currentMonth === 11;
+
+  regGratiBtn.disabled = !esMesGrati;
+  regGratiBtn.title = esMesGrati
+    ? `Registrar la gratificación de ${MESES[currentMonth - 1]} ${currentYear} en la planilla`
+    : 'Solo se registra en julio o diciembre (no se permiten cálculos proyectados).';
+  regCtsBtn.disabled = !(esMesCts && rules.hasCts);
+  regCtsBtn.title = rules.hasCts
+    ? (esMesCts ? `Generar las boletas de CTS de ${MESES[currentMonth - 1]} ${currentYear}` : 'Solo se genera en mayo o noviembre.')
+    : 'Este régimen no tiene CTS.';
 
   function render() {
     const emps = payrollService.listEmployees().filter((e) => e.active !== false);
@@ -97,6 +120,41 @@ export function renderBenefitsTab(root) {
   mesesI.addEventListener('input', () => { mesesGrati = num(mesesI.value, 6); render(); });
   diasI.addEventListener('input', () => { diasCts = num(diasI.value, 180); render(); });
   bonoI.addEventListener('change', () => { tipoBono = bonoI.value; render(); });
+
+  regGratiBtn.addEventListener('click', async () => {
+    if (!esMesGrati) { showToast('La gratificación solo se registra en julio o diciembre.', 'error'); return; }
+    const emps = payrollService.listEmployees().filter((e) => e.active !== false && inPeriod(e, currentYear, currentMonth));
+    const pendientes = emps.filter((e) => bonusService.sumGratificacion(e.id, currentYear, currentMonth) <= 0);
+    if (pendientes.length === 0) { showToast('No hay gratificaciones pendientes de registrar.', 'info'); return; }
+    const ok = await confirmDialog({
+      title: 'Registrar gratificación',
+      message: `Se registrará la gratificación de ${MESES[currentMonth - 1]} ${currentYear} para ${pendientes.length} colaborador(es), y aparecerá en la planilla de ese mes.`,
+      confirmText: 'Registrar',
+    });
+    if (!ok) return;
+    try {
+      for (const emp of pendientes) {
+        const g = benefitsService.calcGratificacion(emp, { year: currentYear, mesesCompletos: mesesGrati, tipoBono, factor: rules.benefitFactor });
+        await bonusService.create({ employeeId: emp.id, year: currentYear, month: currentMonth, tipo: 'regular', concepto: 'Gratificación', monto: g.monto });
+      }
+      showToast(`Gratificación registrada (${pendientes.length} colaborador(es)).`);
+    } catch (err) { showToast(err.message, 'error'); }
+  });
+
+  regCtsBtn.addEventListener('click', async () => {
+    if (!esMesCts) { showToast('Las CTS solo se generan en mayo o noviembre.', 'error'); return; }
+    const emps = payrollService.listEmployees().filter((e) => e.active !== false);
+    let n = 0;
+    try {
+      for (const emp of emps) {
+        const c = benefitsService.calcCts(emp, { year: currentYear, diasComputables: diasCts, factor: rules.benefitFactor, hasCts: rules.hasCts });
+        if (!c.hasCts || c.monto <= 0) continue;
+        await pdfReportsService.downloadCtSCertificate(emp, { semestre: `${MESES[currentMonth - 1]} ${currentYear}` }, c, company);
+        n += 1;
+      }
+      showToast(n ? `Se generaron ${n} boleta(s) de CTS.` : 'No hay colaboradores con CTS que generar.', n ? 'success' : 'info');
+    } catch (err) { showToast(err.message, 'error'); }
+  });
 
   render();
 }

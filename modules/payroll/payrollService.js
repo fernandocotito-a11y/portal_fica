@@ -227,13 +227,15 @@ export function deriveMonthInputs(emp, year, month) {
   const vacation = round2(vacDays * (emp.baseSalary / 30));
   const bAfectas = bonusService.sumRegular(emp.id, year, month);
   const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
+  const bGratif = bonusService.sumGratificacion(emp.id, year, month);
   const basico = round2(num(emp.baseSalary) * (days / 30));
   const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year) * TASAS.asignacionFamiliar) : 0;
   return {
     days,
     vacation,
-    bonuses: round2(bAfectas + bExtra),
+    bonuses: round2(bAfectas + bExtra + bGratif),
     bonusesAfectas: bAfectas,
+    gratificacionPagada: bGratif, // gratificación registrada este mes (no afecta Renta 5ª)
     gratificacion: round2(basico + asigFamiliar), // remuneración computable (julio/diciembre)
     tardanzas: att.tardinessDiscount,
     loans: paymentService.sumDeductionsFor(emp.id, year, month),
