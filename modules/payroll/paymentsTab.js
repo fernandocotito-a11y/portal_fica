@@ -28,7 +28,7 @@ export function renderPaymentsTab(root) {
           <div class="form-group" style="margin:0;min-width:100px;"><label class="form-label">Año</label><input class="form-input" type="number" value="${year}" data-year /></div>
           <div class="form-group" style="margin:0;min-width:130px;"><label class="form-label">Mes</label><select class="form-input" data-month>${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select></div>
           <div class="form-group" style="margin:0;min-width:200px;"><label class="form-label">Concepto</label><select class="form-input" data-concepto-cat>${PAYMENT_CONCEPTS.map((c) => `<option value="${c.value}">${escapeHtml(c.label)}</option>`).join('')}</select></div>
-          <div class="form-group" style="margin:0;min-width:210px;" data-tipo-group hidden><label class="form-label">Tipo</label><select class="form-input" data-tipo>${PAYMENT_TYPES.map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
+          <div class="form-group" style="margin:0;min-width:190px;"><label class="form-label">Tipo</label><select class="form-input" data-tipo>${PAYMENT_TYPES.map((t) => `<option value="${t.value}">${escapeHtml(t.label)}</option>`).join('')}</select></div>
           <div class="form-group" style="margin:0;min-width:150px;" data-custom-group><label class="form-label">Referencia / voucher</label><input class="form-input" data-concepto placeholder="Ej. Voucher 0012" /></div>
           <div class="form-group" style="margin:0;min-width:110px;"><label class="form-label">Monto (S/)</label><input class="form-input" type="number" min="0" step="0.01" value="0" data-monto /></div>
           <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Registrar</button>
@@ -47,9 +47,7 @@ export function renderPaymentsTab(root) {
   const yearI = root.querySelector('[data-year]');
   const monthSel = root.querySelector('[data-month]');
   const tipoSel = root.querySelector('[data-tipo]');
-  const tipoGroup = root.querySelector('[data-tipo-group]');
   const conceptoCat = root.querySelector('[data-concepto-cat]');
-  const customGroup = root.querySelector('[data-custom-group]');
   const conceptoI = root.querySelector('[data-concepto]');
   const montoI = root.querySelector('[data-monto]');
   const tbody = root.querySelector('[data-tbody]');
@@ -60,21 +58,14 @@ export function renderPaymentsTab(root) {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
 
-  function applyConcept() {
-    const c = PAYMENT_CONCEPTS.find((x) => x.value === conceptoCat.value);
-    const manual = conceptoCat.value === 'otro';
-    tipoGroup.hidden = !manual;
-    if (!manual && c && c.tipo) tipoSel.value = c.tipo;
-  }
-
   function resetForm() {
     editingId = null;
     addBtn.innerHTML = `${ICONS.plus} Registrar`;
     cancelBtn.hidden = true;
     conceptoCat.value = PAYMENT_CONCEPTS[0].value;
+    tipoSel.value = 'adelanto';
     conceptoI.value = '';
     montoI.value = '0';
-    applyConcept();
   }
 
   function startEdit(id) {
@@ -94,9 +85,8 @@ export function renderPaymentsTab(root) {
       conceptoCat.value = 'otro';
       conceptoI.value = p.concepto || '';
     }
-    tipoSel.value = p.tipo || 'pago_concepto';
+    tipoSel.value = p.tipo || 'adelanto';
     montoI.value = p.monto;
-    applyConcept();
   }
 
   function render() {
@@ -126,15 +116,13 @@ export function renderPaymentsTab(root) {
   }
 
   cancelBtn.addEventListener('click', resetForm);
-  conceptoCat.addEventListener('change', applyConcept);
 
   addBtn.addEventListener('click', async () => {
     if (!empSel.value) { showToast('Selecciona un colaborador.', 'error'); return; }
     if (num(montoI.value) <= 0) { showToast('Ingresa un monto válido.', 'error'); return; }
     const c = PAYMENT_CONCEPTS.find((x) => x.value === conceptoCat.value);
     const concepto = conceptoCat.value === 'otro' ? conceptoI.value.trim() : (c ? c.label : '');
-    const tipo = conceptoCat.value === 'otro' ? tipoSel.value : (c && c.tipo ? c.tipo : 'pago_concepto');
-    const data = { employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo, concepto, monto: num(montoI.value) };
+    const data = { employeeId: empSel.value, year: num(yearI.value), month: num(monthSel.value), tipo: tipoSel.value, concepto, monto: num(montoI.value) };
     try {
       if (editingId) { await paymentService.update(editingId, data); showToast('Registro actualizado.'); }
       else { await paymentService.create(data); showToast('Pago registrado.'); }

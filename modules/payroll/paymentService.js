@@ -9,21 +9,19 @@ import { activeCompanyId } from './payrollScope.js';
 let cache = [];
 
 export const PAYMENT_TYPES = [
-  { value: 'pago_concepto', label: 'Pago de concepto remunerativo' },
-  { value: 'adelanto', label: 'Adelanto de remuneración' },
-  { value: 'prestamo', label: 'Préstamo (cuota)' },
+  { value: 'adelanto', label: 'Adelanto (anticipo)' },
+  { value: 'total', label: 'Pago total' },
 ];
 
-/* Catálogo de conceptos para pagos / adelantos / desembolsos.
-   Cada concepto define su `tipo` automáticamente (si descuenta o no en planilla). */
+/* Catálogo de conceptos de pago (qué se paga): gratificación, CTS, liquidación, etc.
+   Es independiente del "tipo" (adelanto vs pago total). */
 export const PAYMENT_CONCEPTS = [
-  { value: 'gratificacion', label: 'Pago de gratificación', tipo: 'pago_concepto' },
-  { value: 'cts', label: 'Depósito de CTS', tipo: 'pago_concepto' },
-  { value: 'liquidacion', label: 'Liquidación de beneficios sociales', tipo: 'pago_concepto' },
-  { value: 'vacaciones', label: 'Pago de vacaciones', tipo: 'pago_concepto' },
-  { value: 'adelanto', label: 'Adelanto de remuneración', tipo: 'adelanto' },
-  { value: 'prestamo', label: 'Préstamo (cuota)', tipo: 'prestamo' },
-  { value: 'otro', label: 'Otro concepto', tipo: null },
+  { value: 'gratificacion', label: 'Gratificación' },
+  { value: 'cts', label: 'CTS' },
+  { value: 'liquidacion', label: 'Liquidación de beneficios sociales' },
+  { value: 'vacaciones', label: 'Vacaciones' },
+  { value: 'sueldo', label: 'Sueldo / remuneración' },
+  { value: 'otro', label: 'Otro' },
 ];
 
 function map(r) {
@@ -56,11 +54,11 @@ export const paymentService = {
   forMonth(employeeId, year, month) {
     return cache.filter((p) => p.employeeId === employeeId && p.year === year && p.month === month);
   },
-  /** Descuentos del mes (adelantos + cuotas de préstamo). */
+  /** Descuentos del mes (solo los "adelantos" se descuentan de la planilla). */
   sumDeductionsFor(employeeId, year, month) {
     return round2(
       this.forMonth(employeeId, year, month)
-        .filter((p) => p.tipo === 'adelanto' || p.tipo === 'prestamo')
+        .filter((p) => p.tipo === 'adelanto')
         .reduce((s, p) => s + num(p.monto), 0)
     );
   },
