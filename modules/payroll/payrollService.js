@@ -211,15 +211,21 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
 /** Suma totales de un conjunto de filas. */
 /** ¿El colaborador está activo dentro del período (por fecha de inicio/cese)? */
 export function inPeriod(emp, year, month) {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
-  if (emp.startDate) {
-    const s = new Date(emp.startDate);
-    if (s > end) return false;
+  const ym = year * 100 + month;
+  const start = String(emp.startDate || '').slice(0, 10);
+  if (start) {
+    const [sy, sm] = start.split('-').map(Number);
+    if (sy && sm && sy * 100 + sm > ym) return false;
   }
-  if (emp.cese) {
-    const c = new Date(emp.cese);
-    if (c < start) return false;
+  const cese = String(emp.cese || '').slice(0, 10);
+  if (cese) {
+    const [cy, cm, cd] = cese.split('-').map(Number);
+    if (cy && cm) {
+      const cym = cy * 100 + cm;
+      if (cym < ym) return false;
+      // Si el cese es el día 1, el colaborador ya no labora ese mes.
+      if (cym === ym && cd === 1) return false;
+    }
   }
   return true;
 }
@@ -230,7 +236,9 @@ export function inPeriod(emp, year, month) {
  */
 export function deriveMonthInputs(emp, year, month) {
   const att = attendanceService.summarize(emp.id, year, month, emp.baseSalary);
-  const vacDays = vacationService.takenInMonth(emp.id, year, month);
+  // Mes comercial de 30 días: si el descanso cubre todo el mes calendario (31 días),
+  // se pagan como máximo 30 días para no exceder la remuneración mensual.
+  const vacDays = Math.min(30, vacationService.takenInMonth(emp.id, year, month));
   const days = Math.min(30, Math.max(0, 30 - att.absentWithoutPay - vacDays));
   const vacation = round2(vacDays * (emp.baseSalary / 30));
   const bAfectas = bonusService.sumRegular(emp.id, year, month);

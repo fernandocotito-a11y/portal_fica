@@ -69,12 +69,6 @@ function elapsedDays(a, b) {
 function laterOf(a, b) {
   return toUTC(a) >= toUTC(b) ? a : b;
 }
-/** Años completos de servicio. */
-function completedYears(start, end) {
-  let y = end.y - start.y;
-  if (end.m < start.m || (end.m === start.m && end.d < start.d)) y -= 1;
-  return Math.max(0, y);
-}
 
 /** Período CTS (depósito de mayo: 01/11–30/04 · depósito de noviembre: 01/05–31/10). */
 function ctsPeriodo(cese) {
@@ -100,34 +94,9 @@ function ctsPeriodo(cese) {
 }
 
 /**
- * Vacaciones:
- *  · pendientes = días de años completos − días ya gozados.
- *  · truncas = proporcional del año en curso (desde el último aniversario).
- *  Si se gozaron días del año en curso, se descuentan de las truncas.
+ * Vacaciones al cese: se delega en vacationService para respetar los períodos
+ * (récords vacacionales) y los días ya gozados en cada uno.
  */
-function vacationAccrual(start, cese, baseDays, taken) {
-  const years = completedYears(start, cese);
-  const anniv = { y: start.y + years, m: start.m, d: start.d };
-
-  let months = (cese.y - anniv.y) * 12 + (cese.m - anniv.m);
-  let days = cese.d - anniv.d;
-  if (days < 0) {
-    months -= 1;
-    days += 30;
-  }
-  months = Math.max(0, months);
-  days = Math.max(0, days);
-
-  let truncas = round2((months / 12) * baseDays + (days / 360) * baseDays);
-  truncas = round2(Math.min(baseDays, Math.max(0, truncas)));
-
-  const accruedCompleted = round2(years * baseDays);
-  const pendientes = round2(Math.max(0, accruedCompleted - taken));
-  const exceso = round2(Math.max(0, taken - accruedCompleted));
-  truncas = round2(Math.max(0, truncas - exceso));
-
-  return { years, truncated: truncas, pending: pendientes, accruedCompleted };
-}
 
 export const liquidationService = {
   async refresh() {
@@ -207,8 +176,7 @@ export const liquidationService = {
     const ctsMonto = rules.hasCts ? round2((ctsBase / 360) * ctsDias) : 0;
 
     /* ------------------------------ Vacaciones ------------------------------- */
-    const taken = round2(vacationService.list(emp.id).reduce((s, r) => s + num(r.daysTaken), 0));
-    const vac = vacationAccrual(start, cese, rules.vacationDays, taken);
+    const vac = vacationService.accrualAtCese(emp, isoOf(cese), rules.vacationDays);
     const vacTruncas = round2(daily * vac.truncated);
     const vacPendientes = round2(daily * vac.pending);
 
@@ -291,7 +259,7 @@ export const liquidationService = {
         diasTruncas: vac.truncated,
         diasPendientes: vac.pending,
         aniosCompletos: vac.years,
-        gozadas: taken,
+        gozadas: vac.taken,
       },
       gratificacion: {
         monto: gratiTrunca,

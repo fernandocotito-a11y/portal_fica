@@ -54,18 +54,29 @@ export function monthKey(year, month) {
 /** Devuelve true si una fecha ISO (YYYY-MM-DD) cae en el mes/año indicados. */
 export function dateInMonth(iso, year, month) {
   if (!iso) return false;
-  const d = new Date(iso);
-  return d.getFullYear() === year && d.getMonth() + 1 === month;
+  const s = String(iso);
+  if (s.length > 10) {
+    const d = new Date(s);
+    return d.getFullYear() === year && d.getMonth() + 1 === month;
+  }
+  const [y, m] = s.slice(0, 10).split('-').map(Number);
+  return y === year && m === month;
 }
 
-/** Formatea una fecha ISO a dd/mm/aaaa. */
+/** Formatea una fecha ISO a dd/mm/aaaa (sin desfase UTC). */
 export function fmtDate(iso) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
+  const s = String(iso);
+  if (s.length > 10) {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return '—';
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${dd}/${mm}/${d.getFullYear()}`;
+  }
+  const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '—';
+  return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
 
 /** Formatea un monto en soles. */

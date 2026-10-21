@@ -10,7 +10,8 @@
 
 import { vacationService } from './vacationService.js';
 import { num, round2 } from './payrollUtils.js';
-import { getRmv } from './payrollConfig.js';
+import { getRmv, laborRules } from './payrollConfig.js';
+import { activeCompany } from './payrollScope.js';
 
 const MS_DAY = 86400000;
 
@@ -22,6 +23,7 @@ export const complianceAuditService = {
    */
   audit(rows, period, { today = new Date() } = {}) {
     const rmv = getRmv(period.year);
+    const rules = laborRules(activeCompany() && activeCompany().regimen_laboral);
     const alerts = [];
 
     rows.forEach(({ employee, calc }) => {
@@ -40,18 +42,17 @@ export const complianceAuditService = {
 
       /* 2) Récord vacacional */
       if (employee.startDate) {
-        const start = new Date(employee.startDate);
-        const meses = Math.floor((today.getTime() - start.getTime()) / (MS_DAY * 30.44));
-        const acumulados = round2((Math.max(0, meses) / 12) * 30);
-        const gozados = round2(vacationService.list(employee.id).reduce((s, r) => s + num(r.daysTaken), 0));
-        const pendientes = round2(Math.max(0, acumulados - gozados));
-        if (meses >= 12 && pendientes > 0) {
-          const vencido = meses >= 24;
+        const balance = vacationService.balanceFor(employee, rules.vacationDays, today);
+        if (balance.years >= 1 && balance.pending > 0) {
+          const oldest = balance.periods
+            .filter((p) => p.pending > 0)
+            .sort((a, b) => a.index - b.index)[0];
+          const vencido = Boolean(oldest && balance.years - oldest.index >= 2);
           alerts.push({
             level: vencido ? 'danger' : 'info',
             type: 'vacaciones',
             employee: employee.name,
-            message: `Vacaciones pendientes: ${pendientes} día(s). ${vencido ? 'Récord vencido — riesgo de indemnización (triple vacacional).' : 'Programar goce.'}`,
+            message: `Vacaciones pendientes: ${balance.pending} día(s). ${vencido ? 'Récord vencido — riesgo de indemnización (triple vacacional).' : 'Programar goce.'}`,
           });
         }
       }

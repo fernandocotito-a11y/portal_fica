@@ -337,7 +337,8 @@ export function renderExportTab(root) {
           <h4 style="${h4}">Vacaciones</h4>
           <div style="${chip}">
             <span><strong>Base:</strong> ${vb.base} días</span>
-            <span><strong>Acumuladas:</strong> ${vb.accrued}</span>
+            <span><strong>Años completos:</strong> ${vb.years}</span>
+            <span><strong>Derecho:</strong> ${vb.accrued}</span>
             <span><strong>Gozadas:</strong> ${vb.taken}</span>
             <span><strong>Pendientes:</strong> ${vb.pending}</span>
           </div>
