@@ -151,17 +151,25 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
   }
 
   // Renta de 5ª — proyección anual (Art. 40°):
-  //   · La proyección mensual usa la BASE RECURRENTE (básico + asignación familiar);
-  //     las bonificaciones y vacaciones del mes se suman UNA SOLA VEZ (no se anualizan).
+  //   · Se proyecta con la remuneración mensual COMPLETA (básico + asignación
+  //     familiar), no con el básico prorrateado por vacaciones o faltas: los
+  //     meses futuros se pagan completos. Las vacaciones y bonos del mes se
+  //     suman UNA SOLA VEZ en la parte acumulada (no se anualizan).
   //   · Gratificaciones (julio + diciembre) sobre la remuneración computable,
   //     con el factor del régimen laboral (microempresa = 50%).
   const factor = benefitFactor();
-  const gratBase = round2(num(inputs.gratificacion, basico + asigFamiliar) * factor);
+  // Remuneración mensual recurrente completa (sin prorrateo por vacaciones ni
+  // faltas): sirve para proyectar los meses futuros. Las vacaciones y bonos
+  // del mes se suman UNA SOLA VEZ en la parte acumulada.
+  const remuneracionRecurrente = round2(num(emp.baseSalary) + asigFamiliar);
+  const gratBase = round2(num(inputs.gratificacion, basico + asigFamiliar + vacaciones) * factor);
   const gratProyectada = round2(gratBase * (month <= 7 ? 2 : 1));
   const gratTotal = round2(gratAcum + gratProyectada);
   const detalle5ta = taxService.retencionMensual({
-    remuneracionMensual: round2(basico + asigFamiliar), // base recurrente (sin bonos/vacaciones puntuales)
-    remuneracionesAcumuladas: round2(remAcum + gratAcum + vacaciones + bonifAfectas), // percibido + puntuales del mes
+    remuneracionMensual: remuneracionRecurrente,
+    // Acumulado real (meses anteriores + mes actual) menos la base recurrente
+    // del mes, que ya se incluye en la proyección de meses restantes.
+    remuneracionesAcumuladas: round2(remAcum + gratAcum + remAsegurable - remuneracionRecurrente),
     mes: month,
     year,
     gratificacionesProyectadas: gratProyectada,
@@ -252,7 +260,7 @@ export function deriveMonthInputs(emp, year, month) {
     bonuses: round2(bAfectas + bExtra),
     bonusesAfectas: bAfectas,
     gratificacionPagada: gratif, // gratificación registrada (campo aparte, suma al neto)
-    gratificacion: round2(basico + asigFamiliar), // remuneración computable (julio/diciembre)
+    gratificacion: round2(basico + asigFamiliar + vacation), // remuneración computable (julio/diciembre; incluye vacaciones)
     tardanzas: att.tardinessDiscount,
     loans: round2(paymentService.sumDeductionsFor(emp.id, year, month) + loanService.sumCuotaFor(emp.id, year, month)),
     vidaLey: 0,
