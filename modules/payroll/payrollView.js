@@ -552,7 +552,7 @@ function renderPlanillaTab(root) {
     const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.neto)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
     if (ok) {
       try {
-        await payrollService.closePeriod(year, month, {});
+        await payrollService.closePeriod(year, month, inputs);
         closed = true;
         applyClosedState();
         showToast('Planilla del mes cerrada.');

@@ -149,6 +149,7 @@ export function renderExportTab(root) {
           <td class="cell-num">${money(m.retenciones)}</td>
           <td class="cell-num cell-strong">${money(m.neto)}</td>
           <td class="cell-num">${money(m.abonado)}</td>
+          <td class="cell-num">${money(m.pendiente)}</td>
         </tr>`
       )
       .join('');
@@ -169,13 +170,15 @@ export function renderExportTab(root) {
         <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalRetenciones)}</div><div class="stat-card__label">Retenciones</div></div></div>
         <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalNeto)}</div><div class="stat-card__label">Neto anual</div></div></div>
         <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalAbonado)}</div><div class="stat-card__label">Abonado</div></div></div>
+        <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.pendiente)}</div><div class="stat-card__label">Pendiente</div></div></div>
       </div>
       <div class="table-wrap" style="margin-bottom:var(--space-4);">
-        <table class="table" style="min-width:640px;">
-          <thead><tr><th>Mes</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Retenciones</th><th style="text-align:right;">Neto</th><th style="text-align:right;">Abonado</th></tr></thead>
+        <table class="table" style="min-width:720px;">
+          <thead><tr><th>Mes</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Retenciones</th><th style="text-align:right;">Neto</th><th style="text-align:right;">Abonado</th><th style="text-align:right;">Pendiente</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
+      <p class="text-muted" style="font-size:var(--font-size-sm);margin:0 0 var(--space-4);">Abonado = pagos registrados en «Pagos y Adelantos». Pendiente = neto de la planilla − pagos totales de sueldo del mes.</p>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-4);font-size:var(--font-size-sm);">
         <div><strong>Préstamos / adelantos</strong><br/>${loansHtml}</div>
         <div><strong>Vacaciones</strong><br/>${vacHtml}</div>
