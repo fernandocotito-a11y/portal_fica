@@ -176,6 +176,7 @@ export function renderBenefitsTab(root) {
         await gratificacionService.create({ employeeId: emp.id, year, month: mes, monto: g.monto, bonificacion: g.bonificacion });
       }
       showToast(`Gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} registrada (${pendientes.length} colaborador(es)).`);
+      render();
     } catch (err) { showToast(err.message, 'error'); }
   });
 
