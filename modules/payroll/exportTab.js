@@ -157,9 +157,9 @@ export function renderExportTab(root) {
         const sinDatos = m.totalPercibir === 0 && m.abonado === 0;
         const nota = m.futuro
           ? ' <span class="text-muted">(por procesar)</span>'
-          : m.abierto
-            ? ''
-            : ' <span class="text-muted">(sin planilla)</span>';
+          : m.cerrada
+            ? ' <span class="text-muted">(cerrada)</span>'
+            : '';
         const pendStyle = m.pendiente > 0 ? ' style="color:var(--color-warning);"' : '';
         return `<tr${sinDatos ? ' style="opacity:.55"' : ''}>
           <td>${m.name}${nota}</td>
@@ -302,7 +302,7 @@ export function renderExportTab(root) {
           ${monthFoot}
         </table>
       </div>
-      <p class="text-muted" style="font-size:var(--font-size-sm);margin:0 0 var(--space-4);">Neto sueldo = bruto − retenciones (sin descontar adelantos). Total a percibir = neto sueldo + gratificación + CTS. Abonado = pagos registrados en «Pagos y Adelantos». Pendiente = total a percibir − abonado.</p>
+      <p class="text-muted" style="font-size:var(--font-size-sm);margin:0 0 var(--space-4);">Neto sueldo = bruto − retenciones (sin descontar adelantos). Total a percibir = neto sueldo + gratificación + CTS. Abonado = pagos registrados en «Pagos y Adelantos». Pendiente = total a percibir − abonado. Los meses futuros aparecen como <strong>(por procesar)</strong>; <strong>(cerrada)</strong> indica que la planilla de ese mes ya se cerró.</p>
 
       <div style="${grid2}">
         <div>
