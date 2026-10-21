@@ -85,6 +85,14 @@ export function renderBenefitsTab(root) {
   regGratiBtn.disabled = rules.benefitFactor <= 0;
   if (rules.benefitFactor <= 0) regGratiBtn.title = 'Este régimen no tiene gratificación.';
 
+  /** ¿El período ya está cerrado (su fecha ya llegó)? */
+  function periodoCerrado(y, mes) {
+    const hoy = new Date();
+    const hoyY = hoy.getFullYear();
+    const hoyM = hoy.getMonth() + 1;
+    return y < hoyY || (y === hoyY && mes <= hoyM);
+  }
+
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
@@ -126,9 +134,14 @@ export function renderBenefitsTab(root) {
   regGratiBtn.addEventListener('click', async () => {
     const semestre = semestreSel.value;
     const mes = semestre === 'julio' ? 7 : 12;
+    if (!periodoCerrado(year, mes)) {
+      showToast(`Aún no puedes registrar la gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year}: el período se cierra recién en ${MESES[mes - 1]}.`, 'error');
+      return;
+    }
     const emps = employees().filter((e) => inPeriod(e, year, mes));
+    if (emps.length === 0) { showToast('No hay colaboradores activos en ese período.', 'error'); return; }
     const pendientes = emps.filter((e) => bonusService.sumGratificacion(e.id, year, mes) <= 0);
-    if (pendientes.length === 0) { showToast('No hay gratificaciones pendientes de registrar.', 'info'); return; }
+    if (pendientes.length === 0) { showToast(`La gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} ya fue registrada.`, 'info'); return; }
     const ok = await confirmDialog({
       title: 'Registrar gratificación',
       message: `Se registrará la gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} para ${pendientes.length} colaborador(es), y quedará guardada en la planilla de ese mes.`,
@@ -147,6 +160,17 @@ export function renderBenefitsTab(root) {
   if (regCtsBtn) {
     regCtsBtn.addEventListener('click', async () => {
       const periodo = ctsPeriodoSel.value;
+      const mes = periodo === 'mayo' ? 5 : 11;
+      if (!periodoCerrado(year, mes)) {
+        showToast(`Aún no puedes generar las CTS de ${MESES[mes - 1]} ${year}: el período se cierra recién en ${MESES[mes - 1]}.`, 'error');
+        return;
+      }
+      const cid = company && company.id;
+      const key = `fica.cts.${cid}.${year}.${periodo}`;
+      if (localStorage.getItem(key) === '1') {
+        showToast(`Las CTS de ${MESES[mes - 1]} ${year} ya fueron generadas.`, 'info');
+        return;
+      }
       const emps = employees();
       let n = 0;
       try {
@@ -156,6 +180,7 @@ export function renderBenefitsTab(root) {
           await pdfReportsService.downloadCtSCertificate(emp, { semestre: `${MESES[periodo === 'mayo' ? 4 : 10]} ${year}` }, c, company);
           n += 1;
         }
+        if (n > 0) localStorage.setItem(key, '1');
         showToast(n ? `Se generaron ${n} boleta(s) de CTS.` : 'No hay colaboradores con CTS que generar.', n ? 'success' : 'info');
       } catch (err) { showToast(err.message, 'error'); }
     });
