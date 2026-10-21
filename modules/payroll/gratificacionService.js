@@ -47,11 +47,11 @@ export const gratificacionService = {
     return cache.some((g) => g.employeeId === employeeId && g.year === year && g.month === month);
   },
 
-  /** Monto de gratificación registrada en un mes para un empleado. */
+  /** Total de gratificación (gratificación + bono extraordinario) en un mes para un empleado. */
   sumFor(employeeId, year, month) {
     return round2(
       cache.filter((g) => g.employeeId === employeeId && g.year === year && g.month === month)
-        .reduce((s, g) => s + num(g.monto), 0)
+        .reduce((s, g) => s + num(g.monto) + num(g.bonificacion), 0)
     );
   },
 
