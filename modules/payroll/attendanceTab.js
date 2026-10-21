@@ -257,8 +257,12 @@ export function renderAttendanceTab(root) {
       return;
     }
     if (!current) {
+      const nextText = next
+        ? `<span class="text-muted" style="font-size:var(--font-size-sm);">Programado: ${fmtDate(next.effectiveFrom)} → ${escapeHtml(next.entry)}–${escapeHtml(next.exit)}</span>`
+        : '';
       banner.innerHTML = `<span class="badge badge--gold">Horario</span>
-        <span class="text-muted">Sin horario configurado. Los cálculos automáticos de tardanzas y horas extras están desactivados.</span>
+        <span class="text-muted">Sin horario vigente hoy. Los cálculos automáticos de tardanzas y horas extras están desactivados.</span>
+        ${nextText}
         <button type="button" class="btn btn--sm" data-schedule-open>Configurar horario</button>`;
       return;
     }
@@ -304,19 +308,20 @@ export function renderAttendanceTab(root) {
   function resetScheduleForm() {
     editingScheduleId = null;
     schedFormTitle.textContent = 'Nuevo horario';
-    const current = scheduleService.current() || scheduleService.list()[0] || null;
+    const current = scheduleService.current();
+    const template = current || scheduleService.list()[0] || null;
     const today = todayIso();
     schedFrom.value = current && current.effectiveFrom >= today ? addDaysIso(today, 1) : today;
     schedTo.value = '';
-    schedEntry.value = current ? current.entry : '09:00';
-    schedExit.value = current ? current.exit : '18:00';
-    schedBreak.value = current ? current.breakMinutes : 60;
-    schedTolerance.value = current ? current.toleranceMinutes : 0;
-    schedRound.value = String(current ? current.roundMinutes : 1);
-    schedTardiness.checked = current ? current.tardinessEnabled : true;
-    schedOvertime.checked = current ? current.overtimeEnabled : true;
+    schedEntry.value = template ? template.entry : '09:00';
+    schedExit.value = template ? template.exit : '18:00';
+    schedBreak.value = template ? template.breakMinutes : 60;
+    schedTolerance.value = template ? template.toleranceMinutes : 0;
+    schedRound.value = String(template ? template.roundMinutes : 1);
+    schedTardiness.checked = template ? template.tardinessEnabled : true;
+    schedOvertime.checked = template ? template.overtimeEnabled : true;
     schedNote.value = '';
-    const days = current ? current.workDays : [1, 2, 3, 4, 5];
+    const days = template ? template.workDays : [1, 2, 3, 4, 5];
     schedDays.querySelectorAll('input[type="checkbox"]').forEach((i) => {
       i.checked = days.includes(Number(i.value));
     });
