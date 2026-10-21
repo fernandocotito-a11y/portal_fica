@@ -19,6 +19,7 @@ import { vacationService } from './vacationService.js';
 import { attendanceService, ATTENDANCE_TYPES } from './attendanceService.js';
 import { paymentService, PAYMENT_CONCEPTS, PAYMENT_TYPES } from './paymentService.js';
 import { gratificacionService } from './gratificacionService.js';
+import { loanService } from './loanService.js';
 import { benefitsService } from './benefitsService.js';
 import { laborRules, MESES } from './payrollConfig.js';
 import { num, round2 } from './payrollUtils.js';
@@ -189,7 +190,26 @@ export const accountStatementService = {
       }));
 
     const loans = payments.filter((p) => p.tipo === 'adelanto');
-    const loansTotal = round2(loans.reduce((s, p) => s + num(p.monto), 0));
+
+    /* ------------------------------ Préstamos --------------------------- */
+    const prestamos = loanService.list(employeeId).map((l) => {
+      const p = loanService.progress(l);
+      return {
+        id: l.id,
+        descripcion: l.descripcion || '',
+        monto: l.monto,
+        nCuotas: l.nCuotas,
+        cuota: p.cuota,
+        aplicadas: p.aplicadas,
+        total: p.total,
+        aplicado: p.aplicado,
+        saldo: p.saldo,
+        startYear: l.startYear,
+        startMonth: l.startMonth,
+        name: MESES[l.startMonth - 1],
+      };
+    });
+    const prestamosSaldo = round2(prestamos.reduce((s, p) => s + p.saldo, 0));
 
     /* --------------------- Gratificaciones y CTS ------------------------ */
     const gratificaciones = gratifs
@@ -277,7 +297,8 @@ export const accountStatementService = {
       payments,
       paymentsTotal: totals.abonado,
       loans,
-      loansTotal,
+      prestamos,
+      prestamosSaldo,
       gratificaciones,
       ctsDetail,
       vacations,

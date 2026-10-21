@@ -16,12 +16,14 @@ import { taxSummaryService } from './taxSummaryService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
 import { gratificacionService } from './gratificacionService.js';
+import { loanService } from './loanService.js';
 import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION, COMMISSION_TYPES, laborRules } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
 import { renderVacationTab } from './vacationTab.js';
 import { renderBonusesTab } from './bonusesTab.js';
 import { renderPaymentsTab } from './paymentsTab.js';
+import { renderLoansTab } from './loansTab.js';
 import { renderBenefitsTab } from './benefitsTab.js';
 import { renderLiquidationTab } from './liquidationTab.js';
 import { renderExportTab } from './exportTab.js';
@@ -582,6 +584,7 @@ const TABS = [
   { key: 'vacation', label: 'Vacaciones' },
   { key: 'bonuses', label: 'Bonificaciones' },
   { key: 'payments', label: 'Pagos y Adelantos' },
+  { key: 'loans', label: 'Préstamos' },
   { key: 'benefits', label: 'CTS y Gratificaciones' },
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
   { key: 'export', label: 'Exportaciones y Reportes' },
@@ -619,6 +622,7 @@ export default {
       else if (key === 'vacation') renderVacationTab(content);
       else if (key === 'bonuses') renderBonusesTab(content);
       else if (key === 'payments') renderPaymentsTab(content);
+      else if (key === 'loans') renderLoansTab(content);
       else if (key === 'benefits') renderBenefitsTab(content);
       else if (key === 'liquidation') renderLiquidationTab(content);
       else if (key === 'export') renderExportTab(content);
@@ -645,6 +649,7 @@ export default {
           bonusService.refresh(),
           paymentService.refresh(),
           gratificacionService.refresh(),
+          loanService.refresh(),
           afpRatesService.refresh(),
           paramsService.refresh(),
         ]);

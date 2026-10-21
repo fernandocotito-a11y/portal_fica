@@ -16,6 +16,7 @@ import { vacationService } from './vacationService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
 import { gratificacionService } from './gratificacionService.js';
+import { loanService } from './loanService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission, laborRules } from './payrollConfig.js';
 
 /* ------------------------------------------------------------ caché en memoria */
@@ -245,7 +246,7 @@ export function deriveMonthInputs(emp, year, month) {
     gratificacionPagada: gratif, // gratificación registrada (campo aparte, suma al neto)
     gratificacion: round2(basico + asigFamiliar), // remuneración computable (julio/diciembre)
     tardanzas: att.tardinessDiscount,
-    loans: paymentService.sumDeductionsFor(emp.id, year, month),
+    loans: round2(paymentService.sumDeductionsFor(emp.id, year, month) + loanService.sumCuotaFor(emp.id, year, month)),
     vidaLey: 0,
   };
 }

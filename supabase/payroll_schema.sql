@@ -285,3 +285,27 @@ create policy "payroll_gratificaciones_all" on public.payroll_gratificaciones
   for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
 
 create index if not exists idx_payroll_gratificaciones_company on public.payroll_gratificaciones(company_id);
+
+-- ============================================================================
+-- PRÉSTAMOS con cuotas — se descuentan automáticamente en la planilla
+-- ============================================================================
+create table if not exists public.payroll_loans (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  employee_id uuid not null references public.payroll_employees(id) on delete cascade,
+  descripcion text,
+  monto numeric not null default 0,
+  n_cuotas int not null default 1 check (n_cuotas > 0),
+  start_year int not null,
+  start_month int not null check (start_month between 1 and 12),
+  created_at timestamptz not null default now()
+);
+
+alter table public.payroll_loans enable row level security;
+
+drop policy if exists "payroll_loans_all" on public.payroll_loans;
+create policy "payroll_loans_all" on public.payroll_loans
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
+create index if not exists idx_payroll_loans_company on public.payroll_loans(company_id);
+create index if not exists idx_payroll_loans_employee on public.payroll_loans(employee_id);

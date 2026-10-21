@@ -226,17 +226,19 @@ export function renderExportTab(root) {
           .join('')
       : `<tr><td colspan="4" class="text-muted">Sin pagos registrados este año.</td></tr>`;
 
-    const loanRows = s.loans.length
-      ? s.loans
+    const loanRows = s.prestamos.length
+      ? s.prestamos
           .map(
             (l) => `<tr>
-            <td>${l.name} ${s.year}</td>
-            <td>${escapeHtml(l.conceptoLabel)}</td>
-            <td class="cell-num">${money(l.monto)}</td>
+            <td>${escapeHtml(l.descripcion || 'Préstamo')}</td>
+            <td>${l.name} ${l.startYear}</td>
+            <td class="cell-num" style="text-align:center;">${l.aplicadas}/${l.total}</td>
+            <td class="cell-num">${money(l.cuota)}</td>
+            <td class="cell-num cell-strong">${money(l.saldo)}</td>
           </tr>`
           )
           .join('')
-      : `<tr><td colspan="3" class="text-muted">Sin préstamos/adelantos.</td></tr>`;
+      : `<tr><td colspan="5" class="text-muted">Sin préstamos registrados.</td></tr>`;
 
     const vb = s.vacationBalance;
     const vacRows = s.vacations.length
@@ -321,7 +323,7 @@ export function renderExportTab(root) {
         </div>
       </div>
 
-      <h4 style="${h4}">Pagos registrados</h4>
+      <h4 style="${h4}">Pagos y adelantos registrados</h4>
       <div class="table-wrap" style="margin-bottom:var(--space-4);">
         <table class="table" style="min-width:520px;">
           <thead><tr><th>Mes</th><th>Concepto</th><th>Tipo</th><th style="text-align:right;">Monto</th></tr></thead>
@@ -345,11 +347,11 @@ export function renderExportTab(root) {
           </table></div>
         </div>
         <div>
-          <h4 style="${h4}">Préstamos / adelantos</h4>
-          <div class="table-wrap"><table class="table" style="min-width:360px;">
-            <thead><tr><th>Mes</th><th>Concepto</th><th style="text-align:right;">Monto</th></tr></thead>
+          <h4 style="${h4}">Préstamos</h4>
+          <div class="table-wrap"><table class="table" style="min-width:520px;">
+            <thead><tr><th>Descripción</th><th>Inicio</th><th style="text-align:center;">Cuotas</th><th style="text-align:right;">Cuota</th><th style="text-align:right;">Saldo</th></tr></thead>
             <tbody>${loanRows}</tbody>
-            <tfoot><tr><td colspan="2" class="cell-strong">TOTAL ADELANTOS</td><td class="cell-num cell-strong">${money(s.loansTotal)}</td></tr></tfoot>
+            <tfoot><tr><td colspan="4" class="cell-strong">SALDO TOTAL</td><td class="cell-num cell-strong">${money(s.prestamosSaldo)}</td></tr></tfoot>
           </table></div>
         </div>
       </div>
