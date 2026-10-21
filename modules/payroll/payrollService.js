@@ -15,6 +15,7 @@ import { attendanceService } from './attendanceService.js';
 import { vacationService } from './vacationService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
+import { gratificacionService } from './gratificacionService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission, laborRules } from './payrollConfig.js';
 
 /* ------------------------------------------------------------ caché en memoria */
@@ -176,7 +177,9 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
   const vidaLey = round2(num(inputs.vidaLey));
   const totalAportes = round2(essalud + vidaLey);
 
+  const gratificacionPagada = round2(num(inputs.gratificacionPagada));
   const neto = round2(totalBruto - totalRetenciones);
+  const netoTotal = round2(neto + gratificacionPagada);
 
   return {
     days,
@@ -188,6 +191,8 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
     totalBruto,
     remAsegurable,
     gratificacion: gratBase,
+    gratificacionPagada,
+    netoTotal,
     pension,
     pensionLabel,
     renta5ta,
@@ -229,15 +234,15 @@ export function deriveMonthInputs(emp, year, month) {
   const vacation = round2(vacDays * (emp.baseSalary / 30));
   const bAfectas = bonusService.sumRegular(emp.id, year, month);
   const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
-  const bGratif = bonusService.sumGratificacion(emp.id, year, month);
+  const gratif = gratificacionService.sumFor(emp.id, year, month);
   const basico = round2(num(emp.baseSalary) * (days / 30));
   const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year) * TASAS.asignacionFamiliar) : 0;
   return {
     days,
     vacation,
-    bonuses: round2(bAfectas + bExtra + bGratif),
+    bonuses: round2(bAfectas + bExtra),
     bonusesAfectas: bAfectas,
-    gratificacionPagada: bGratif, // gratificación registrada este mes (no afecta Renta 5ª)
+    gratificacionPagada: gratif, // gratificación registrada (campo aparte, suma al neto)
     gratificacion: round2(basico + asigFamiliar), // remuneración computable (julio/diciembre)
     tardanzas: att.tardinessDiscount,
     loans: paymentService.sumDeductionsFor(emp.id, year, month),
@@ -275,7 +280,7 @@ export function calcRow(emp, inputs = {}, year, month) {
 
 /** Suma totales de un conjunto de filas. */
 export function sumTotals(rows) {
-  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'totalBruto', 'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto'];
+  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'totalBruto', 'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto', 'gratificacionPagada', 'netoTotal'];
   const acc = {};
   keys.forEach((k) => (acc[k] = 0));
   rows.forEach((r) => keys.forEach((k) => (acc[k] = round2(acc[k] + num(r[k])))));

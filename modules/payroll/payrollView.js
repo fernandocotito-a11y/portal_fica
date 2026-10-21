@@ -15,6 +15,7 @@ import { liquidationService } from './liquidationService.js';
 import { taxSummaryService } from './taxSummaryService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
+import { gratificacionService } from './gratificacionService.js';
 import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION, COMMISSION_TYPES, laborRules } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
@@ -92,7 +93,7 @@ function renderPlanillaTab(root) {
                 <th colspan="6">Ingresos</th>
                 <th colspan="5">Retenciones al trabajador</th>
                 <th colspan="3">Aportes del empleador</th>
-                <th colspan="1">Neto</th>
+                <th colspan="3">Neto</th>
                 <th colspan="1"></th>
               </tr>
               <tr>
@@ -100,7 +101,7 @@ function renderPlanillaTab(root) {
                 <th>Días</th><th>Básico</th><th>Asig. fam.</th><th>Vacac.</th><th>Bonif.</th><th>Total bruto</th>
                 <th>Pensión</th><th>Renta 5ta</th><th>Tard./Faltas</th><th>Prést./Adel.</th><th>Total ret.</th>
                 <th>Essalud 9%</th><th>Vida Ley</th><th>Total aport.</th>
-                <th>Neto a pagar</th><th></th>
+                <th>Neto a pagar</th><th>Gratificación</th><th>Neto total a pagar</th><th></th>
               </tr>
             </thead>
             <tbody data-tbody></tbody>
@@ -261,7 +262,7 @@ function renderPlanillaTab(root) {
 
   function rowHtml(emp, calc, error) {
     if (error) {
-      return `<tr data-emp="${escapeHtml(emp.id)}"><td colspan="21"><span style="color:#b91c1c;font-size:var(--font-size-sm);">⚠ ${escapeHtml(emp.name)}: ${escapeHtml(error)}</span></td></tr>`;
+      return `<tr data-emp="${escapeHtml(emp.id)}"><td colspan="23"><span style="color:#b91c1c;font-size:var(--font-size-sm);">⚠ ${escapeHtml(emp.name)}: ${escapeHtml(error)}</span></td></tr>`;
     }
     const fuera = !!calc.fueraPeriodo;
     const badge = fuera ? ' <span class="badge badge--muted">Fuera de período</span>' : '';
@@ -287,6 +288,8 @@ function renderPlanillaTab(root) {
         <td class="cell-num" data-cell="vidaLey">${money(calc.vidaLey)}</td>
         <td class="cell-num" data-cell="totalAportes">${money(calc.totalAportes)}</td>
         <td class="cell-num cell-neto" data-cell="neto">${money(calc.neto)}</td>
+        <td class="cell-num" data-cell="gratificacionPagada">${money(calc.gratificacionPagada)}</td>
+        <td class="cell-num cell-neto" data-cell="netoTotal">${money(calc.netoTotal)}</td>
         <td><div class="table__actions"><button type="button" class="icon-btn" data-edit="${escapeHtml(emp.id)}" title="Editar">${ICONS.edit}</button><button type="button" class="icon-btn icon-btn--danger" data-del="${escapeHtml(emp.id)}" title="Eliminar">${ICONS.trash}</button></div></td>
       </tr>`;
   }
@@ -310,6 +313,8 @@ function renderPlanillaTab(root) {
         <td class="cell-num" data-total="vidaLey">${money(totals.vidaLey)}</td>
         <td class="cell-num" data-total="totalAportes">${money(totals.totalAportes)}</td>
         <td class="cell-num cell-neto" data-total="neto">${money(totals.neto)}</td>
+        <td class="cell-num" data-total="gratificacionPagada">${money(totals.gratificacionPagada)}</td>
+        <td class="cell-num cell-neto" data-total="netoTotal">${money(totals.netoTotal)}</td>
         <td></td>
       </tr>`;
   }
@@ -321,7 +326,7 @@ function renderPlanillaTab(root) {
       data = computeAll();
     } catch (err) {
       console.error(err);
-      tbody.innerHTML = `<tr><td colspan="21"><div class="empty-state"><span class="empty-state__icon">⚠️</span><div class="empty-state__title">Error al generar la planilla</div><div class="empty-state__desc">${escapeHtml(err.message)}</div></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="23"><div class="empty-state"><span class="empty-state__icon">⚠️</span><div class="empty-state__title">Error al generar la planilla</div><div class="empty-state__desc">${escapeHtml(err.message)}</div></div></td></tr>`;
       tfoot.innerHTML = '';
       summaryEl.textContent = '';
       const n = root.querySelector('[data-period-note]'); if (n) n.textContent = '';
@@ -333,7 +338,7 @@ function renderPlanillaTab(root) {
       const detalle = all.length > 0
         ? `<div class="empty-state__title">Sin colaboradores en ${MESES[month - 1]} ${year}</div><div class="empty-state__desc">Hay ${all.length} colaborador(es) registrado(s), pero ninguno está activo en este período (fecha de inicio posterior o cese anterior). Activa “Mostrar todos” o cambia el mes/año.</div>`
         : `<div class="empty-state__title">Sin colaboradores</div><div class="empty-state__desc">Agrega tu primer colaborador para generar la planilla.</div>`;
-      tbody.innerHTML = `<tr><td colspan="21"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span>${detalle}</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="23"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span>${detalle}</div></td></tr>`;
       tfoot.innerHTML = '';
       summaryEl.textContent = '';
       if (periodNote) periodNote.textContent = '';
@@ -639,6 +644,7 @@ export default {
           taxSummaryService.refresh(),
           bonusService.refresh(),
           paymentService.refresh(),
+          gratificacionService.refresh(),
           afpRatesService.refresh(),
           paramsService.refresh(),
         ]);

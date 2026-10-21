@@ -262,3 +262,26 @@ create policy "payroll_params_select" on public.payroll_params
 drop policy if exists "payroll_params_write" on public.payroll_params;
 create policy "payroll_params_write" on public.payroll_params
   for all using (public.is_superadmin()) with check (public.is_superadmin());
+
+-- ============================================================================
+-- GRATIFICACIONES registradas (julio/diciembre) — van en planilla aparte
+-- ============================================================================
+create table if not exists public.payroll_gratificaciones (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  employee_id uuid not null references public.payroll_employees(id) on delete cascade,
+  year int not null,
+  month int not null,          -- 7 (julio) o 12 (diciembre)
+  monto numeric not null default 0,
+  bonificacion numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique (company_id, employee_id, year, month)
+);
+
+alter table public.payroll_gratificaciones enable row level security;
+
+drop policy if exists "payroll_gratificaciones_all" on public.payroll_gratificaciones;
+create policy "payroll_gratificaciones_all" on public.payroll_gratificaciones
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
+create index if not exists idx_payroll_gratificaciones_company on public.payroll_gratificaciones(company_id);

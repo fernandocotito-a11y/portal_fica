@@ -9,7 +9,7 @@
 
 import { payrollService, inPeriod } from './payrollService.js';
 import { benefitsService } from './benefitsService.js';
-import { bonusService } from './bonusService.js';
+import { gratificacionService } from './gratificacionService.js';
 import { pdfReportsService } from './pdfReportsService.js';
 import { laborRules, MESES } from './payrollConfig.js';
 import { money } from './payrollUtils.js';
@@ -48,6 +48,12 @@ export function renderBenefitsTab(root) {
           </thead>
           <tbody data-grati-tbody></tbody>
         </table></div>
+        <div class="table-wrap" style="margin-top:var(--space-4);">
+          <table class="table" style="min-width:760px;">
+            <thead><tr><th>Registro de gratificaciones</th><th>Período</th><th style="text-align:right;">Gratif.</th><th style="text-align:right;">Bono</th><th style="text-align:right;">Total</th></tr></thead>
+            <tbody data-grati-registro></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -77,6 +83,7 @@ export function renderBenefitsTab(root) {
   const yearSel = root.querySelector('[data-year]');
   const semestreSel = root.querySelector('[data-semestre]');
   const gratiTbody = root.querySelector('[data-grati-tbody]');
+  const gratiRegistro = root.querySelector('[data-grati-registro]');
   const regGratiBtn = root.querySelector('[data-reg-grati]');
   const regCtsBtn = root.querySelector('[data-reg-cts]');
   const ctsTbody = root.querySelector('[data-cts-tbody]');
@@ -127,6 +134,21 @@ export function renderBenefitsTab(root) {
         </tr>`;
       }).join('');
     }
+
+    // Registro de gratificaciones del año
+    const recs = gratificacionService.forPeriod(year, 7).concat(gratificacionService.forPeriod(year, 12));
+    gratiRegistro.innerHTML = recs.length
+      ? recs.map((g) => {
+          const emp = payrollService.getEmployee(g.employeeId);
+          return `<tr>
+            <td>${escapeHtml(emp ? emp.name : '—')}</td>
+            <td>${g.month === 7 ? 'Julio' : 'Diciembre'} ${g.year}</td>
+            <td class="cell-num">${money(g.monto)}</td>
+            <td class="cell-num">${money(g.bonificacion)}</td>
+            <td class="cell-num cell-strong">${money(g.monto + g.bonificacion)}</td>
+          </tr>`;
+        }).join('')
+      : `<tr><td colspan="5" class="text-muted">Aún no se registra ninguna gratificación de ${year}.</td></tr>`;
   }
 
   yearSel.addEventListener('change', () => { year = Number(yearSel.value); render(); });
@@ -140,7 +162,7 @@ export function renderBenefitsTab(root) {
     }
     const emps = employees().filter((e) => inPeriod(e, year, mes));
     if (emps.length === 0) { showToast('No hay colaboradores activos en ese período.', 'error'); return; }
-    const pendientes = emps.filter((e) => bonusService.sumGratificacion(e.id, year, mes) <= 0);
+    const pendientes = emps.filter((e) => !gratificacionService.hasRegistered(e.id, year, mes));
     if (pendientes.length === 0) { showToast(`La gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} ya fue registrada.`, 'info'); return; }
     const ok = await confirmDialog({
       title: 'Registrar gratificación',
@@ -151,7 +173,7 @@ export function renderBenefitsTab(root) {
     try {
       for (const emp of pendientes) {
         const g = benefitsService.calcGratificacion(emp, { year, semestre, factor: rules.benefitFactor });
-        await bonusService.create({ employeeId: emp.id, year, month: mes, tipo: 'regular', concepto: 'Gratificación', monto: g.monto });
+        await gratificacionService.create({ employeeId: emp.id, year, month: mes, monto: g.monto, bonificacion: g.bonificacion });
       }
       showToast(`Gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} registrada (${pendientes.length} colaborador(es)).`);
     } catch (err) { showToast(err.message, 'error'); }
