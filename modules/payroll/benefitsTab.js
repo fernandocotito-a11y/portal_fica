@@ -50,7 +50,7 @@ export function renderBenefitsTab(root) {
         </table></div>
         <div class="table-wrap" style="margin-top:var(--space-4);">
           <table class="table" style="min-width:760px;">
-            <thead><tr><th>Registro de gratificaciones</th><th>Período</th><th style="text-align:right;">Gratif.</th><th style="text-align:right;">Bono</th><th style="text-align:right;">Total</th></tr></thead>
+            <thead><tr><th>Registro de gratificaciones</th><th>Período</th><th style="text-align:right;">Gratif.</th><th style="text-align:right;">Bono</th><th style="text-align:right;">Total</th><th></th></tr></thead>
             <tbody data-grati-registro></tbody>
           </table>
         </div>
@@ -146,12 +146,33 @@ export function renderBenefitsTab(root) {
             <td class="cell-num">${money(g.monto)}</td>
             <td class="cell-num">${money(g.bonificacion)}</td>
             <td class="cell-num cell-strong">${money(g.monto + g.bonificacion)}</td>
+            <td><div class="table__actions"><button class="icon-btn icon-btn--danger" data-del-grati="${escapeHtml(g.id)}" title="Eliminar">${ICONS.trash}</button></div></td>
           </tr>`;
         }).join('')
-      : `<tr><td colspan="5" class="text-muted">Aún no se registra ninguna gratificación de ${year}.</td></tr>`;
+      : `<tr><td colspan="6" class="text-muted">Aún no se registra ninguna gratificación de ${year}.</td></tr>`;
   }
 
   yearSel.addEventListener('change', () => { year = Number(yearSel.value); render(); });
+
+  gratiRegistro.addEventListener('click', async (e) => {
+    const delBtn = e.target.closest('[data-del-grati]');
+    if (!delBtn) return;
+    const id = delBtn.dataset.delGrati;
+    const rec = gratificacionService.list().find((g) => g.id === id);
+    const emp = rec ? payrollService.getEmployee(rec.employeeId) : null;
+    const ok = await confirmDialog({
+      title: 'Eliminar gratificación',
+      message: `¿Eliminar la gratificación registrada de ${emp ? emp.name : 'este colaborador'}?`,
+      confirmText: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await gratificacionService.remove(id);
+      showToast('Gratificación eliminada.');
+      render();
+    } catch (err) { showToast(err.message, 'error'); }
+  });
 
   regGratiBtn.addEventListener('click', async () => {
     const semestre = semestreSel.value;
