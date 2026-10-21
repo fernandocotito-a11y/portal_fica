@@ -155,13 +155,13 @@ export const MESES = [
 
 /* ---------------------------------------------------------------------------
    Régimen laboral (Ley MYPE - Ley 28015 / Ley 30056):
-   - general:         30 días vac., gratificaciones y CTS al 100%.
-   - pequena_empresa: 15 días vac., gratificaciones y CTS al 50%.
+   - general:         30 días vac., gratificaciones 100% y CTS.
+   - pequena_empresa: 15 días vac., gratificaciones 50%, SIN CTS.
    - microempresa:    15 días vac., SIN gratificaciones ni CTS.
    -------------------------------------------------------------------------- */
 export const LABOR_RULES = {
   general: { vacationDays: 30, benefitFactor: 1, hasCts: true, label: 'Régimen general' },
-  pequena_empresa: { vacationDays: 15, benefitFactor: 0.5, hasCts: true, label: 'Pequeña empresa' },
+  pequena_empresa: { vacationDays: 15, benefitFactor: 0.5, hasCts: false, label: 'Pequeña empresa' },
   microempresa: { vacationDays: 15, benefitFactor: 0, hasCts: false, label: 'Microempresa' },
 };
 

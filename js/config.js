@@ -174,8 +174,8 @@ export const COMPANY_OPTIONS = {
    - Régimen general (>100 trabajadores): 30 días vac., gratif. y CTS al 100%.
    -------------------------------------------------------------------------- */
 export const REGIMEN_LABORAL = [
-  { value: 'general', label: 'Régimen general (30 días vac., gratif. y CTS 100%)' },
-  { value: 'pequena_empresa', label: 'Pequeña empresa (15 días vac., gratif. y CTS 50%)' },
+  { value: 'general', label: 'Régimen general (30 días vac., gratif. 100% y CTS)' },
+  { value: 'pequena_empresa', label: 'Pequeña empresa (15 días vac., gratif. 50%, sin CTS)' },
   { value: 'microempresa', label: 'Microempresa (15 días vac., sin gratificaciones ni CTS)' },
 ];
 
