@@ -315,17 +315,26 @@ create index if not exists idx_payroll_loans_employee on public.payroll_loans(em
 -- ============================================================================
 -- Marca si el registro de asistencia usa minutos manuales (true) o los
 -- calcula automáticamente contra el horario vigente (false).
-alter table public.payroll_attendance
-  add column if not exists manual boolean not null default false;
+-- Se ejecuta una sola vez: si la columna ya existe, no vuelve a migrar.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'payroll_attendance'
+       and column_name = 'manual'
+  ) then
+    alter table public.payroll_attendance
+      add column manual boolean not null default false;
 
--- Migración: los registros creados antes de los horarios automáticos tenían
--- minutos de tardanza/extra ingresados a mano. Se conservan como ajuste manual
--- para que el nuevo cálculo automático no los ponga en cero.
--- Ejecuta esta sentencia una sola vez, antes de empezar a usar los horarios.
-update public.payroll_attendance
-   set manual = true
- where manual = false
-   and (tardiness_minutes > 0 or extra_minutes > 0);
+    -- Los registros creados antes de los horarios automáticos tenían minutos
+    -- de tardanza/extra ingresados a mano: se conservan como ajuste manual
+    -- para que el nuevo cálculo automático no los ponga en cero.
+    update public.payroll_attendance
+       set manual = true
+     where tardiness_minutes > 0 or extra_minutes > 0;
+  end if;
+end $$;
 
 create table if not exists public.payroll_work_schedules (
   id uuid primary key default gen_random_uuid(),
