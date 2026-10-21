@@ -610,7 +610,7 @@ button.module-card:hover {
 
 /* ---- Tabla de planilla (ancha y con celdas editables) ---- */
 .table--payroll {
-  min-width: 1720px;
+  min-width: 1840px;
 }
 .table--payroll .table__group th {
   background: var(--color-cream-dark);

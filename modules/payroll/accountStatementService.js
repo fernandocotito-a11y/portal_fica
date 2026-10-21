@@ -261,6 +261,7 @@ export const accountStatementService = {
     const attTotals = {
       tardinessMinutes: 0,
       extraMinutes: 0,
+      overtimePay: 0,
       absentWithPay: 0,
       absentWithoutPay: 0,
       tardinessDiscount: 0,
@@ -271,6 +272,7 @@ export const accountStatementService = {
       const s = attendanceService.summarize(employeeId, year, m, employee.baseSalary);
       attTotals.tardinessMinutes += s.tardinessMinutes;
       attTotals.extraMinutes += s.extraMinutes;
+      attTotals.overtimePay = round2(attTotals.overtimePay + s.overtimePay);
       attTotals.absentWithPay += s.absentWithPay;
       attTotals.absentWithoutPay += s.absentWithoutPay;
       attTotals.tardinessDiscount = round2(attTotals.tardinessDiscount + s.tardinessDiscount);
@@ -278,15 +280,19 @@ export const accountStatementService = {
       attTotals.totalDiscount = round2(attTotals.totalDiscount + s.totalDiscount);
     }
 
-    const attendance = asistencias.map((r) => ({
-      date: r.date || '',
-      type: r.type,
-      typeLabel: attendanceLabel(r.type),
-      tardinessMinutes: num(r.tardinessMinutes),
-      extraMinutes: num(r.extraMinutes),
-      withPay: r.withPay !== false,
-      note: r.note || '',
-    }));
+    const attendance = asistencias.map((r) => {
+      const c = attendanceService.computeRecord(r, undefined, employee.baseSalary);
+      return {
+        date: r.date || '',
+        type: r.type,
+        typeLabel: attendanceLabel(r.type),
+        tardinessMinutes: c.tardinessMinutes,
+        extraMinutes: c.extraMinutes,
+        overtimePay: c.overtimePay,
+        withPay: r.withPay !== false,
+        note: r.note || '',
+      };
+    });
 
     return {
       employee,

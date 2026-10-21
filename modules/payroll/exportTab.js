@@ -263,12 +263,14 @@ export function renderExportTab(root) {
             <td>${fmtDate(a.date)}</td>
             <td>${escapeHtml(a.typeLabel)}</td>
             <td class="cell-num">${a.tardinessMinutes}</td>
+            <td class="cell-num">${a.extraMinutes}</td>
+            <td class="cell-num">${money(a.overtimePay || 0)}</td>
             <td>${a.withPay ? 'Sí' : 'No'}</td>
             <td>${escapeHtml(a.note || '')}</td>
           </tr>`
           )
           .join('')
-      : `<tr><td colspan="5" class="text-muted">Sin registros de asistencia en el año.</td></tr>`;
+      : `<tr><td colspan="7" class="text-muted">Sin registros de asistencia en el año.</td></tr>`;
 
     const h4 = 'margin:0 0 var(--space-2);font-size:var(--font-size-md);';
     const grid2 = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--space-4);margin-bottom:var(--space-4);';
@@ -360,13 +362,14 @@ export function renderExportTab(root) {
       <h4 style="${h4}">Asistencias</h4>
       <div style="${chip}">
         <span><strong>Tardanzas:</strong> ${at.tardinessMinutes} min (${money(at.tardinessDiscount)})</span>
+        <span><strong>Horas extras:</strong> ${at.extraMinutes} min (${money(at.overtimePay)})</span>
         <span><strong>Faltas con goce:</strong> ${at.absentWithPay}</span>
         <span><strong>Faltas sin goce:</strong> ${at.absentWithoutPay} (${money(at.absenceDiscount)})</span>
         <span><strong>Descuento total:</strong> ${money(at.totalDiscount)}</span>
       </div>
       <div class="table-wrap">
-        <table class="table" style="min-width:520px;">
-          <thead><tr><th>Fecha</th><th>Tipo</th><th style="text-align:right;">Min. tardanza</th><th>Con goce</th><th>Nota</th></tr></thead>
+        <table class="table" style="min-width:720px;">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th style="text-align:right;">Min. tardanza</th><th style="text-align:right;">Min. extra</th><th style="text-align:right;">Pago extra</th><th>Con goce</th><th>Nota</th></tr></thead>
           <tbody>${attRows}</tbody>
         </table>
       </div>`;

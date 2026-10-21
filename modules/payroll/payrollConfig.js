@@ -62,6 +62,28 @@ export const TASAS = {
   asignacionFamiliar: 0.1, // 10% de la RMV
 };
 
+/* ---------------------------------------------------------------------------
+   Horas extras (D.S. 007-2002-TR / Ley 27671):
+   - Las dos primeras horas del día se pagan con sobretasa de 25%.
+   - Las horas adicionales se pagan con sobretasa de 35%.
+   La tarifa base es la remuneración ordinaria ÷ 30 días ÷ horas de la jornada.
+   -------------------------------------------------------------------------- */
+export const OVERTIME = {
+  firstTwoMinutes: 120,
+  firstTwoSurcharge: 0.25,
+  additionalSurcharge: 0.35,
+};
+
+export const WORK_DAY_LABELS = [
+  { value: 1, label: 'Lun' },
+  { value: 2, label: 'Mar' },
+  { value: 3, label: 'Mié' },
+  { value: 4, label: 'Jue' },
+  { value: 5, label: 'Vie' },
+  { value: 6, label: 'Sáb' },
+  { value: 7, label: 'Dom' },
+];
+
 /* ---- Escala progresiva de Renta de 5ª Categoría ---- */
 export const RENTA_5TA = {
   deduccionUIT: 7, // deducción legal inicial

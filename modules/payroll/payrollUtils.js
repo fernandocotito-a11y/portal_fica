@@ -79,6 +79,54 @@ export function fmtDate(iso) {
   return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
 }
 
+/** Fecha de hoy en formato ISO local (YYYY-MM-DD), sin desfase UTC. */
+export function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Día de la semana ISO de una fecha (1 = lunes … 7 = domingo). */
+export function isoWeekday(iso) {
+  const [y, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  const js = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = domingo
+  return js === 0 ? 7 : js;
+}
+
+/** Suma (o resta) días a una fecha ISO sin desfase UTC. */
+export function addDaysIso(iso, days) {
+  const [y, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + Number(days || 0));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Convierte "HH:MM" (o "HH:MM:SS") a minutos desde medianoche. */
+export function hhmmToMinutes(value) {
+  const [h, m] = String(value || '').slice(0, 5).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  return h * 60 + m;
+}
+
+/** Convierte minutos desde medianoche a "HH:MM". */
+export function minutesToHHMM(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/** Formatea una duración en minutos como "3h 30m". */
+export function formatDuration(minutes) {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${m}m`;
+}
+
 /** Formatea un monto en soles. */
 export function money(n) {
   const v = Number(n) || 0;

@@ -309,3 +309,48 @@ create policy "payroll_loans_all" on public.payroll_loans
 
 create index if not exists idx_payroll_loans_company on public.payroll_loans(company_id);
 create index if not exists idx_payroll_loans_employee on public.payroll_loans(employee_id);
+
+-- ============================================================================
+-- HORARIOS DE TRABAJO por rango de fechas — base para tardanzas y horas extras
+-- ============================================================================
+-- Marca si el registro de asistencia usa minutos manuales (true) o los
+-- calcula automáticamente contra el horario vigente (false).
+alter table public.payroll_attendance
+  add column if not exists manual boolean not null default false;
+
+-- Migración: los registros creados antes de los horarios automáticos tenían
+-- minutos de tardanza/extra ingresados a mano. Se conservan como ajuste manual
+-- para que el nuevo cálculo automático no los ponga en cero.
+-- Ejecuta esta sentencia una sola vez, antes de empezar a usar los horarios.
+update public.payroll_attendance
+   set manual = true
+ where manual = false
+   and (tardiness_minutes > 0 or extra_minutes > 0);
+
+create table if not exists public.payroll_work_schedules (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  effective_from date not null,
+  effective_to date,
+  entry_time time not null,
+  exit_time time not null,
+  break_minutes int not null default 0 check (break_minutes >= 0),
+  work_days int[] not null default '{1,2,3,4,5}'::int[],
+  tolerance_minutes int not null default 0 check (tolerance_minutes >= 0),
+  round_minutes int not null default 1 check (round_minutes in (1, 5, 10, 15, 30)),
+  tardiness_enabled boolean not null default true,
+  overtime_enabled boolean not null default true,
+  note text,
+  created_at timestamptz not null default now(),
+  constraint payroll_work_schedules_range check (effective_to is null or effective_to >= effective_from),
+  constraint payroll_work_schedules_days check (work_days <@ ARRAY[1,2,3,4,5,6,7]::int[])
+);
+
+alter table public.payroll_work_schedules enable row level security;
+
+drop policy if exists "payroll_work_schedules_all" on public.payroll_work_schedules;
+create policy "payroll_work_schedules_all" on public.payroll_work_schedules
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
+create index if not exists idx_payroll_work_schedules_company
+  on public.payroll_work_schedules(company_id, effective_from);

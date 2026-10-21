@@ -96,7 +96,7 @@ export function renderRentaSimTab(root) {
     let totalRetenido = 0;
     for (let m = 1; m <= 12; m++) {
       const row = calcRow(emp, payrollService.deriveMonthInputs(emp, year, m), year, m);
-      schedule.push({ m, basico: row.basico, asigFamiliar: row.asigFamiliar, vacaciones: row.vacaciones, bonifAfectas: row.bonifAfectas, gratificacion: row.gratificacion, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta, detalle: row.detalle5ta });
+      schedule.push({ m, basico: row.basico, asigFamiliar: row.asigFamiliar, vacaciones: row.vacaciones, bonifAfectas: row.bonifAfectas, overtime: row.overtime, gratificacion: row.gratificacion, remAsegurable: row.remAsegurable, renta5ta: row.renta5ta, detalle: row.detalle5ta });
       totalRetenido = round2(totalRetenido + row.renta5ta);
     }
 
@@ -109,14 +109,16 @@ export function renderRentaSimTab(root) {
     let salario = 0;
     let vac = 0;
     let bonif = 0;
+    let extra = 0;
     for (const r of schedule) {
       salario = round2(salario + r.basico + r.asigFamiliar);
       vac = round2(vac + r.vacaciones);
       bonif = round2(bonif + r.bonifAfectas);
+      extra = round2(extra + r.overtime);
     }
     const gratificaciones = round2(schedule[0].gratificacion * 2); // julio + diciembre
     const bonifExtra = round2(gratificaciones * TASAS.essalud);
-    const totalRentaBruta = round2(salario + vac + bonif + gratificaciones + bonifExtra);
+    const totalRentaBruta = round2(salario + vac + bonif + extra + gratificaciones + bonifExtra);
 
     const fuente = manual
       ? `Sueldo manual: ${money(sueldo)}${asig ? ' · con asignación familiar' : ''}`
@@ -156,6 +158,7 @@ export function renderRentaSimTab(root) {
               <tr><td>Salario anual (básico + asignación familiar)</td><td class="cell-num">${money(salario)}</td></tr>
               ${vac > 0 ? `<tr><td>Vacaciones</td><td class="cell-num">${money(vac)}</td></tr>` : ''}
               ${bonif > 0 ? `<tr><td>Bonificaciones regulares</td><td class="cell-num">${money(bonif)}</td></tr>` : ''}
+              ${extra > 0 ? `<tr><td>Horas extras</td><td class="cell-num">${money(extra)}</td></tr>` : ''}
               <tr><td>Gratificaciones (julio + diciembre)</td><td class="cell-num">${money(gratificaciones)}</td></tr>
               <tr><td>Bonificación extraordinaria (9%)</td><td class="cell-num">${money(bonifExtra)}</td></tr>
             </tbody>

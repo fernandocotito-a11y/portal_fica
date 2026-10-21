@@ -20,7 +20,7 @@ export const accountingBridgeService = {
   buildEntry(rows, period, opts = {}) {
     const sum = (fn) => round2(rows.reduce((s, r) => s + num(fn(r)), 0));
 
-    const basicos = sum((r) => num(r.calc.basico) + num(r.calc.asigFamiliar) + num(r.calc.bonificaciones));
+    const basicos = sum((r) => num(r.calc.basico) + num(r.calc.asigFamiliar) + num(r.calc.bonificaciones) + num(r.calc.overtime));
     const tardanzas = sum((r) => num(r.calc.tardanzas));
     const vacaciones = sum((r) => num(r.calc.vacaciones));
     const gratificaciones = round2(num(opts.gratificaciones));

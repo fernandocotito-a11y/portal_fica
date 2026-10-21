@@ -131,11 +131,14 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
   const vacaciones = round2(num(inputs.vacation));
   const bonificaciones = round2(num(inputs.bonuses));
   const bonifAfectas = round2(num(inputs.bonusesAfectas));
-  const totalBruto = round2(basico + asigFamiliar + vacaciones + bonificaciones);
+  // Horas extras: remuneración afecta (pensión, EsSalud y Renta 5ta). No se
+  // incluye en la base de gratificación/CTS porque es variable.
+  const overtime = round2(num(inputs.overtime));
+  const totalBruto = round2(basico + asigFamiliar + vacaciones + bonificaciones + overtime);
 
   // Base afecta (pensiones, EsSalud y Renta 5ta): básico + asig. familiar + vacaciones + bonif. REGULARES.
   // La bonificación extraordinaria NO es afecta (no entra aquí).
-  const remAsegurable = round2(basico + asigFamiliar + vacaciones + bonifAfectas);
+  const remAsegurable = round2(basico + asigFamiliar + vacaciones + bonifAfectas + overtime);
 
   let pension = 0;
   let pensionLabel = '—';
@@ -197,6 +200,7 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
     vacaciones,
     bonificaciones,
     bonifAfectas,
+    overtime,
     totalBruto,
     remAsegurable,
     gratificacion: gratBase,
@@ -262,6 +266,7 @@ export function deriveMonthInputs(emp, year, month) {
     gratificacionPagada: gratif, // gratificación registrada (campo aparte, suma al neto)
     gratificacion: round2(basico + asigFamiliar + vacation), // remuneración computable (julio/diciembre; incluye vacaciones)
     tardanzas: att.tardinessDiscount,
+    overtime: att.overtimePay,
     loans: round2(paymentService.sumDeductionsFor(emp.id, year, month) + loanService.sumCuotaFor(emp.id, year, month)),
     vidaLey: 0,
   };
@@ -297,7 +302,7 @@ export function calcRow(emp, inputs = {}, year, month) {
 
 /** Suma totales de un conjunto de filas. */
 export function sumTotals(rows) {
-  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'totalBruto', 'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto', 'gratificacionPagada', 'netoTotal'];
+  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'overtime', 'totalBruto', 'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto', 'gratificacionPagada', 'netoTotal'];
   const acc = {};
   keys.forEach((k) => (acc[k] = 0));
   rows.forEach((r) => keys.forEach((k) => (acc[k] = round2(acc[k] + num(r[k])))));

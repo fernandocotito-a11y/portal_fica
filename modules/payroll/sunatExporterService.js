@@ -15,6 +15,7 @@ import { MESES } from './payrollConfig.js';
 /** Códigos de concepto SUNAT usados en la planilla mensual. */
 export const SUNAT_CONCEPTOS = [
   { code: '0121', key: 'basico', label: 'Sueldo básico' },
+  { code: '0104', key: 'overtime', label: 'Horas extras' },
   { code: '0201', key: 'asigFamiliar', label: 'Asignación familiar' },
   { code: '0107', key: 'vacaciones', label: 'Remuneración vacacional' },
   { code: '0400', key: 'gratificacion', label: 'Gratificación' },

@@ -91,6 +91,7 @@ export function payslipDoc(JsPDF, employee, period, calc, company) {
     ['Asignación familiar', calc.asigFamiliar],
     ['Rem. vacacional', calc.vacaciones],
     ['Bonificaciones', calc.bonificaciones],
+    ['Horas extras', calc.overtime],
   ];
   const discounts = [
     ['Pensión', calc.pension],
