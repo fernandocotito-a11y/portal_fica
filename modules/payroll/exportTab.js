@@ -22,6 +22,13 @@ import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
 const Y = new Date().getFullYear();
 const YEARS = [Y - 2, Y - 1, Y, Y + 1];
 
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  if (!y || !m || !d) return escapeHtml(String(iso));
+  return `${d}/${m}/${y}`;
+}
+
 export function renderExportTab(root) {
   const now = new Date();
   let year = now.getFullYear();
@@ -66,7 +73,7 @@ export function renderExportTab(root) {
       <div class="card__header">
         <div>
           <h3 class="card__title">Estado de cuenta del trabajador</h3>
-          <p class="card__subtitle">Histórico anual, préstamos, vacaciones e inasistencias.</p>
+          <p class="card__subtitle">Sueldo, gratificaciones, CTS, pagos, pendiente, vacaciones y asistencias.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);">
           <select class="form-input" data-stmt-emp style="min-width:220px;"></select>
@@ -140,49 +147,225 @@ export function renderExportTab(root) {
       stmtEl.innerHTML = `<p class="text-muted">Sin datos.</p>`;
       return;
     }
-    const rowsHtml = s.months
-      .map(
-        (m) => `
-        <tr>
-          <td>${m.name}${m.abierto ? '' : ' <span class="text-muted">(sin planilla)</span>'}</td>
+    const t = s.totals;
+
+    const stat = (value, label) =>
+      `<div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(value)}</div><div class="stat-card__label">${label}</div></div></div>`;
+
+    const monthRows = s.months
+      .map((m) => {
+        const sinDatos = m.totalPercibir === 0 && m.abonado === 0;
+        const nota = m.futuro
+          ? ' <span class="text-muted">(por procesar)</span>'
+          : m.abierto
+            ? ''
+            : ' <span class="text-muted">(sin planilla)</span>';
+        const pendStyle = m.pendiente > 0 ? ' style="color:var(--color-warning);"' : '';
+        return `<tr${sinDatos ? ' style="opacity:.55"' : ''}>
+          <td>${m.name}${nota}</td>
           <td class="cell-num">${money(m.bruto)}</td>
           <td class="cell-num">${money(m.retenciones)}</td>
-          <td class="cell-num cell-strong">${money(m.neto)}</td>
+          <td class="cell-num">${money(m.netoSueldo)}</td>
+          <td class="cell-num">${money(m.gratificacion)}</td>
+          <td class="cell-num">${money(m.cts)}</td>
+          <td class="cell-num cell-strong">${money(m.totalPercibir)}</td>
           <td class="cell-num">${money(m.abonado)}</td>
-          <td class="cell-num">${money(m.pendiente)}</td>
-        </tr>`
-      )
+          <td class="cell-num"${pendStyle}>${money(m.pendiente)}</td>
+        </tr>`;
+      })
       .join('');
 
-    const loansHtml = s.loans.length
-      ? `<ul style="margin:0;padding-left:18px;">${s.loans.map((l) => `<li>${l.month}: ${money(l.monto)}</li>`).join('')}</ul>`
-      : '<span class="text-muted">Sin préstamos/adelantos.</span>';
-    const vacHtml = s.vacations.length
-      ? `<ul style="margin:0;padding-left:18px;">${s.vacations.map((v) => `<li>${escapeHtml(v.period || '')}: ${v.daysTaken} días (${escapeHtml(v.dateFrom || '')}${v.dateTo ? ' a ' + escapeHtml(v.dateTo) : ''})</li>`).join('')}</ul>`
-      : '<span class="text-muted">Sin vacaciones registradas.</span>';
-    const attHtml = s.attendance.length
-      ? `<span>${s.attendance.length} registro(s) de asistencia este año.</span>`
-      : '<span class="text-muted">Sin inasistencias registradas.</span>';
+    const monthFoot = `<tfoot><tr>
+      <td class="cell-strong">TOTALES</td>
+      <td class="cell-num cell-strong">${money(t.bruto)}</td>
+      <td class="cell-num cell-strong">${money(t.retenciones)}</td>
+      <td class="cell-num cell-strong">${money(t.netoSueldo)}</td>
+      <td class="cell-num cell-strong">${money(t.gratificacion)}</td>
+      <td class="cell-num cell-strong">${money(t.cts)}</td>
+      <td class="cell-num cell-strong">${money(t.totalPercibir)}</td>
+      <td class="cell-num cell-strong">${money(t.abonado)}</td>
+      <td class="cell-num cell-strong">${money(t.pendiente)}</td>
+    </tr></tfoot>`;
+
+    const gratRows = s.gratificaciones.length
+      ? s.gratificaciones
+          .map(
+            (g) => `<tr>
+            <td>${g.name} ${s.year}</td>
+            <td class="cell-num">${money(g.monto)}</td>
+            <td class="cell-num">${money(g.bonificacion)}</td>
+            <td class="cell-num cell-strong">${money(g.total)}</td>
+          </tr>`
+          )
+          .join('')
+      : `<tr><td colspan="4" class="text-muted">Sin gratificaciones registradas.</td></tr>`;
+
+    const ctsRows = s.ctsDetail.length
+      ? s.ctsDetail
+          .map(
+            (c) => `<tr>
+            <td>${c.name} ${s.year}</td>
+            <td class="cell-num">${c.dias}</td>
+            <td class="cell-num">${money(c.base)}</td>
+            <td class="cell-num cell-strong">${money(c.monto)}</td>
+          </tr>`
+          )
+          .join('')
+      : `<tr><td colspan="4" class="text-muted">Sin CTS (régimen sin CTS o período aún no cerrado).</td></tr>`;
+
+    const paymentRows = s.payments.length
+      ? s.payments
+          .map(
+            (p) => `<tr>
+            <td>${p.name} ${s.year}</td>
+            <td>${escapeHtml(p.conceptoLabel)}</td>
+            <td>${escapeHtml(p.tipoLabel)}</td>
+            <td class="cell-num">${money(p.monto)}</td>
+          </tr>`
+          )
+          .join('')
+      : `<tr><td colspan="4" class="text-muted">Sin pagos registrados este año.</td></tr>`;
+
+    const loanRows = s.loans.length
+      ? s.loans
+          .map(
+            (l) => `<tr>
+            <td>${l.name} ${s.year}</td>
+            <td>${escapeHtml(l.conceptoLabel)}</td>
+            <td class="cell-num">${money(l.monto)}</td>
+          </tr>`
+          )
+          .join('')
+      : `<tr><td colspan="3" class="text-muted">Sin préstamos/adelantos.</td></tr>`;
+
+    const vb = s.vacationBalance;
+    const vacRows = s.vacations.length
+      ? s.vacations
+          .map(
+            (v) => `<tr>
+            <td>${escapeHtml(v.period || '—')}</td>
+            <td class="cell-num">${v.daysTaken}</td>
+            <td>${fmtDate(v.dateFrom)}</td>
+            <td>${fmtDate(v.dateTo)}</td>
+            <td>${escapeHtml(v.note || '')}</td>
+          </tr>`
+          )
+          .join('')
+      : `<tr><td colspan="5" class="text-muted">Sin vacaciones registradas en el año.</td></tr>`;
+
+    const at = s.attendanceTotals;
+    const attRows = s.attendance.length
+      ? s.attendance
+          .map(
+            (a) => `<tr>
+            <td>${fmtDate(a.date)}</td>
+            <td>${escapeHtml(a.typeLabel)}</td>
+            <td class="cell-num">${a.tardinessMinutes}</td>
+            <td>${a.withPay ? 'Sí' : 'No'}</td>
+            <td>${escapeHtml(a.note || '')}</td>
+          </tr>`
+          )
+          .join('')
+      : `<tr><td colspan="5" class="text-muted">Sin registros de asistencia en el año.</td></tr>`;
+
+    const h4 = 'margin:0 0 var(--space-2);font-size:var(--font-size-md);';
+    const grid2 = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--space-4);margin-bottom:var(--space-4);';
+    const chip = 'display:flex;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-2);font-size:var(--font-size-sm);';
 
     stmtEl.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--space-3);margin-bottom:var(--space-4);">
-        <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalBruto)}</div><div class="stat-card__label">Bruto anual</div></div></div>
-        <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalRetenciones)}</div><div class="stat-card__label">Retenciones</div></div></div>
-        <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalNeto)}</div><div class="stat-card__label">Neto anual</div></div></div>
-        <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.totalAbonado)}</div><div class="stat-card__label">Abonado</div></div></div>
-        <div class="stat-card"><div><div class="stat-card__value" style="font-size:var(--font-size-lg);">${money(s.totals.pendiente)}</div><div class="stat-card__label">Pendiente</div></div></div>
+        ${stat(t.bruto, 'Bruto anual')}
+        ${stat(t.retenciones, 'Retenciones')}
+        ${stat(t.netoSueldo, 'Neto sueldo')}
+        ${stat(t.gratificacion, 'Gratificaciones')}
+        ${stat(t.cts, 'CTS')}
+        ${stat(t.totalPercibir, 'Total a percibir')}
+        ${stat(t.abonado, 'Abonado')}
+        ${stat(t.pendiente, 'Pendiente')}
       </div>
-      <div class="table-wrap" style="margin-bottom:var(--space-4);">
-        <table class="table" style="min-width:720px;">
-          <thead><tr><th>Mes</th><th style="text-align:right;">Bruto</th><th style="text-align:right;">Retenciones</th><th style="text-align:right;">Neto</th><th style="text-align:right;">Abonado</th><th style="text-align:right;">Pendiente</th></tr></thead>
-          <tbody>${rowsHtml}</tbody>
+
+      <h4 style="${h4}">Devengado mensual</h4>
+      <div class="table-wrap" style="margin-bottom:var(--space-2);">
+        <table class="table" style="min-width:940px;">
+          <thead><tr>
+            <th>Mes</th>
+            <th style="text-align:right;">Bruto</th>
+            <th style="text-align:right;">Retenciones</th>
+            <th style="text-align:right;">Neto sueldo</th>
+            <th style="text-align:right;">Gratif.</th>
+            <th style="text-align:right;">CTS</th>
+            <th style="text-align:right;">Total a percibir</th>
+            <th style="text-align:right;">Abonado</th>
+            <th style="text-align:right;">Pendiente</th>
+          </tr></thead>
+          <tbody>${monthRows}</tbody>
+          ${monthFoot}
         </table>
       </div>
-      <p class="text-muted" style="font-size:var(--font-size-sm);margin:0 0 var(--space-4);">Abonado = pagos registrados en «Pagos y Adelantos». Pendiente = neto de la planilla − pagos totales de sueldo del mes.</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--space-4);font-size:var(--font-size-sm);">
-        <div><strong>Préstamos / adelantos</strong><br/>${loansHtml}</div>
-        <div><strong>Vacaciones</strong><br/>${vacHtml}</div>
-        <div><strong>Asistencias</strong><br/>${attHtml}</div>
+      <p class="text-muted" style="font-size:var(--font-size-sm);margin:0 0 var(--space-4);">Neto sueldo = bruto − retenciones (sin descontar adelantos). Total a percibir = neto sueldo + gratificación + CTS. Abonado = pagos registrados en «Pagos y Adelantos». Pendiente = total a percibir − abonado.</p>
+
+      <div style="${grid2}">
+        <div>
+          <h4 style="${h4}">Gratificaciones</h4>
+          <div class="table-wrap"><table class="table" style="min-width:360px;">
+            <thead><tr><th>Período</th><th style="text-align:right;">Gratif.</th><th style="text-align:right;">Bono</th><th style="text-align:right;">Total</th></tr></thead>
+            <tbody>${gratRows}</tbody>
+          </table></div>
+        </div>
+        <div>
+          <h4 style="${h4}">CTS</h4>
+          <div class="table-wrap"><table class="table" style="min-width:360px;">
+            <thead><tr><th>Período</th><th style="text-align:right;">Días</th><th style="text-align:right;">Base</th><th style="text-align:right;">CTS</th></tr></thead>
+            <tbody>${ctsRows}</tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <h4 style="${h4}">Pagos registrados</h4>
+      <div class="table-wrap" style="margin-bottom:var(--space-4);">
+        <table class="table" style="min-width:520px;">
+          <thead><tr><th>Mes</th><th>Concepto</th><th>Tipo</th><th style="text-align:right;">Monto</th></tr></thead>
+          <tbody>${paymentRows}</tbody>
+          <tfoot><tr><td colspan="3" class="cell-strong">TOTAL ABONADO</td><td class="cell-num cell-strong">${money(t.abonado)}</td></tr></tfoot>
+        </table>
+      </div>
+
+      <div style="${grid2}">
+        <div>
+          <h4 style="${h4}">Vacaciones</h4>
+          <div style="${chip}">
+            <span><strong>Base:</strong> ${vb.base} días</span>
+            <span><strong>Acumuladas:</strong> ${vb.accrued}</span>
+            <span><strong>Gozadas:</strong> ${vb.taken}</span>
+            <span><strong>Pendientes:</strong> ${vb.pending}</span>
+          </div>
+          <div class="table-wrap"><table class="table" style="min-width:520px;">
+            <thead><tr><th>Período</th><th style="text-align:right;">Días</th><th>Desde</th><th>Hasta</th><th>Nota</th></tr></thead>
+            <tbody>${vacRows}</tbody>
+          </table></div>
+        </div>
+        <div>
+          <h4 style="${h4}">Préstamos / adelantos</h4>
+          <div class="table-wrap"><table class="table" style="min-width:360px;">
+            <thead><tr><th>Mes</th><th>Concepto</th><th style="text-align:right;">Monto</th></tr></thead>
+            <tbody>${loanRows}</tbody>
+            <tfoot><tr><td colspan="2" class="cell-strong">TOTAL ADELANTOS</td><td class="cell-num cell-strong">${money(s.loansTotal)}</td></tr></tfoot>
+          </table></div>
+        </div>
+      </div>
+
+      <h4 style="${h4}">Asistencias</h4>
+      <div style="${chip}">
+        <span><strong>Tardanzas:</strong> ${at.tardinessMinutes} min (${money(at.tardinessDiscount)})</span>
+        <span><strong>Faltas con goce:</strong> ${at.absentWithPay}</span>
+        <span><strong>Faltas sin goce:</strong> ${at.absentWithoutPay} (${money(at.absenceDiscount)})</span>
+        <span><strong>Descuento total:</strong> ${money(at.totalDiscount)}</span>
+      </div>
+      <div class="table-wrap">
+        <table class="table" style="min-width:520px;">
+          <thead><tr><th>Fecha</th><th>Tipo</th><th style="text-align:right;">Min. tardanza</th><th>Con goce</th><th>Nota</th></tr></thead>
+          <tbody>${attRows}</tbody>
+        </table>
       </div>`;
   }
 
