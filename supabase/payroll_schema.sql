@@ -165,6 +165,10 @@ alter table public.payroll_employees
 alter table public.payroll_employees
   add column if not exists commission_type text default 'flujo';
 
+-- Salud del trabajador: 'ESSALUD' | 'EPS' (define la bonificación extraordinaria 9% vs 6.75%)
+alter table public.payroll_employees
+  add column if not exists salud text default 'ESSALUD';
+
 -- Bonificaciones / ingresos adicionales del mes
 create table if not exists public.payroll_bonuses (
   id uuid primary key default gen_random_uuid(),

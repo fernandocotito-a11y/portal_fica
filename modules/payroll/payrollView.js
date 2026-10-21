@@ -137,6 +137,11 @@ function renderPlanillaTab(root) {
           </div>
           <div class="form-group" data-commission-group><label class="form-label">Tipo de comisión AFP</label><select class="form-input" data-commission>${optionsHtml(COMMISSION_TYPES, 'flujo')}</select></div>
           <div class="form-group"><label class="checkbox"><input type="checkbox" data-asig /><span class="checkbox__box">${ICONS.check}</span><span>Recibe asignación familiar (10% de la RMV)</span></label></div>
+          <div class="form-group"><label class="form-label">Salud (para el bono de gratificación)</label>
+            <select class="form-input" data-salud>
+              <option value="ESSALUD">EsSalud (bono extraordinario 9%)</option>
+              <option value="EPS">EPS (bono extraordinario 6.75%)</option>
+            </select></div>
           <div class="form-group" data-cuspp-group><label class="form-label">CUSPP (solo AFP)</label><input class="form-input" data-cuspp placeholder="Ej. 123456789012" /></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
             <div class="form-group" style="margin:0;"><label class="form-label">Tipo de contrato</label>
@@ -187,6 +192,7 @@ function renderPlanillaTab(root) {
   const afpGroup = root.querySelector('[data-afp-group]');
   const afpI = root.querySelector('[data-afp]');
   const asigI = root.querySelector('[data-asig]');
+  const saludI = root.querySelector('[data-salud]');
   const activeGroup = root.querySelector('[data-active-group]');
   const activeI = root.querySelector('[data-active]');
   const errName = root.querySelector('[data-error-name]');
@@ -408,6 +414,7 @@ function renderPlanillaTab(root) {
     activeI.checked = true;
     cusppI.value = '';
     commissionI.value = 'flujo';
+    saludI.value = 'ESSALUD';
     bankI.value = '';
     bankAccI.value = '';
     bankCciI.value = '';
@@ -437,6 +444,7 @@ function renderPlanillaTab(root) {
     pensionI.value = emp.pensionType || 'ONP';
     afpI.value = emp.afp || 'HABITAT';
     asigI.checked = !!emp.asignacionFamiliar;
+    saludI.value = emp.salud || 'ESSALUD';
     cusppI.value = emp.cuspp || '';
     commissionI.value = emp.commissionType || 'flujo';
     bankI.value = emp.bankName || '';
@@ -492,6 +500,7 @@ function renderPlanillaTab(root) {
       contractType: contractI.value,
       contractEnd: contractI.value === 'plazo_fijo' ? contractEndI.value : '',
       cese: ceseI.value,
+      salud: saludI.value,
       asignacionFamiliar: asigI.checked,
       active: activeGroup.hidden ? true : activeI.checked,
     };

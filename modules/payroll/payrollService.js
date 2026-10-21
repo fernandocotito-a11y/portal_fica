@@ -41,6 +41,7 @@ function mapEmployee(r) {
     contractType: r.contract_type || 'indeterminado',
     contractEnd: r.contract_end || '',
     cese: r.cese || '',
+    salud: r.salud || 'ESSALUD',
     asignacionFamiliar: !!r.asignacion_familiar,
     active: r.active !== false,
     createdAt: r.created_at,
@@ -67,6 +68,7 @@ function toEmployeeRow(d) {
     contract_type: d.contractType || 'indeterminado',
     contract_end: d.contractType === 'plazo_fijo' ? d.contractEnd || null : null,
     cese: d.cese || null,
+    salud: d.salud || 'ESSALUD',
     asignacion_familiar: !!d.asignacionFamiliar,
     active: d.active !== false,
   };
