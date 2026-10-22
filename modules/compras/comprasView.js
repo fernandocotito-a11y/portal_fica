@@ -4,15 +4,18 @@
    Pestañas:
      1. Compras        Registro del período con formato SUNAT editable.
      2. Ventas         Registro del período con formato SUNAT editable.
-     3. Importar SIRE  Carga masiva de ZIP/CSV de la propuesta SIRE.
-     4. Resumen        Totales mensuales, IGV y exportación.
+     3. Proveedores    Directorio para autocompletar RUC y razón social.
+     4. Importar SIRE  Carga masiva de ZIP/CSV de la propuesta SIRE.
+     5. Resumen        Totales mensuales, IGV y exportación.
    ========================================================================== */
 
 import { taxService } from './taxService.js';
+import { supplierService } from './supplierService.js';
 import { parseSireFiles, dedupeKey, toCsvText } from './sireParser.js';
 import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
+  baseGravadaOf, baseNoGravadaOf, igvOf, totalBaseOf,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -51,11 +54,7 @@ function optionsHtml(list, selected, emptyLabel = '') {
 }
 
 function baseOf(rec) {
-  const n = (v) => Number(v || 0);
-  if (rec.kind === 'compra') {
-    return n(rec.taxed_base) + n(rec.taxed_base_ng) + n(rec.taxed_base_dng) + n(rec.acq_value_ng);
-  }
-  return n(rec.taxed_base) + n(rec.export_value);
+  return totalBaseOf(rec, rec.kind);
 }
 
 /** Tipo de cambio a soles para consolidar totales. */
@@ -74,9 +73,12 @@ function basePenOf(rec) {
   return baseOf(rec) * penRate(rec);
 }
 
-function igvOf(rec) {
-  const n = (v) => Number(v || 0);
-  return rec.kind === 'compra' ? n(rec.igv) + n(rec.igv_ng) + n(rec.igv_dng) : n(rec.igv);
+function baseGravadaPenOf(rec) {
+  return baseGravadaOf(rec, rec.kind) * penRate(rec);
+}
+
+function baseNoGravadaPenOf(rec) {
+  return baseNoGravadaOf(rec, rec.kind) * penRate(rec);
 }
 
 function igvPenOf(rec) {
@@ -104,14 +106,22 @@ export function render(root) {
     page: 1,
     pageSize: 25,
     summaryYear: String(new Date().getFullYear()),
+    supplierSearch: '',
+    supplierPage: 1,
+    supplierPageSize: 25,
   };
   let loading = true;
   let error = '';
+  let supplierError = '';
+  let supplierBusy = false;
   let parsed = null;
   let importStatus = '';
   let importBusy = false;
   let parseBusy = false;
+  let modalType = 'record';
   let modalRecord = null;
+  let modalSupplierRecord = null;
+  let modalInitial = null;
   let modalReadonly = false;
   let modalKind = 'compra';
 
@@ -134,6 +144,7 @@ export function render(root) {
     <div class="tabs-bar" data-tabs>
       <button type="button" class="tab-btn is-active" data-tab="compra">Compras</button>
       <button type="button" class="tab-btn" data-tab="venta">Ventas</button>
+      <button type="button" class="tab-btn" data-tab="proveedores">Proveedores</button>
       <button type="button" class="tab-btn" data-tab="importar">Importar SIRE</button>
       <button type="button" class="tab-btn" data-tab="resumen">Resumen</button>
     </div>
@@ -215,24 +226,27 @@ export function render(root) {
     const rows = taxService.list(kind, { period });
     return rows.reduce((acc, r) => {
       acc.count += 1;
+      acc.baseGravada += baseGravadaPenOf(r);
+      acc.baseNoGravada += baseNoGravadaPenOf(r);
       acc.base += basePenOf(r);
       acc.igv += igvPenOf(r);
       acc.total += totalPenOf(r);
       acc.exonerated += Number(r.exonerated || 0) * penRate(r);
       acc.unaffected += Number(r.unaffected || 0) * penRate(r);
       return acc;
-    }, { count: 0, base: 0, igv: 0, total: 0, exonerated: 0, unaffected: 0 });
+    }, { count: 0, baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0, exonerated: 0, unaffected: 0 });
   }
 
   function statsHtml(kind) {
     const rows = filteredRows(kind);
     const totals = rows.reduce((acc, r) => {
       acc.count += 1;
-      acc.base += basePenOf(r);
+      acc.baseGravada += baseGravadaPenOf(r);
+      acc.baseNoGravada += baseNoGravadaPenOf(r);
       acc.igv += igvPenOf(r);
       acc.total += totalPenOf(r);
       return acc;
-    }, { count: 0, base: 0, igv: 0, total: 0 });
+    }, { count: 0, baseGravada: 0, baseNoGravada: 0, igv: 0, total: 0 });
     const missingRate = rows.filter(hasMissingRate).length;
     return `
       <div class="stat-card">
@@ -241,7 +255,11 @@ export function render(root) {
       </div>
       <div class="stat-card">
         <span class="stat-card__icon">${ICONS.check}</span>
-        <div><div class="stat-card__value">${num(totals.base)}</div><div class="stat-card__label">Base imponible / valor (PEN)</div></div>
+        <div><div class="stat-card__value">${num(totals.baseGravada)}</div><div class="stat-card__label">Base gravada (PEN)</div></div>
+      </div>
+      <div class="stat-card">
+        <span class="stat-card__icon">${ICONS.info}</span>
+        <div><div class="stat-card__value">${num(totals.baseNoGravada)}</div><div class="stat-card__label">Base no gravada (PEN)</div></div>
       </div>
       <div class="stat-card">
         <span class="stat-card__icon">${ICONS.info}</span>
@@ -259,7 +277,7 @@ export function render(root) {
 
   function registryRowsHtml(rows) {
     if (!rows.length) {
-      return `<tr><td colspan="10">
+      return `<tr><td colspan="11">
         <div class="empty-state">
           <span class="empty-state__icon">${ICONS.building}</span>
           <div class="empty-state__title">Sin comprobantes en ${escapeHtml(periodLabel(state.period))}</div>
@@ -277,8 +295,9 @@ export function render(root) {
         <td>${escapeHtml(r.series || '—')}-${escapeHtml(r.number || '—')}${r.number_final ? `<div class="text-muted" style="font-size:var(--font-size-xs);">hasta ${escapeHtml(r.number_final)}</div>` : ''}</td>
         <td>${escapeHtml(r.doc_id_number || '—')}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.doc_id_type ? `Tipo ${r.doc_id_type}` : '')}</div></td>
         <td><div class="table__name">${escapeHtml(r.counterparty_name || '—')}</div></td>
-        <td class="cell-num">${num(baseOf(r))}</td>
-        <td class="cell-num">${num(igvOf(r))}</td>
+        <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
+        <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
+        <td class="cell-num">${num(igvOf(r, r.kind))}</td>
         <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${hasMissingRate(r) ? ' · sin TC' : ''}</div></td>
         <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
         <td>
@@ -366,11 +385,12 @@ export function render(root) {
             <button type="button" class="btn" data-clear-filters>Limpiar</button>
           </div>
           <div class="table-wrap">
-            <table class="table" style="min-width:1180px;">
+            <table class="table" style="min-width:1320px;">
               <thead>
                 <tr>
                   <th>Fecha</th><th>Tipo</th><th>Serie / Número</th><th>Doc. contraparte</th>
-                  <th>Razón social</th><th style="text-align:right;">Base</th><th style="text-align:right;">IGV</th>
+                  <th>Razón social</th><th style="text-align:right;">Base gravada</th>
+                  <th style="text-align:right;">Base no gravada</th><th style="text-align:right;">IGV</th>
                   <th style="text-align:right;">Total</th><th>Estado</th><th></th>
                 </tr>
               </thead>
@@ -515,10 +535,14 @@ export function render(root) {
     const year = state.summaryYear;
     const rows = monthlyFor(year);
     const totals = rows.reduce((acc, r) => {
-      acc.compra.base += r.compra.base; acc.compra.igv += r.compra.igv; acc.compra.total += r.compra.total; acc.compra.count += r.compra.count;
-      acc.venta.base += r.venta.base; acc.venta.igv += r.venta.igv; acc.venta.total += r.venta.total; acc.venta.count += r.venta.count;
+      ['baseGravada', 'baseNoGravada', 'base', 'igv', 'total', 'count'].forEach((k) => {
+        acc.compra[k] += r.compra[k]; acc.venta[k] += r.venta[k];
+      });
       return acc;
-    }, { compra: { base: 0, igv: 0, total: 0, count: 0 }, venta: { base: 0, igv: 0, total: 0, count: 0 } });
+    }, {
+      compra: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0, count: 0 },
+      venta: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0, count: 0 },
+    });
     const saldo = Math.round((totals.venta.igv - totals.compra.igv) * 100) / 100;
     const missingRate = taxService.all().filter((r) => String(r.period || '').startsWith(year) && hasMissingRate(r)).length;
     return `
@@ -531,7 +555,7 @@ export function render(root) {
       </div>
       <div class="card">
         <div class="card__header">
-          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base, IGV y total de compras y ventas.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}</p></div>
+          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}</p></div>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
             <button type="button" class="btn" data-export-summary>${ICONS.arrowRight} Exportar resumen</button>
@@ -539,27 +563,180 @@ export function render(root) {
         </div>
         <div class="card__body">
           <div class="table-wrap">
-            <table class="table" style="min-width:980px;">
+            <table class="table" style="min-width:1240px;">
               <thead>
-                <tr class="table__group"><th></th><th colspan="3">Compras</th><th colspan="4">Ventas</th><th rowspan="2">Saldo IGV</th></tr>
-                <tr><th>Mes</th><th style="text-align:right;">Base</th><th style="text-align:right;">IGV</th><th style="text-align:right;">Total</th><th style="text-align:right;">Base</th><th style="text-align:right;">IGV</th><th style="text-align:right;">Total</th><th style="text-align:right;">Comprob.</th></tr>
+                <tr class="table__group"><th></th><th colspan="4">Compras</th><th colspan="4">Ventas</th><th rowspan="2">Comprob.</th><th rowspan="2">Saldo IGV</th></tr>
+                <tr><th>Mes</th><th style="text-align:right;">Base gravada</th><th style="text-align:right;">Base no gravada</th><th style="text-align:right;">IGV</th><th style="text-align:right;">Total</th><th style="text-align:right;">Base gravada</th><th style="text-align:right;">Base no gravada</th><th style="text-align:right;">IGV</th><th style="text-align:right;">Total</th></tr>
               </thead>
               <tbody>
                 ${rows.map((r) => `<tr>
                   <td>${escapeHtml(r.label)}</td>
-                  <td class="cell-num">${num(r.compra.base)}</td><td class="cell-num">${num(r.compra.igv)}</td><td class="cell-num">${num(r.compra.total)}</td>
-                  <td class="cell-num">${num(r.venta.base)}</td><td class="cell-num">${num(r.venta.igv)}</td><td class="cell-num">${num(r.venta.total)}</td><td class="cell-num">${r.venta.count}</td>
+                  <td class="cell-num">${num(r.compra.baseGravada)}</td><td class="cell-num">${num(r.compra.baseNoGravada)}</td><td class="cell-num">${num(r.compra.igv)}</td><td class="cell-num">${num(r.compra.total)}</td>
+                  <td class="cell-num">${num(r.venta.baseGravada)}</td><td class="cell-num">${num(r.venta.baseNoGravada)}</td><td class="cell-num">${num(r.venta.igv)}</td><td class="cell-num">${num(r.venta.total)}</td>
+                  <td class="cell-num">${r.venta.count}</td>
                   <td class="cell-num ${r.venta.igv - r.compra.igv < 0 ? 'text-muted' : 'cell-strong'}">${num(r.venta.igv - r.compra.igv)}</td>
                 </tr>`).join('')}
               </tbody>
               <tfoot><tr>
                 <th>Total ${year}</th>
-                <th class="cell-num">${num(totals.compra.base)}</th><th class="cell-num">${num(totals.compra.igv)}</th><th class="cell-num">${num(totals.compra.total)}</th>
-                <th class="cell-num">${num(totals.venta.base)}</th><th class="cell-num">${num(totals.venta.igv)}</th><th class="cell-num">${num(totals.venta.total)}</th><th class="cell-num">${totals.venta.count}</th>
+                <th class="cell-num">${num(totals.compra.baseGravada)}</th><th class="cell-num">${num(totals.compra.baseNoGravada)}</th><th class="cell-num">${num(totals.compra.igv)}</th><th class="cell-num">${num(totals.compra.total)}</th>
+                <th class="cell-num">${num(totals.venta.baseGravada)}</th><th class="cell-num">${num(totals.venta.baseNoGravada)}</th><th class="cell-num">${num(totals.venta.igv)}</th><th class="cell-num">${num(totals.venta.total)}</th>
+                <th class="cell-num">${totals.venta.count}</th>
                 <th class="cell-num">${num(saldo)}</th>
               </tr></tfoot>
             </table>
           </div>
+        </div>
+      </div>`;
+  }
+
+  function supplierLocalBanner() {
+    if (supplierService.mode !== 'local') return '';
+    return `
+      <div class="card" style="border-color:var(--color-gold);margin-bottom:var(--space-4);">
+        <div class="card__body" style="display:flex;gap:var(--space-3);align-items:flex-start;">
+          <span style="color:var(--color-gold);flex-shrink:0;">${ICONS.info}</span>
+          <div>
+            <strong>Proveedores en modo local.</strong>
+            La tabla <code>tax_suppliers</code> todavía no existe en Supabase. El directorio se guarda solo en este navegador.
+            Ejecuta <code>supabase/compras_suppliers_schema.sql</code> en el SQL Editor y recarga el portal para activar el modo multiusuario.
+            <div style="margin-top:var(--space-3);">
+              <a class="btn" href="./supabase/compras_suppliers_schema.sql" target="_blank" rel="noopener">${ICONS.arrowRight} Abrir SQL de proveedores</a>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function supplierFiltered() {
+    return supplierService.list(state.supplierSearch);
+  }
+
+  function supplierRowsHtml(rows) {
+    if (!rows.length) {
+      return `<tr><td colspan="6">
+        <div class="empty-state">
+          <span class="empty-state__icon">${ICONS.users}</span>
+          <div class="empty-state__title">${state.supplierSearch ? 'Sin resultados' : 'Aún no hay proveedores'}</div>
+          <div class="empty-state__desc">${state.supplierSearch ? 'Prueba con otro RUC o razón social.' : 'Crea uno, importa un archivo o pega una lista desde Excel.'}</div>
+        </div>
+      </td></tr>`;
+    }
+    return rows.map((s) => {
+      const source = s.source === 'sire' ? 'SIRE' : (s.source === 'import' ? 'Importado' : 'Manual');
+      return `<tr>
+        <td><strong>${escapeHtml(s.doc_id_number)}</strong><div class="text-muted" style="font-size:var(--font-size-xs);">Tipo ${escapeHtml(s.doc_id_type || '6')}</div></td>
+        <td><div class="table__name">${escapeHtml(s.name)}</div>${s.trade_name ? `<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(s.trade_name)}</div>` : ''}</td>
+        <td>${escapeHtml(s.email || '—')}${s.phone ? `<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(s.phone)}</div>` : ''}</td>
+        <td>${escapeHtml(s.address || '—')}</td>
+        <td><span class="badge badge--muted">${escapeHtml(source)}</span></td>
+        <td>
+          <div class="table__actions">
+            <button type="button" class="icon-btn" data-supplier-edit="${escapeHtml(s.id)}" title="Editar proveedor">${ICONS.edit}</button>
+            <button type="button" class="icon-btn icon-btn--danger" data-supplier-del="${escapeHtml(s.id)}" title="Eliminar proveedor">${ICONS.trash}</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function supplierPaginationHtml(total) {
+    const pages = Math.max(1, Math.ceil(total / state.supplierPageSize));
+    if (state.supplierPage > pages) state.supplierPage = pages;
+    if (state.supplierPage < 1) state.supplierPage = 1;
+    const from = total ? (state.supplierPage - 1) * state.supplierPageSize + 1 : 0;
+    const to = Math.min(total, state.supplierPage * state.supplierPageSize);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);margin-top:var(--space-4);flex-wrap:wrap;">
+        <span class="text-muted" style="font-size:var(--font-size-sm);">Mostrando ${from}–${to} de ${total}</span>
+        <div style="display:flex;gap:var(--space-2);">
+          <button type="button" class="btn" data-supplier-page="prev" ${state.supplierPage <= 1 ? 'disabled' : ''}>Anterior</button>
+          <span class="text-muted" style="padding:9px 4px;font-size:var(--font-size-sm);">Página ${state.supplierPage} de ${pages}</span>
+          <button type="button" class="btn" data-supplier-page="next" ${state.supplierPage >= pages ? 'disabled' : ''}>Siguiente</button>
+        </div>
+      </div>`;
+  }
+
+  function updateSupplierList() {
+    const rows = supplierFiltered();
+    const pages = Math.max(1, Math.ceil(rows.length / state.supplierPageSize));
+    if (state.supplierPage > pages) state.supplierPage = pages;
+    if (state.supplierPage < 1) state.supplierPage = 1;
+    const start = (state.supplierPage - 1) * state.supplierPageSize;
+    const tbody = content.querySelector('[data-supplier-table-body]');
+    if (tbody) tbody.innerHTML = supplierRowsHtml(rows.slice(start, start + state.supplierPageSize));
+    const pag = content.querySelector('[data-supplier-pagination]');
+    if (pag) pag.innerHTML = supplierPaginationHtml(rows.length);
+    const count = content.querySelector('[data-supplier-count]');
+    if (count) count.textContent = `${rows.length} proveedor(es)`;
+  }
+
+  function renderSuppliers() {
+    const all = supplierService.all();
+    const rows = supplierFiltered();
+    const pages = Math.max(1, Math.ceil(rows.length / state.supplierPageSize));
+    if (state.supplierPage > pages) state.supplierPage = pages;
+    const start = (state.supplierPage - 1) * state.supplierPageSize;
+    const pageRows = rows.slice(start, start + state.supplierPageSize);
+    const rucCount = all.filter((s) => /^\d{11}$/.test(s.doc_id_number)).length;
+    const withEmail = all.filter((s) => s.email).length;
+    return `
+      ${supplierError ? `<div class="card" style="border-color:var(--color-danger);margin-bottom:var(--space-4);"><div class="card__body"><strong>No se pudo cargar el directorio.</strong><p class="text-muted" style="margin-top:var(--space-2);">${escapeHtml(supplierError)}</p></div></div>` : ''}
+      ${supplierLocalBanner()}
+      <div class="stats">
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.users}</span><div><div class="stat-card__value">${all.length}</div><div class="stat-card__label">Proveedores registrados</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${rucCount}</div><div class="stat-card__label">Con RUC de 11 dígitos</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${withEmail}</div><div class="stat-card__label">Con correo registrado</div></div></div>
+      </div>
+      <div class="card">
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Directorio de proveedores</h3>
+            <p class="card__subtitle" data-supplier-count>${rows.length} proveedor(es)</p>
+          </div>
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+            <button type="button" class="btn" data-supplier-model>${ICONS.arrowRight} Descargar modelo</button>
+            <button type="button" class="btn" data-supplier-file-trigger>${ICONS.arrowRight} Importar archivo</button>
+            <button type="button" class="btn btn--primary" data-supplier-add>${ICONS.plus} Nuevo proveedor</button>
+          </div>
+        </div>
+        <div class="card__body">
+          <div class="form-group" style="margin-bottom:var(--space-4);max-width:460px;">
+            <label class="form-label">Buscar proveedor</label>
+            <input class="form-input" data-supplier-search value="${escapeHtml(state.supplierSearch)}" placeholder="RUC, razón social, correo o teléfono…" />
+          </div>
+          <div class="table-wrap">
+            <table class="table" style="min-width:1050px;">
+              <thead><tr><th>Documento</th><th>Razón social</th><th>Contacto</th><th>Dirección</th><th>Origen</th><th></th></tr></thead>
+              <tbody data-supplier-table-body>${supplierRowsHtml(pageRows)}</tbody>
+            </table>
+          </div>
+          <div data-supplier-pagination>${supplierPaginationHtml(rows.length)}</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:var(--space-4);">
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Carga masiva / copiar y pegar</h3>
+            <p class="card__subtitle">Pega una fila por proveedor desde Excel o importa un CSV/TXT. También acepta líneas como <code>20601234567, RAZÓN SOCIAL</code>.</p>
+          </div>
+        </div>
+        <div class="card__body">
+          <input type="file" data-supplier-file accept=".csv,.txt,text/csv,text/plain" hidden />
+          <div class="form-group">
+            <label class="form-label">Proveedores a importar</label>
+            <textarea class="form-input" data-supplier-paste rows="7" placeholder="Tipo Doc Identidad,Nro Doc Identidad,Razon Social,Nombre Comercial,Correo,Telefono,Direccion&#10;6,20601234567,PROVEEDOR EJEMPLO S.A.C.,PROVEEDOR EJEMPLO,,,&#10;6,20607654321,DISTRIBUIDORA EJEMPLO S.A.,,,,,"></textarea>
+          </div>
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center;margin-top:var(--space-3);">
+            <button type="button" class="btn btn--primary" data-supplier-paste-import ${supplierBusy ? 'disabled' : ''}>${ICONS.check} Importar proveedores</button>
+            <button type="button" class="btn" data-supplier-file-trigger>${ICONS.arrowRight} Importar archivo CSV/TXT</button>
+            <button type="button" class="btn" data-supplier-model>${ICONS.arrowRight} Descargar modelo CSV</button>
+            ${supplierBusy ? '<span class="text-muted">Procesando…</span>' : ''}
+          </div>
+          <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
+            El modelo usa las columnas <code>Tipo Doc Identidad, Nro Doc Identidad, Razon Social, Nombre Comercial, Correo, Telefono, Direccion</code>.
+            Si el tipo de documento falta, se deduce por la longitud (11 dígitos = RUC, 8 dígitos = DNI). Los documentos repetidos se actualizan.
+          </p>
         </div>
       </div>`;
   }
@@ -578,32 +755,52 @@ export function render(root) {
     }
     if (state.tab === 'importar') content.innerHTML = renderImport();
     else if (state.tab === 'resumen') content.innerHTML = renderSummary();
+    else if (state.tab === 'proveedores') content.innerHTML = renderSuppliers();
     else {
       content.innerHTML = renderRegistry();
       updateRegistry();
     }
   }
 
+  function syncHeaderAdd() {
+    const btn = viewRoot.querySelector('.page-heading [data-add]');
+    if (!btn) return;
+    btn.innerHTML = state.tab === 'proveedores'
+      ? `${ICONS.plus} Nuevo proveedor`
+      : `${ICONS.plus} Nuevo registro`;
+  }
+
   function setTab(tab) {
     state.tab = tab;
     state.page = 1;
     [...tabsEl.querySelectorAll('[data-tab]')].forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
+    syncHeaderAdd();
     renderContent();
   }
 
   async function load() {
     loading = true;
     error = '';
+    supplierError = '';
     renderContent();
     updateModeBadge();
     try {
       await taxService.refresh();
+      try {
+        await supplierService.refresh();
+        if (supplierService.mode === 'remote' && supplierService.lastError) {
+          supplierError = supplierService.lastError;
+        }
+      } catch (err) {
+        supplierError = err.message || String(err);
+      }
       ensurePeriod();
     } catch (err) {
       error = err.message || String(err);
     } finally {
       loading = false;
       updateModeBadge();
+      syncHeaderAdd();
       renderContent();
     }
   }
@@ -636,6 +833,19 @@ export function render(root) {
     </div>`;
   }
 
+  function supplierOptionsHtml() {
+    return supplierService.all().slice(0, 2000).map((s) => (
+      `<option value="${escapeHtml(s.doc_id_number)}">${escapeHtml(s.name)}</option>`
+    )).join('');
+  }
+
+  function virtualAmountField(dataAttr, label, value) {
+    return `<div class="form-group" style="margin:0;">
+      <label class="form-label">${label}</label>
+      <input class="form-input" type="number" step="0.01" ${dataAttr} value="${Number(value || 0).toFixed(2)}" data-amount />
+    </div>`;
+  }
+
   function modalFormHtml(rec, kind, readonly) {
     const r = rec || {};
     const isCompra = kind === 'compra';
@@ -662,48 +872,36 @@ export function render(root) {
             ${textField('number_final', 'Número final (rango)', r.number_final, 'maxlength="30"')}
             ${isCompra ? textField('year', 'Año', r.year, 'placeholder="Ej. 2026" maxlength="4"') : ''}
             ${textField('car_sunat', 'CAR SUNAT', r.car_sunat, 'placeholder="Código CAR" maxlength="60"')}
-            ${selectField('doc_id_type', 'Tipo doc. contraparte', DOC_ID_TYPES, r.doc_id_type || '6')}
-            ${textField('doc_id_number', 'Nro doc. contraparte *', r.doc_id_number, 'placeholder="RUC / DNI" maxlength="20"')}
-            ${textField('counterparty_name', 'Razón social / nombres *', r.counterparty_name, 'placeholder="Nombre de la contraparte"')}
+            ${selectField('doc_id_type', isCompra ? 'Tipo doc. proveedor' : 'Tipo doc. contraparte', DOC_ID_TYPES, r.doc_id_type || '6')}
+            ${textField('doc_id_number', isCompra ? 'Nro doc. proveedor *' : 'Nro doc. contraparte *', r.doc_id_number, `placeholder="RUC / DNI" maxlength="20"${isCompra ? ' list="supplier-options" autocomplete="off"' : ''}`)}
+            ${textField('counterparty_name', isCompra ? 'Razón social del proveedor *' : 'Razón social / nombres *', r.counterparty_name, 'placeholder="Nombre de la contraparte"')}
             ${selectField('currency', 'Moneda', CURRENCIES, r.currency || 'PEN')}
             <div class="form-group" style="margin:0;"><label class="form-label">Tipo de cambio (moneda extranjera)</label>
               <input class="form-input" type="number" min="0" step="0.0001" name="exchange_rate" value="${Number(r.id ? (r.exchange_rate ?? 0) : (r.exchange_rate ?? 1)).toFixed(4)}" /></div>
             ${selectField('state', 'Estado del comprobante', STATES, r.state || '1')}
           </div>
+          ${isCompra ? `<datalist id="supplier-options">${supplierOptionsHtml()}</datalist>
+          <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">Escribe el RUC del proveedor y se completará su razón social desde el directorio de Proveedores. También puedes seleccionarlo de la lista.</p>` : ''}
 
           <h4 style="font-weight:600;color:var(--color-primary);margin:var(--space-5) 0 var(--space-3);">Importes</h4>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--space-4);">
-            ${isCompra ? `
-              ${amountField('taxed_base', 'BI Gravado DG', r.taxed_base)}
-              ${amountField('igv', 'IGV / IPM DG', r.igv)}
-              ${amountField('taxed_base_ng', 'BI Gravado DGNG', r.taxed_base_ng)}
-              ${amountField('igv_ng', 'IGV / IPM DGNG', r.igv_ng)}
-              ${amountField('taxed_base_dng', 'BI Gravado DNG', r.taxed_base_dng)}
-              ${amountField('igv_dng', 'IGV / IPM DNG', r.igv_dng)}
-              ${amountField('acq_value_ng', 'Valor Adq. NG', r.acq_value_ng)}
-              ${amountField('isc', 'ISC', r.isc)}
-              ${amountField('icbper', 'ICBPER', r.icbper)}
-              ${amountField('other_taxes', 'Otros tributos / cargos', r.other_taxes)}
-            ` : `
-              ${amountField('export_value', 'Valor facturado exportación', r.export_value)}
-              ${amountField('taxed_base', 'BI Gravada', r.taxed_base)}
-              ${amountField('discount_base', 'Dscto BI', r.discount_base)}
-              ${amountField('igv', 'IGV / IPM', r.igv)}
-              ${amountField('discount_igv', 'Dscto IGV / IPM', r.discount_igv)}
-              ${amountField('exonerated', 'Mto exonerado', r.exonerated)}
-              ${amountField('unaffected', 'Mto inafecto', r.unaffected)}
-              ${amountField('isc', 'ISC', r.isc)}
-              ${amountField('ivap_base', 'BI Grav IVAP', r.ivap_base)}
-              ${amountField('ivap', 'IVAP', r.ivap)}
-              ${amountField('icbper', 'ICBPER', r.icbper)}
-              ${amountField('other_taxes', 'Otros tributos', r.other_taxes)}
-            `}
+            ${virtualAmountField('data-base-gravada', 'Base gravada', baseGravadaOf(r, kind))}
+            ${virtualAmountField('data-base-no-gravada', 'Base no gravada', baseNoGravadaOf(r, kind))}
+            ${virtualAmountField('data-igv', 'IGV / IPM', igvOf(r, kind))}
+            ${amountField('isc', 'ISC', r.isc)}
+            ${amountField('icbper', 'ICBPER', r.icbper)}
+            ${amountField('other_taxes', 'Otros cargos / tributos', r.other_taxes)}
+            ${!isCompra ? amountField('ivap', 'IVAP', r.ivap) : ''}
             <div class="form-group" style="margin:0;">
               <label class="form-label">Total CP</label>
               <input class="form-input" type="number" step="0.01" name="total" value="${Number(r.total || 0).toFixed(2)}" data-total />
             </div>
           </div>
-          <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular total automáticamente al editar importes</span></label>
+          <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular IGV (18%) y total automáticamente al editar importes</span></label>
+          <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
+            La <strong>base gravada</strong> es la afecta al IGV. La <strong>base no gravada</strong> incluye exoneradas, inafectas, exportación, valor no gravado y otras bases no afectas al IGV.
+            Los cargos que no forman base se registran en ISC, ICBPER u otros tributos. Al editar las bases, el comprobante se consolida en las columnas estándar del registro.
+          </p>
 
           <h4 style="font-weight:600;color:var(--color-primary);margin:var(--space-5) 0 var(--space-3);">Notas y documentos modificados</h4>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--space-4);">
@@ -726,13 +924,69 @@ export function render(root) {
       </form>`;
   }
 
+  function supplierFormHtml(rec, readonly) {
+    const s = rec || {};
+    return `
+      <form data-supplier-form novalidate>
+        <div class="modal__header">
+          <h3 class="modal__title">${readonly ? 'Detalle del proveedor' : (s.id ? 'Editar proveedor' : 'Nuevo proveedor')}</h3>
+          <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">${ICONS.close}</button>
+        </div>
+        <div class="modal__body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-4);">
+            ${selectField('doc_id_type', 'Tipo documento', DOC_ID_TYPES, s.doc_id_type || '6')}
+            ${textField('doc_id_number', 'Nro documento *', s.doc_id_number, 'placeholder="RUC / DNI" maxlength="20"')}
+            ${textField('name', 'Razón social *', s.name, 'placeholder="Razón social del proveedor"')}
+            ${textField('trade_name', 'Nombre comercial', s.trade_name)}
+            ${textField('email', 'Correo', s.email, 'type="email" placeholder="correo@proveedor.com"')}
+            ${textField('phone', 'Teléfono', s.phone, 'placeholder="Teléfono / celular"')}
+            <div class="form-group" style="margin:0;grid-column:1/-1;">
+              <label class="form-label">Dirección</label>
+              <input class="form-input" name="address" value="${escapeHtml(s.address || '')}" placeholder="Dirección fiscal o comercial" />
+            </div>
+          </div>
+          <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
+            El documento identifica al proveedor y evita duplicados. Al crear un registro de compra, escribe este documento y la razón social se completará automáticamente.
+          </p>
+        </div>
+        <div class="modal__footer">
+          <button type="button" class="btn" data-cancel>${readonly ? 'Cerrar' : 'Cancelar'}</button>
+          ${readonly
+            ? `<button type="button" class="btn btn--primary" data-supplier-edit-modal>${ICONS.edit} Editar</button>`
+            : `<button type="submit" class="btn btn--primary" data-submit>${ICONS.check} Guardar proveedor</button>`}
+        </div>
+      </form>`;
+  }
+
   function openModal(rec, kind, readonly = false) {
     if (modal.open) modal.close();
+    modalType = 'record';
     modalRecord = rec ? { ...rec } : null;
+    modalSupplierRecord = null;
     modalKind = kind;
     modalReadonly = readonly;
+    modalInitial = {
+      baseGravada: baseGravadaOf(rec || {}, kind),
+      baseNoGravada: baseNoGravadaOf(rec || {}, kind),
+      igv: igvOf(rec || {}, kind),
+    };
     modal.innerHTML = modalFormHtml(modalRecord, kind, readonly);
     const form = modal.querySelector('[data-form]');
+    if (readonly) {
+      form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
+    }
+    modal.showModal();
+  }
+
+  function openSupplierModal(rec, readonly = false) {
+    if (modal.open) modal.close();
+    modalType = 'supplier';
+    modalRecord = null;
+    modalSupplierRecord = rec ? { ...rec } : null;
+    modalInitial = null;
+    modalReadonly = readonly;
+    modal.innerHTML = supplierFormHtml(modalSupplierRecord, readonly);
+    const form = modal.querySelector('[data-supplier-form]');
     if (readonly) {
       form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
     }
@@ -742,23 +996,31 @@ export function render(root) {
   function closeModal() {
     if (modal.open) modal.close();
     modal.innerHTML = '';
+    modalType = 'record';
     modalRecord = null;
+    modalSupplierRecord = null;
+    modalInitial = null;
     modalReadonly = false;
   }
 
-  function recalcTotal() {
+  function recalcAmounts(target) {
     const form = modal.querySelector('[data-form]');
     if (!form || modalReadonly) return;
     const auto = form.querySelector('[data-auto-total]');
     if (!auto || !auto.checked) return;
-    const val = (name) => Number(form.querySelector(`[name="${name}"]`)?.value || 0);
-    let total;
-    if (modalKind === 'compra') {
-      total = ['taxed_base', 'igv', 'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng', 'acq_value_ng', 'isc', 'icbper', 'other_taxes'].reduce((a, k) => a + val(k), 0);
-    } else {
-      total = ['export_value', 'taxed_base', 'igv', 'exonerated', 'unaffected', 'isc', 'ivap_base', 'ivap', 'icbper', 'other_taxes'].reduce((a, k) => a + val(k), 0)
-        - val('discount_base') - val('discount_igv');
+    const byName = (name) => Number(form.querySelector(`[name="${name}"]`)?.value || 0);
+    const byData = (attr) => Number(form.querySelector(`[${attr}]`)?.value || 0);
+    if (target?.matches('[data-base-gravada]')) {
+      const igvInput = form.querySelector('[data-igv]');
+      if (igvInput) igvInput.value = (byData('data-base-gravada') * 0.18).toFixed(2);
     }
+    const total = byData('data-base-gravada')
+      + byData('data-base-no-gravada')
+      + byData('data-igv')
+      + byName('isc')
+      + byName('icbper')
+      + byName('other_taxes')
+      + (modalKind === 'venta' ? byName('ivap') : 0);
     const totalInput = form.querySelector('[data-total]');
     if (totalInput) totalInput.value = total.toFixed(2);
   }
@@ -808,6 +1070,23 @@ export function render(root) {
     try {
       const res = await taxService.importParsed(currentParsed.files);
       await taxService.refresh();
+      let supplierResult = null;
+      try {
+        const supplierRows = currentParsed.records
+          .filter((r) => r.kind === 'compra' && r.doc_id_number && r.counterparty_name)
+          .map((r) => ({
+            doc_id_type: r.doc_id_type,
+            doc_id_number: r.doc_id_number,
+            name: r.counterparty_name,
+            source: 'sire',
+          }));
+        if (supplierRows.length) {
+          supplierResult = await supplierService.importRows(supplierRows, { source: 'sire' });
+        }
+      } catch (err) {
+        supplierError = err.message || String(err);
+        console.warn('No se pudo actualizar el directorio de proveedores:', err);
+      }
       const kinds = [...new Set(currentParsed.files.map((f) => f.kind).filter(Boolean))];
       const periods = currentParsed.records.map((r) => r.period).filter(Boolean).sort();
       parsed = null;
@@ -816,6 +1095,9 @@ export function render(root) {
       state.tab = kinds.length === 1 ? kinds[0] : 'compra';
       updateModeBadge();
       showToast(`Importación completada: ${res.imported} registro(s) nuevo(s), ${res.skipped} omitido(s).`);
+      if (supplierResult?.total) {
+        showToast(`Directorio de proveedores: ${supplierResult.created} nuevo(s), ${supplierResult.updated} actualizado(s).`, 'info');
+      }
       if (res.warnings?.length) showToast(res.warnings[0], 'info');
       setTab(state.tab);
     } catch (err) {
@@ -823,6 +1105,41 @@ export function render(root) {
       if (btn) { btn.disabled = false; btn.innerHTML = `${ICONS.check} Importar ${currentParsed.records.length} registro(s)`; }
     } finally {
       importBusy = false;
+    }
+  }
+
+  async function importSupplierText(text, origin = 'texto') {
+    if (supplierBusy) return;
+    const parsedSuppliers = supplierService.parseText(text);
+    if (!parsedSuppliers.rows.length) {
+      showToast(parsedSuppliers.warnings?.[0] || 'No se encontraron proveedores válidos.', 'error');
+      return;
+    }
+    supplierBusy = true;
+    supplierError = '';
+    const btn = content.querySelector('[data-supplier-paste-import]');
+    if (btn) { btn.disabled = true; btn.textContent = 'Importando…'; }
+    try {
+      const res = await supplierService.importRows(parsedSuppliers.rows, { source: 'import' });
+      state.supplierPage = 1;
+      renderContent();
+      showToast(`Proveedores (${origin}): ${res.created} nuevo(s), ${res.updated} actualizado(s)${res.skipped ? `, ${res.skipped} omitido(s)` : ''}.`);
+      if (parsedSuppliers.skipped && parsedSuppliers.warnings?.length) showToast(parsedSuppliers.warnings[0], 'info');
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
+      if (btn) { btn.disabled = false; btn.innerHTML = `${ICONS.check} Importar proveedores`; }
+    } finally {
+      supplierBusy = false;
+    }
+  }
+
+  async function handleSupplierFile(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      await importSupplierText(text, file.name);
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
     }
   }
 
@@ -876,8 +1193,63 @@ export function render(root) {
     if (tab) { setTab(tab.dataset.tab); return; }
 
     if (e.target.closest('[data-import]')) { setTab('importar'); return; }
-    if (e.target.closest('[data-add]')) { openModal(null, state.tab === 'venta' ? 'venta' : 'compra'); return; }
+    if (e.target.closest('[data-add]')) {
+      if (state.tab === 'proveedores') openSupplierModal(null);
+      else openModal(null, state.tab === 'venta' ? 'venta' : 'compra');
+      return;
+    }
     if (e.target.closest('[data-retry]')) { load(); return; }
+
+    if (e.target.closest('[data-supplier-add]')) { openSupplierModal(null); return; }
+    if (e.target.closest('[data-supplier-model]')) {
+      downloadText('MODELO_PROVEEDORES.csv', supplierService.modelCsv());
+      showToast('Modelo CSV descargado. Completa una fila por proveedor.');
+      return;
+    }
+    if (e.target.closest('[data-supplier-file-trigger]')) {
+      content.querySelector('[data-supplier-file]')?.click();
+      return;
+    }
+    if (e.target.closest('[data-supplier-paste-import]')) {
+      const text = content.querySelector('[data-supplier-paste]')?.value || '';
+      importSupplierText(text, 'texto pegado');
+      return;
+    }
+    const supplierEdit = e.target.closest('[data-supplier-edit]');
+    if (supplierEdit) {
+      openSupplierModal(supplierService.getById(supplierEdit.dataset.supplierEdit));
+      return;
+    }
+    const supplierDel = e.target.closest('[data-supplier-del]');
+    if (supplierDel) {
+      const id = supplierDel.dataset.supplierDel;
+      const supplier = supplierService.getById(id);
+      confirmDialog({
+        title: 'Eliminar proveedor',
+        message: `¿Eliminar a ${supplier?.name || 'este proveedor'}? Los comprobantes ya registrados conservarán sus datos.`,
+        confirmText: 'Eliminar',
+        danger: true,
+      }).then(async (ok) => {
+        if (!ok) return;
+        try {
+          await supplierService.remove(id);
+          state.supplierPage = 1;
+          renderContent();
+          showToast('Proveedor eliminado.');
+        } catch (err) { showToast(err.message || String(err), 'error'); }
+      });
+      return;
+    }
+    const supplierPage = e.target.closest('[data-supplier-page]');
+    if (supplierPage) {
+      state.supplierPage += supplierPage.dataset.supplierPage === 'next' ? 1 : -1;
+      updateSupplierList();
+      return;
+    }
+    if (e.target.closest('[data-supplier-edit-modal]')) {
+      openSupplierModal(modalSupplierRecord, false);
+      return;
+    }
 
     if (e.target.closest('[data-drop]')) {
       content.querySelector('[data-files]')?.click();
@@ -916,8 +1288,13 @@ export function render(root) {
 
     if (e.target.closest('[data-export-summary]')) {
       const rows = monthlyFor(state.summaryYear);
-      const headers = ['Periodo', 'Compras base', 'Compras IGV', 'Compras total', 'Ventas base', 'Ventas IGV', 'Ventas total', 'Saldo IGV'];
-      const data = rows.map((r) => [r.period, r.compra.base.toFixed(2), r.compra.igv.toFixed(2), r.compra.total.toFixed(2), r.venta.base.toFixed(2), r.venta.igv.toFixed(2), r.venta.total.toFixed(2), (r.venta.igv - r.compra.igv).toFixed(2)]);
+      const headers = ['Periodo', 'Compras base gravada', 'Compras base no gravada', 'Compras IGV', 'Compras total', 'Ventas base gravada', 'Ventas base no gravada', 'Ventas IGV', 'Ventas total', 'Saldo IGV'];
+      const data = rows.map((r) => [
+        r.period,
+        r.compra.baseGravada.toFixed(2), r.compra.baseNoGravada.toFixed(2), r.compra.igv.toFixed(2), r.compra.total.toFixed(2),
+        r.venta.baseGravada.toFixed(2), r.venta.baseNoGravada.toFixed(2), r.venta.igv.toFixed(2), r.venta.total.toFixed(2),
+        (r.venta.igv - r.compra.igv).toFixed(2),
+      ]);
       downloadText(`RESUMEN_COMPRAS_VENTAS_${state.summaryYear}.csv`, toCsvText(headers, data));
       return;
     }
@@ -945,11 +1322,22 @@ export function render(root) {
       state.page = 1;
       updateRegistry();
     }
+    if (e.target.matches('[data-supplier-search]')) {
+      state.supplierSearch = e.target.value;
+      state.supplierPage = 1;
+      updateSupplierList();
+    }
   });
 
   viewRoot.addEventListener('change', (e) => {
     if (e.target.matches('[data-files]')) {
       handleFiles(e.target.files);
+      return;
+    }
+    if (e.target.matches('[data-supplier-file]')) {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      handleSupplierFile(file);
       return;
     }
     if (e.target.matches('[data-period]')) {
@@ -990,23 +1378,126 @@ export function render(root) {
   });
 
   modal.addEventListener('input', (e) => {
-    if (e.target.matches('[data-amount]')) recalcTotal();
+    if (modalType === 'supplier' || modalReadonly) return;
+    if (e.target.matches('[data-amount], [data-base-gravada], [data-base-no-gravada], [data-igv]')) {
+      recalcAmounts(e.target);
+    }
+    if (e.target.matches('[name="counterparty_name"]')) e.target.dataset.auto = '0';
+    if (e.target.matches('[name="doc_id_number"]') && modalKind === 'compra') {
+      const supplier = supplierService.getByDoc(e.target.value);
+      if (!supplier) return;
+      const form = modal.querySelector('[data-form]');
+      const nameInput = form?.querySelector('[name="counterparty_name"]');
+      const currentName = nameInput ? nameInput.value.trim() : '';
+      const savedName = String(modalRecord?.counterparty_name || '').trim();
+      const canFill = !modalRecord?.id || !currentName || nameInput.dataset.auto === '1' || currentName === savedName;
+      if (nameInput && canFill) {
+        nameInput.value = supplier.name;
+        nameInput.dataset.auto = '1';
+      }
+      const typeInput = form?.querySelector('[name="doc_id_type"]');
+      if (typeInput && supplier.doc_id_type) typeInput.value = supplier.doc_id_type;
+    }
   });
 
   modal.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (modalReadonly) return;
+
+    if (modalType === 'supplier') {
+      const form = e.target;
+      const fd = new FormData(form);
+      const data = Object.fromEntries(fd.entries());
+      data.doc_id_number = String(data.doc_id_number || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      data.name = String(data.name || '').trim();
+      data.source = modalSupplierRecord?.source || 'manual';
+      const missing = [];
+      if (!data.doc_id_number) missing.push('documento');
+      if (!data.name) missing.push('razón social');
+      if (missing.length) {
+        showToast(`Completa: ${missing.join(', ')}.`, 'error');
+        return;
+      }
+      const submit = form.querySelector('[data-submit]');
+      if (submit) { submit.disabled = true; submit.textContent = 'Guardando…'; }
+      try {
+        if (modalSupplierRecord?.id) {
+          await supplierService.update(modalSupplierRecord.id, data);
+          showToast('Proveedor actualizado.');
+        } else {
+          await supplierService.create(data);
+          showToast('Proveedor registrado.');
+        }
+        closeModal();
+        state.supplierPage = 1;
+        renderContent();
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+        if (submit) { submit.disabled = false; submit.innerHTML = `${ICONS.check} Guardar proveedor`; }
+      }
+      return;
+    }
+
     const form = e.target;
     const fd = new FormData(form);
     const data = Object.fromEntries(fd.entries());
-    delete data.autoTotal;
     data.kind = modalKind;
     data.period = inputToPeriod(data.period);
-    ['exchange_rate', 'taxed_base', 'igv', 'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng',
-      'acq_value_ng', 'export_value', 'discount_base', 'discount_igv', 'exonerated', 'unaffected',
-      'isc', 'ivap_base', 'ivap', 'icbper', 'other_taxes', 'total'].forEach((k) => {
-      data[k] = Number(data[k] || 0);
+    data.exchange_rate = Number(data.exchange_rate || 0);
+
+    const baseRec = modalRecord || {};
+    [
+      'taxed_base', 'igv', 'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng',
+      'acq_value_ng', 'export_value', 'discount_base', 'discount_igv', 'exonerated',
+      'unaffected', 'ivap_base', 'ivap', 'isc', 'icbper', 'other_taxes', 'total',
+    ].forEach((k) => { data[k] = Number(baseRec[k] || 0); });
+
+    const formAmount = (name) => {
+      const el = form.elements[name];
+      return el ? Number(el.value || 0) : 0;
+    };
+    ['isc', 'icbper', 'other_taxes', 'ivap'].forEach((k) => {
+      if (form.elements[k]) data[k] = formAmount(k);
     });
+    data.total = Number(form.querySelector('[data-total]')?.value || 0);
+
+    const baseGravada = Number(form.querySelector('[data-base-gravada]')?.value || 0);
+    const baseNoGravada = Number(form.querySelector('[data-base-no-gravada]')?.value || 0);
+    const igv = Number(form.querySelector('[data-igv]')?.value || 0);
+    const changed = (value, initial) => Math.abs(Number(value || 0) - Number(initial || 0)) > 0.004;
+    const baseGravadaChanged = changed(baseGravada, modalInitial?.baseGravada);
+    const baseNoGravadaChanged = changed(baseNoGravada, modalInitial?.baseNoGravada);
+    const igvChanged = changed(igv, modalInitial?.igv);
+
+    if (baseGravadaChanged) {
+      data.taxed_base = baseGravada;
+      if (modalKind === 'compra') {
+        data.taxed_base_ng = 0;
+        data.taxed_base_dng = 0;
+      } else {
+        data.discount_base = 0;
+      }
+    }
+    if (baseNoGravadaChanged) {
+      if (modalKind === 'compra') {
+        data.acq_value_ng = baseNoGravada;
+      } else {
+        data.exonerated = baseNoGravada;
+        data.export_value = 0;
+        data.unaffected = 0;
+        data.ivap_base = 0;
+      }
+    }
+    if (igvChanged) {
+      data.igv = igv;
+      if (modalKind === 'compra') {
+        data.igv_ng = 0;
+        data.igv_dng = 0;
+      } else {
+        data.discount_igv = 0;
+      }
+    }
+
     data.ruc_empresa = String(data.ruc_empresa || '').replace(/\D/g, '');
     data.doc_id_number = String(data.doc_id_number || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     data.series = String(data.series || '').toUpperCase().trim();
@@ -1051,12 +1542,15 @@ export function render(root) {
     }
   });
 
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeModal();
+  modal.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (e.target.matches('textarea, button')) return;
+    if (e.target.matches('input, select')) e.preventDefault();
   });
+
+  // Evita que un clic accidental en el fondo cierre el formulario y pierda lo escrito.
   modal.addEventListener('cancel', (e) => {
     e.preventDefault();
-    closeModal();
   });
 
   load();

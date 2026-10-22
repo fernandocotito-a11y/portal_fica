@@ -8,7 +8,9 @@
 
 import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
-import { HEADERS, periodLabel } from './comprasConfig.js';
+import {
+  HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf,
+} from './comprasConfig.js';
 import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
 
 let records = [];
@@ -441,6 +443,8 @@ export const taxService = {
     const s = {
       count: rows.length,
       base: 0,
+      baseGravada: 0,
+      baseNoGravada: 0,
       igv: 0,
       total: 0,
       exonerated: 0,
@@ -452,14 +456,12 @@ export const taxService = {
       const rate = String(r.currency || 'PEN').toUpperCase() === 'PEN'
         ? 1
         : (Number(r.exchange_rate || 0) || 1);
-      const base = kind === 'compra'
-        ? Number(r.taxed_base || 0) + Number(r.taxed_base_ng || 0) + Number(r.taxed_base_dng || 0) + Number(r.acq_value_ng || 0)
-        : Number(r.taxed_base || 0) + Number(r.export_value || 0);
-      const igv = kind === 'compra'
-        ? Number(r.igv || 0) + Number(r.igv_ng || 0) + Number(r.igv_dng || 0)
-        : Number(r.igv || 0);
-      s.base += base * rate;
-      s.igv += igv * rate;
+      const baseGravada = baseGravadaOf(r, kind);
+      const baseNoGravada = baseNoGravadaOf(r, kind);
+      s.baseGravada += baseGravada * rate;
+      s.baseNoGravada += baseNoGravada * rate;
+      s.base += (baseGravada + baseNoGravada) * rate;
+      s.igv += igvOf(r, kind) * rate;
       s.total += Number(r.total || 0) * rate;
       s.exonerated += Number(r.exonerated || 0) * rate;
       s.unaffected += Number(r.unaffected || 0) * rate;

@@ -212,6 +212,39 @@ export function inputToPeriod(value) {
   return String(value || '').replace(/\D/g, '').slice(0, 6);
 }
 
+/* ---------------------------------------------------------------------------
+   Bases del registro de compras / ventas
+   ---------------------------------------------------------------------------
+   El SIRE separa varios subtotales. Para el registro estándar se consolidan:
+   - Base gravada: bases afectas al IGV.
+   - Base no gravada: exonerada, inafecta, exportación, valor no gravado y
+     bases de otros tributos (IVAP), es decir, lo que no forma la base del IGV.
+   Los descuentos de ventas se muestran netos.
+   ------------------------------------------------------------------------- */
+
+const n = (value) => Number(value || 0);
+
+export function baseGravadaOf(rec, kind = rec?.kind) {
+  if (kind === 'compra') {
+    return n(rec?.taxed_base) + n(rec?.taxed_base_ng) + n(rec?.taxed_base_dng);
+  }
+  return n(rec?.taxed_base) - n(rec?.discount_base);
+}
+
+export function baseNoGravadaOf(rec, kind = rec?.kind) {
+  if (kind === 'compra') return n(rec?.acq_value_ng);
+  return n(rec?.export_value) + n(rec?.exonerated) + n(rec?.unaffected) + n(rec?.ivap_base);
+}
+
+export function igvOf(rec, kind = rec?.kind) {
+  if (kind === 'compra') return n(rec?.igv) + n(rec?.igv_ng) + n(rec?.igv_dng);
+  return n(rec?.igv) - n(rec?.discount_igv);
+}
+
+export function totalBaseOf(rec, kind = rec?.kind) {
+  return baseGravadaOf(rec, kind) + baseNoGravadaOf(rec, kind);
+}
+
 /** Lista de periodos disponibles alrededor de un año. */
 export function periodsForYear(year) {
   return Array.from({ length: 12 }, (_, i) => `${year}${String(i + 1).padStart(2, '0')}`);

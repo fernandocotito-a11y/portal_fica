@@ -38,7 +38,9 @@ Abre **http://localhost:3000**.
    empresa inicial), luego `supabase/payroll_schema.sql` (tablas del módulo de
    **Planillas**, aisladas por empresa) y `supabase/compras_schema.sql` (Registro
    de **Compras y Ventas / SIRE**, también aislado por empresa). Si ya habías
-   ejecutado el primero, añade la columna `email`:
+   ejecutado `compras_schema.sql`, ejecuta además
+   `supabase/compras_suppliers_schema.sql` para crear el directorio de
+   proveedores. Si ya habías ejecutado el primero, añade la columna `email`:
 
    ```sql
    alter table public.profiles add column if not exists email text;
@@ -140,6 +142,7 @@ Portal/
     ├── schema.sql          # Tablas, RLS y semilla
     ├── payroll_schema.sql  # Tablas de Planillas
     ├── compras_schema.sql  # Tablas de Compras y Ventas / SIRE
+    ├── compras_suppliers_schema.sql # Migración: directorio de proveedores
     └── functions/invite-user/  # Edge Function de invitación por correo
 ```
 
@@ -184,12 +187,24 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   importar y omite duplicados por período, documento, serie y número.
 - Los comprobantes quedan en formato SUNAT editable (alta, edición, detalle y
   eliminación) y se pueden exportar a CSV con los encabezados SIRE y BOM UTF-8.
-- El **Resumen** consolida compras, ventas, IGV y saldo mensual en soles. Los
-  comprobantes en moneda extranjera usan su tipo de cambio; si la fuente no lo
-  trae, la interfaz lo advierte para completarlo.
+- El formulario de alta/edición trabaja con **Base gravada** y **Base no
+  gravada**. El IGV se calcula automáticamente al 18% sobre la base gravada y
+  también se pueden registrar **ISC**, **ICBPER**, **IVAP** y otros cargos. La
+  base no gravada agrupa exoneradas, inafectas, exportación, valor no gravado y
+  otras bases no afectas al IGV.
+- Incluye un **directorio de proveedores** por empresa: alta, edición,
+  eliminación, búsqueda, descarga de modelo CSV, importación de CSV/TXT y carga
+  masiva pegando texto desde Excel. Al escribir el RUC en una compra, se completa
+  automáticamente la razón social. Las importaciones SIRE también alimentan el
+  directorio con los proveedores de compras.
+- El **Resumen** consolida compras, ventas, base gravada, base no gravada, IGV y
+  saldo mensual en soles. Los comprobantes en moneda extranjera usan su tipo de
+  cambio; si la fuente no lo trae, la interfaz lo advierte para completarlo.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
-  **modo local** con `localStorage` y muestra un aviso. Al aplicar el esquema,
-  recarga el portal para pasar a Supabase multiusuario con RLS.
+  **modo local** con `localStorage` y muestra un aviso. El directorio de
+  proveedores tiene su propio aviso si falta `compras_suppliers_schema.sql`. Al
+  aplicar los esquemas, recarga el portal para pasar a Supabase multiusuario con
+  RLS; los proveedores creados en modo local se migran automáticamente.
 - La carpeta `sire/` contiene archivos de prueba privados y está en `.gitignore`;
   no se publica en el repositorio.
 
