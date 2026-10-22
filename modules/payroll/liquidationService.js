@@ -62,9 +62,27 @@ function isoOf(p) {
 function daysInclusive(a, b) {
   return Math.max(0, Math.round((toUTC(b) - toUTC(a)) / 86400000) + 1);
 }
-/** Días transcurridos entre dos fechas (sin contar el día final). */
-function elapsedDays(a, b) {
-  return Math.max(0, Math.round((toUTC(b) - toUTC(a)) / 86400000));
+/** Meses proporcionales entre dos fechas: meses calendario completos + treintavos. */
+function proportionalMonths(startISO, endISO) {
+  const start = parseISO(startISO);
+  const end = parseISO(endISO);
+  if (!start || !end || startISO > endISO) return 0;
+  let count = 0;
+  let { y, m } = start;
+  while (y * 100 + m <= end.y * 100 + end.m) {
+    const monthStart = Date.UTC(y, m - 1, 1);
+    const monthEnd = Date.UTC(y, m, 0);
+    const from = Math.max(monthStart, toUTC(start));
+    const to = Math.min(monthEnd, toUTC(end));
+    if (to >= from) {
+      const days = Math.round((to - from) / 86400000) + 1;
+      const isFullMonth = from === monthStart && to === monthEnd;
+      count += isFullMonth ? 1 : Math.min(1, days / 30);
+    }
+    m += 1;
+    if (m > 12) { m = 1; y += 1; }
+  }
+  return Math.min(6, Math.round(count * 100) / 100);
 }
 function laterOf(a, b) {
   return toUTC(a) >= toUTC(b) ? a : b;
@@ -170,7 +188,7 @@ export const liquidationService = {
         if (r.withPay === false && ['falta', 'descanso_medico', 'licencia'].includes(r.type)) ctsUnpaid += 1;
       });
     }
-    const ctsDias = rules.hasCts ? Math.min(180, Math.max(0, daysInclusive(ctsStart, cese) - ctsUnpaid)) : 0;
+    const ctsDias = rules.hasCts ? Math.max(0, Math.min(180, daysInclusive(ctsStart, cese)) - ctsUnpaid) : 0;
     const sexto = round2(base / 6);
     const ctsBase = round2(base + sexto);
     const ctsMonto = rules.hasCts ? round2((ctsBase / 360) * ctsDias) : 0;
@@ -184,8 +202,7 @@ export const liquidationService = {
     const semStart = cese.m <= 6 ? { y: cese.y, m: 1, d: 1 } : { y: cese.y, m: 7, d: 1 };
     const semPayMonth = cese.m <= 6 ? 7 : 12;
     const gStart = laterOf(semStart, start);
-    const diasGrati = elapsedDays(gStart, cese);
-    const mesesGrati = Math.min(6, Math.max(0, round2(diasGrati / 30)));
+    const mesesGrati = proportionalMonths(isoOf(gStart), isoOf(cese));
     const yaPagada = gratificacionService.hasRegistered(emp.id, year, semPayMonth);
     const gratiTrunca = yaPagada ? 0 : round2((base / 6) * mesesGrati * rules.benefitFactor);
     const tasaBono = emp.salud === 'EPS' ? 0.0675 : 0.09;

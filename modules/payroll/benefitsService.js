@@ -11,6 +11,39 @@ import { num, round2, clamp } from './payrollUtils.js';
 import { getRmv, TASAS } from './payrollConfig.js';
 import { attendanceService } from './attendanceService.js';
 
+const pad2 = (n) => String(n).padStart(2, '0');
+const lastDayOfMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
+const monthStartIso = (year, month) => `${year}-${pad2(month)}-01`;
+const monthEndIso = (year, month) => `${year}-${pad2(month)}-${pad2(lastDayOfMonth(year, month))}`;
+
+function isoParts(value) {
+  const [year, month, day] = String(value || '').slice(0, 10).split('-').map(Number);
+  return year && month && day ? { year, month, day } : null;
+}
+
+/** Días calendario inclusivos entre dos fechas ISO. */
+function daysInclusive(fromISO, toISO) {
+  const a = Date.parse(`${String(fromISO).slice(0, 10)}T00:00:00Z`);
+  const b = Date.parse(`${String(toISO).slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return 0;
+  return Math.round((b - a) / 86400000) + 1;
+}
+
+/** Meses calendario COMPLETOS entre dos fechas ISO (inclusive). */
+function completeMonths(startISO, endISO) {
+  const start = isoParts(startISO);
+  const end = isoParts(endISO);
+  if (!start || !end || startISO > endISO) return 0;
+  let count = 0;
+  let { year, month } = start;
+  while (year * 100 + month <= end.year * 100 + end.month) {
+    if (monthStartIso(year, month) >= startISO && monthEndIso(year, month) <= endISO) count += 1;
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+  }
+  return count;
+}
+
 export const BENEFIT_BONOS = [
   { value: 'ESSALUD', label: 'EsSalud (9%)' },
   { value: 'EPS', label: 'EPS (6.75%)' },
@@ -32,14 +65,14 @@ export const benefitsService = {
    * @param {string} semestre 'julio' (ene-jun) | 'diciembre' (jul-dic)
    */
   gratificacionMeses(emp, year, semestre) {
-    if (!emp.startDate) return 6;
-    const [sy, sm] = String(emp.startDate).slice(0, 10).split('-').map(Number);
-    if (!sy || !sm) return 6;
-    if (sy < year) return 6;
-    if (sy > year) return 0;
-    if (semestre === 'julio') return sm > 6 ? 0 : 7 - sm; // ene=6 … jun=1
-    // diciembre (jul-dic): si empezó antes de julio, el semestre es completo
-    return sm <= 6 ? 6 : 13 - sm; // jul=6 … dic=1
+    const periodStart = semestre === 'julio' ? `${year}-01-01` : `${year}-07-01`;
+    const periodEnd = semestre === 'julio' ? `${year}-06-30` : `${year}-12-31`;
+    const startDate = String(emp.startDate || '').slice(0, 10);
+    const cese = String(emp.cese || '').slice(0, 10);
+    const from = startDate && startDate > periodStart ? startDate : periodStart;
+    const to = cese && cese < periodEnd ? cese : periodEnd;
+    if (from > to) return 0;
+    return clamp(completeMonths(from, to), 0, 6);
   },
 
   /** Gratificación de un semestre (auto: meses + bono según salud). */
@@ -70,18 +103,45 @@ export const benefitsService = {
     ];
   },
 
-  /** Días de permisos sin goce de haber en el período CTS. */
-  unpaidDays(emp, year, periodo) {
-    let d = 0;
-    for (const { year: y, month: m } of this.semesterMonths(year, periodo)) {
-      d += attendanceService.summarize(emp.id, y, m, emp.baseSalary).absentWithoutPay;
-    }
-    return d;
+  /** Rango calendario del período CTS (depósito de mayo / noviembre). */
+  ctsRange(year, periodo) {
+    return periodo === 'noviembre'
+      ? { start: `${year}-05-01`, end: `${year}-10-31` }
+      : { start: `${year - 1}-11-01`, end: `${year}-04-30` };
   },
 
-  /** Días computables de CTS = 180 − permisos sin goce de haber. */
+  /** Días sin goce de haber dentro de un rango ISO (inclusive). */
+  unpaidDaysInRange(emp, fromISO, toISO) {
+    let days = 0;
+    attendanceService.list(emp.id).forEach((r) => {
+      const date = String(r.date || '').slice(0, 10);
+      if (!date || date < fromISO || date > toISO) return;
+      if (r.withPay === false && ['falta', 'descanso_medico', 'licencia'].includes(r.type)) days += 1;
+    });
+    return days;
+  },
+
+  /** Días de permisos sin goce de haber en el período CTS. */
+  unpaidDays(emp, year, periodo) {
+    const range = this.ctsRange(year, periodo);
+    return this.unpaidDaysInRange(emp, range.start, range.end);
+  },
+
+  /**
+   * Días computables de CTS = días del período dentro de la relación laboral
+   * (máximo 180) − permisos sin goce de haber. Así un trabajador que ingresó a
+   * mitad del semestre no recibe CTS por meses en los que aún no trabajaba.
+   */
   ctsDiasComputables(emp, year, periodo) {
-    return Math.max(0, 180 - this.unpaidDays(emp, year, periodo));
+    const range = this.ctsRange(year, periodo);
+    const startDate = String(emp.startDate || '').slice(0, 10);
+    const cese = String(emp.cese || '').slice(0, 10);
+    const from = startDate && startDate > range.start ? startDate : range.start;
+    const to = cese && cese < range.end ? cese : range.end;
+    if (from > to) return 0;
+    const days = Math.min(180, daysInclusive(from, to));
+    const unpaid = this.unpaidDaysInRange(emp, from, to);
+    return Math.max(0, days - unpaid);
   },
 
   /** CTS de un período (auto: días computables según asistencias). */

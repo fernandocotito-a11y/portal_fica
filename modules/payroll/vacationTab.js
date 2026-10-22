@@ -356,12 +356,12 @@ export function renderVacationTab(root) {
     fillPeriods(empSel.value, keep);
   }
 
-  function fillSelectors() {
-    const emps = employees();
+  function fillSelectors(includeId = null) {
+    const emps = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
     empSel.innerHTML = emps.length
-      ? emps.map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('')
+      ? emps.map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`).join('')
       : '<option value="">Sin colaboradores</option>';
-    fillPeriods(empSel.value);
+    fillPeriods(includeId || empSel.value);
   }
 
   function startEdit(id) {
@@ -370,6 +370,7 @@ export function renderVacationTab(root) {
     editingId = id;
     addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
     cancelBtn.hidden = false;
+    fillSelectors(r.employeeId);
     empSel.value = r.employeeId;
     fillPeriods(r.employeeId, r.period);
     fromI.value = r.dateFrom || '';

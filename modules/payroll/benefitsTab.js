@@ -62,7 +62,7 @@ export function renderBenefitsTab(root) {
       <div class="card__header">
         <div>
           <h3 class="card__title">CTS</h3>
-          <p class="card__subtitle">Días computables = 180 − inasistencias, faltas o permisos sin goce de haber.</p>
+          <p class="card__subtitle">Días del período dentro de la relación laboral (máx. 180) − faltas o permisos sin goce de haber.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">
           <select class="form-input" data-periodo-cts style="max-width:170px;">
@@ -181,10 +181,18 @@ export function renderBenefitsTab(root) {
       showToast(`Aún no puedes registrar la gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year}: el período se cierra recién en ${MESES[mes - 1]}.`, 'error');
       return;
     }
-    const emps = employees().filter((e) => inPeriod(e, year, mes));
+    const semestreEnd = semestre === 'julio' ? `${year}-06-30` : `${year}-12-31`;
+    const emps = employees().filter((e) => inPeriod(e, year, mes) && (!e.cese || e.cese >= semestreEnd));
     if (emps.length === 0) { showToast('No hay colaboradores activos en ese período.', 'error'); return; }
-    const pendientes = emps.filter((e) => !gratificacionService.hasRegistered(e.id, year, mes));
-    if (pendientes.length === 0) { showToast(`La gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} ya fue registrada.`, 'info'); return; }
+    // Solo se registran colaboradores con meses completos y sin cese antes del
+    // cierre del semestre: los ceses a mitad de período van en la liquidación.
+    const pendientes = emps
+      .map((emp) => ({ emp, g: benefitsService.calcGratificacion(emp, { year, semestre, factor: rules.benefitFactor }) }))
+      .filter(({ emp, g }) => g.monto > 0 && !gratificacionService.hasRegistered(emp.id, year, mes));
+    if (pendientes.length === 0) {
+      showToast(`No hay gratificaciones pendientes de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year}.`, 'info');
+      return;
+    }
     const ok = await confirmDialog({
       title: 'Registrar gratificación',
       message: `Se registrará la gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} para ${pendientes.length} colaborador(es), y quedará guardada en la planilla de ese mes.`,
@@ -192,8 +200,7 @@ export function renderBenefitsTab(root) {
     });
     if (!ok) return;
     try {
-      for (const emp of pendientes) {
-        const g = benefitsService.calcGratificacion(emp, { year, semestre, factor: rules.benefitFactor });
+      for (const { emp, g } of pendientes) {
         await gratificacionService.create({ employeeId: emp.id, year, month: mes, monto: g.monto, bonificacion: g.bonificacion });
       }
       showToast(`Gratificación de ${semestre === 'julio' ? 'Julio' : 'Diciembre'} ${year} registrada (${pendientes.length} colaborador(es)).`);
@@ -211,21 +218,32 @@ export function renderBenefitsTab(root) {
       }
       const cid = company && company.id;
       const key = `fica.cts.${cid}.${year}.${periodo}`;
-      if (localStorage.getItem(key) === '1') {
-        showToast(`Las CTS de ${MESES[mes - 1]} ${year} ya fueron generadas.`, 'info');
-        return;
-      }
-      const emps = employees();
+      let doneIds = [];
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        doneIds = Array.isArray(parsed) ? parsed : [];
+      } catch { doneIds = []; }
+      const done = new Set(doneIds);
+      const range = benefitsService.ctsRange(year, periodo);
+      // Solo colaboradores que trabajaron en el período y que no cesaron antes
+      // del cierre: los ceses a mitad del período se pagan en la liquidación.
+      const emps = employees().filter((e) => {
+        const start = String(e.startDate || '').slice(0, 10) || range.start;
+        const cese = String(e.cese || '').slice(0, 10);
+        return start <= range.end && (!cese || cese >= range.end);
+      });
       let n = 0;
       try {
         for (const emp of emps) {
+          if (done.has(emp.id)) continue;
           const c = benefitsService.calcCts(emp, { year, periodo, factor: rules.benefitFactor, hasCts: rules.hasCts });
           if (!c.hasCts || c.monto <= 0) continue;
           await pdfReportsService.downloadCtSCertificate(emp, { semestre: `${MESES[periodo === 'mayo' ? 4 : 10]} ${year}` }, c, company);
+          done.add(emp.id);
+          localStorage.setItem(key, JSON.stringify([...done]));
           n += 1;
         }
-        if (n > 0) localStorage.setItem(key, '1');
-        showToast(n ? `Se generaron ${n} boleta(s) de CTS.` : 'No hay colaboradores con CTS que generar.', n ? 'success' : 'info');
+        showToast(n ? `Se generaron ${n} boleta(s) de CTS.` : 'No hay colaboradores nuevos con CTS que generar.', n ? 'success' : 'info');
       } catch (err) { showToast(err.message, 'error'); }
     });
   }

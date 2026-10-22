@@ -97,6 +97,13 @@ export function renderLoansTab(root) {
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
+  /** Incluye al colaborador del préstamo que se edita aunque esté inactivo. */
+  function fillEmployees(includeId = null) {
+    const list = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
+    empSel.innerHTML = list
+      .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`)
+      .join('');
+  }
 
   function cuotaPreview() {
     const monto = num(montoI.value);
@@ -131,6 +138,7 @@ export function renderLoansTab(root) {
     editingId = id;
     addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
     cancelBtn.hidden = false;
+    fillEmployees(l.employeeId);
     empSel.value = l.employeeId;
     descI.value = l.descripcion || '';
     montoI.value = l.monto;
@@ -180,9 +188,7 @@ export function renderLoansTab(root) {
   }
 
   function render() {
-    empSel.innerHTML = employees()
-      .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`)
-      .join('');
+    fillEmployees(empSel.value || null);
 
     const recs = loanService.list();
     if (recs.length === 0) {

@@ -58,6 +58,13 @@ export function renderBonusesTab(root) {
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
+  /** Incluye al colaborador del registro que se edita aunque esté inactivo. */
+  function fillEmployees(includeId = null) {
+    const list = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
+    empSel.innerHTML = list
+      .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`)
+      .join('');
+  }
   function applyConcept() {
     const c = BONUS_CONCEPTS.find((x) => x.value === catSel.value);
     customGroup.hidden = catSel.value !== 'otro';
@@ -83,6 +90,7 @@ export function renderBonusesTab(root) {
     editingId = id;
     addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
     cancelBtn.hidden = false;
+    fillEmployees(b.employeeId);
     empSel.value = b.employeeId;
     yearI.value = b.year;
     monthSel.value = String(b.month);
@@ -101,7 +109,7 @@ export function renderBonusesTab(root) {
   }
 
   function render() {
-    empSel.innerHTML = employees().map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+    fillEmployees(empSel.value || null);
     const recs = bonusService.list();
     if (recs.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state" style="padding:var(--space-4);"><div class="empty-state__desc">Sin bonificaciones registradas.</div></div></td></tr>`;

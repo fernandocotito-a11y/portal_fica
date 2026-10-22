@@ -57,6 +57,13 @@ export function renderPaymentsTab(root) {
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
   }
+  /** Incluye al colaborador del registro que se edita aunque esté inactivo. */
+  function fillEmployees(includeId = null) {
+    const list = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
+    empSel.innerHTML = list
+      .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`)
+      .join('');
+  }
 
   function resetForm() {
     editingId = null;
@@ -74,6 +81,7 @@ export function renderPaymentsTab(root) {
     editingId = id;
     addBtn.innerHTML = `${ICONS.check} Guardar cambios`;
     cancelBtn.hidden = false;
+    fillEmployees(p.employeeId);
     empSel.value = p.employeeId;
     yearI.value = p.year;
     monthSel.value = String(p.month);
@@ -90,7 +98,7 @@ export function renderPaymentsTab(root) {
   }
 
   function render() {
-    empSel.innerHTML = employees().map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+    fillEmployees(empSel.value || null);
     const recs = paymentService.list();
     if (recs.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state" style="padding:var(--space-4);"><div class="empty-state__desc">Sin pagos ni adelantos registrados.</div></div></td></tr>`;

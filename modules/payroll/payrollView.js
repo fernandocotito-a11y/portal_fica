@@ -19,7 +19,7 @@ import { paymentService } from './paymentService.js';
 import { gratificacionService } from './gratificacionService.js';
 import { loanService } from './loanService.js';
 import { MESES, AFP_LIST, TIPOS_DOCUMENTO, REGIMENES_PENSION, COMMISSION_TYPES, laborRules } from './payrollConfig.js';
-import { money, round2 } from './payrollUtils.js';
+import { money, round2, fmtDate } from './payrollUtils.js';
 import { renderAttendanceTab } from './attendanceTab.js';
 import { renderVacationTab } from './vacationTab.js';
 import { renderBonusesTab } from './bonusesTab.js';
@@ -59,6 +59,7 @@ function renderPlanillaTab(root) {
   let month = now.getMonth() + 1;
   let inputs = {};
   let closed = false;
+  let snapshot = null; // foto de la planilla al cerrar (no cambia con ediciones posteriores)
   let editingId = null;
   let showAll = false;
   const years = paramsService.availableYears();
@@ -71,6 +72,7 @@ function renderPlanillaTab(root) {
       </div>
       <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center;">
         <span class="badge badge--muted" data-closed hidden><span class="badge__dot"></span>Planilla cerrada</span>
+        <button type="button" class="btn" data-reopen hidden>${ICONS.lock} Reabrir planilla</button>
         <button type="button" class="btn" data-close>${ICONS.check} Cerrar planilla del mes</button>
         <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Nuevo colaborador</button>
       </div>
@@ -130,10 +132,10 @@ function renderPlanillaTab(root) {
           </div>
           <div class="form-group"><label class="form-label">Apellidos y nombres <span class="req">*</span></label><input class="form-input" data-name placeholder="Ej. Pérez Gómez, Juan" /><span class="field-error" data-error-name></span></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
-            <div class="form-group" style="margin:0;"><label class="form-label">Fecha de inicio</label><input class="form-input" type="date" data-start /></div>
+            <div class="form-group" style="margin:0;"><label class="form-label">Fecha de inicio <span class="req">*</span></label><input class="form-input" type="date" data-start /><span class="field-error" data-error-start></span></div>
             <div class="form-group" style="margin:0;"><label class="form-label">Cargo</label><input class="form-input" data-position placeholder="Ej. Asistente contable" /></div>
           </div>
-          <div class="form-group"><label class="form-label">Fecha de cese (si aplica)</label><input class="form-input" type="date" data-cese /></div>
+          <div class="form-group"><label class="form-label">Fecha de cese (si aplica)</label><input class="form-input" type="date" data-cese /><span class="field-error" data-error-cese></span></div>
           <div class="form-group"><label class="form-label">Sueldo básico (S/) <span class="req">*</span></label><input class="form-input" type="number" min="0" step="0.01" data-salary placeholder="Ej. 1200.00" /><span class="field-error" data-error-salary></span></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
             <div class="form-group" style="margin:0;"><label class="form-label">Régimen de pensiones <span class="req">*</span></label><select class="form-input" data-pension>${optionsHtml(REGIMENES_PENSION, 'ONP')}</select></div>
@@ -180,6 +182,7 @@ function renderPlanillaTab(root) {
   const monthSel = root.querySelector('[data-month]');
   const closedBadge = root.querySelector('[data-closed]');
   const closeBtn = root.querySelector('[data-close]');
+  const reopenBtn = root.querySelector('[data-reopen]');
   const addBtn = root.querySelector('[data-add]');
   const modal = root.querySelector('[data-modal]');
   const form = root.querySelector('[data-form]');
@@ -202,6 +205,8 @@ function renderPlanillaTab(root) {
   const errName = root.querySelector('[data-error-name]');
   const errSalary = root.querySelector('[data-error-salary]');
   const errDoc = root.querySelector('[data-error-doc]');
+  const errStart = root.querySelector('[data-error-start]');
+  const errCese = root.querySelector('[data-error-cese]');
   const cusppI = root.querySelector('[data-cuspp]');
   const cusppGroup = root.querySelector('[data-cuspp-group]');
   const commissionI = root.querySelector('[data-commission]');
@@ -244,6 +249,11 @@ function renderPlanillaTab(root) {
     return { days: 0, basico: 0, asigFamiliar: 0, vacaciones: 0, bonificaciones: 0, overtime: 0, totalBruto: 0, remAsegurable: 0, pension: 0, pensionLabel: '—', renta5ta: 0, tardanzas: 0, prestamos: 0, totalRetenciones: 0, essalud: 0, vidaLey: 0, totalAportes: 0, neto: 0, fueraPeriodo: true };
   }
   function computeAll() {
+    // Si la planilla está cerrada y tiene foto guardada, se muestra exactamente
+    // lo que se cerró, aunque después se editen asistencias, bonos o vacaciones.
+    if (closed && snapshot && Object.keys(snapshot).length) {
+      return Object.values(snapshot).map((s) => ({ emp: s.emp, calc: s.calc }));
+    }
     const lista = showAll ? employees() : employeesForPeriod();
     return lista.map((emp) => {
       if (!inPeriod(emp, year, month)) return { emp, calc: zeroCalc() };
@@ -254,13 +264,6 @@ function renderPlanillaTab(root) {
         return { emp, calc: zeroCalc(), error: err.message };
       }
     });
-  }
-
-  function fmtDate(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '—';
-    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
   }
 
   function rowHtml(emp, calc, error) {
@@ -327,7 +330,9 @@ function renderPlanillaTab(root) {
   function renderTable() {
     let all, data;
     try {
-      all = employees();
+      all = (closed && snapshot && Object.keys(snapshot).length)
+        ? Object.values(snapshot).map((s) => s.emp)
+        : employees();
       data = computeAll();
     } catch (err) {
       console.error(err);
@@ -352,7 +357,7 @@ function renderPlanillaTab(root) {
     tbody.innerHTML = data.map(({ emp, calc, error }) => rowHtml(emp, calc, error)).join('');
     const totals = sumTotals(visibles.map((d) => d.calc));
     tfoot.innerHTML = footHtml(totals, visibles.length);
-    summaryEl.textContent = `Neto total a pagar: ${money(totals.neto)}`;
+    summaryEl.textContent = `Neto total a pagar: ${money(totals.netoTotal)}`;
     if (periodNote) {
       const ocultos = all.length - visibles.length;
       periodNote.textContent = ocultos > 0
@@ -378,26 +383,33 @@ function renderPlanillaTab(root) {
       const el = tfoot.querySelector(`[data-total="${k}"]`);
       if (el) el.textContent = money(totals[k]);
     });
-    summaryEl.textContent = `Neto total a pagar: ${money(totals.neto)}`;
+    summaryEl.textContent = `Neto total a pagar: ${money(totals.netoTotal)}`;
   }
   function persist() {
+    if (closed) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      payrollService.savePeriodInputs(year, month, inputs, closed).catch((err) => showToast(err.message, 'error'));
+      payrollService.savePeriodInputs(year, month, inputs, false).catch((err) => showToast(err.message, 'error'));
     }, 700);
   }
   let saveTimer = null;
   function applyClosedState() {
     closedBadge.hidden = !closed;
+    closeBtn.hidden = closed;
     closeBtn.disabled = closed;
-    yearSel.disabled = closed;
-    monthSel.disabled = closed;
+    reopenBtn.hidden = !closed;
+    // El año y el mes SIEMPRE deben poder cambiarse: si no, al cerrar una
+    // planilla el usuario queda atrapado en ese período.
+    yearSel.disabled = false;
+    monthSel.disabled = false;
     addBtn.disabled = closed;
     tbody.querySelectorAll('input,button').forEach((el) => (el.disabled = closed));
   }
   function loadPeriod() {
     const p = payrollService.getPeriodInputs(year, month);
     closed = !!p.closed;
+    const rows = p.rows && typeof p.rows === 'object' ? Object.values(p.rows) : [];
+    snapshot = closed && rows.length && rows.every((s) => s && s.emp && s.calc) ? p.rows : null;
     applyClosedState();
     renderTable();
   }
@@ -418,6 +430,8 @@ function renderPlanillaTab(root) {
     errName.textContent = '';
     errSalary.textContent = '';
     errDoc.textContent = '';
+    errStart.textContent = '';
+    errCese.textContent = '';
     pensionI.value = 'ONP';
     docTypeI.value = 'DNI';
     activeGroup.hidden = true;
@@ -443,6 +457,8 @@ function renderPlanillaTab(root) {
     errName.textContent = '';
     errSalary.textContent = '';
     errDoc.textContent = '';
+    errStart.textContent = '';
+    errCese.textContent = '';
     codeI.value = emp.code || '';
     docTypeI.value = emp.docType || 'DNI';
     docNumI.value = emp.docNumber || '';
@@ -474,7 +490,12 @@ function renderPlanillaTab(root) {
     errName.textContent = '';
     errSalary.textContent = '';
     errDoc.textContent = '';
+    errStart.textContent = '';
+    errCese.textContent = '';
     if (!nameI.value.trim()) { errName.textContent = 'El nombre es obligatorio.'; ok = false; }
+    if (!docNumI.value.trim()) { errDoc.textContent = 'El documento es obligatorio.'; ok = false; }
+    if (!startI.value) { errStart.textContent = 'La fecha de inicio es obligatoria.'; ok = false; }
+    else if (ceseI.value && ceseI.value < startI.value) { errCese.textContent = 'El cese no puede ser anterior al inicio.'; ok = false; }
     if (salaryI.value === '' || Number(salaryI.value) <= 0) { errSalary.textContent = 'Ingresa un sueldo básico válido.'; ok = false; }
     return ok;
   }
@@ -554,16 +575,40 @@ function renderPlanillaTab(root) {
     const data = computeAll().filter((d) => !d.calc.fueraPeriodo);
     if (data.length === 0) { showToast('No hay colaboradores para cerrar.', 'error'); return; }
     const totals = sumTotals(data.map((d) => d.calc));
-    const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.neto)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
+    const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.netoTotal)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
     if (ok) {
       try {
-        await payrollService.closePeriod(year, month, inputs);
+        clearTimeout(saveTimer);
+        const snapshotRows = {};
+        data.forEach(({ emp, calc }) => { snapshotRows[emp.id] = { emp, calc }; });
+        await payrollService.closePeriod(year, month, snapshotRows);
         closed = true;
+        snapshot = snapshotRows;
         applyClosedState();
+        renderTable();
         showToast('Planilla del mes cerrada.');
       } catch (err) {
         showToast(err.message, 'error');
       }
+    }
+  });
+
+  reopenBtn.addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Reabrir planilla',
+      message: `¿Reabrir la planilla de ${MESES[month - 1]} ${year}? Podrás editarla y volver a cerrarla cuando esté lista.`,
+      confirmText: 'Reabrir',
+    });
+    if (!ok) return;
+    try {
+      await payrollService.savePeriodInputs(year, month, {}, false);
+      closed = false;
+      snapshot = null;
+      applyClosedState();
+      renderTable();
+      showToast('Planilla reabierta.');
+    } catch (err) {
+      showToast(err.message, 'error');
     }
   });
 

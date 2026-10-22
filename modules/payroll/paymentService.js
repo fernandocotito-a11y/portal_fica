@@ -16,11 +16,11 @@ export const PAYMENT_TYPES = [
 /* Catálogo de conceptos de pago (qué se paga): gratificación, CTS, liquidación, etc.
    Es independiente del "tipo" (adelanto vs pago total). */
 export const PAYMENT_CONCEPTS = [
+  { value: 'sueldo', label: 'Sueldo / remuneración' },
+  { value: 'vacaciones', label: 'Vacaciones' },
   { value: 'gratificacion', label: 'Gratificación' },
   { value: 'cts', label: 'CTS' },
   { value: 'liquidacion', label: 'Liquidación de beneficios sociales' },
-  { value: 'vacaciones', label: 'Vacaciones' },
-  { value: 'sueldo', label: 'Sueldo / remuneración' },
   { value: 'otro', label: 'Otro' },
 ];
 

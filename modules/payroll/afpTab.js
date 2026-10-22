@@ -3,6 +3,7 @@
    ========================================================================== */
 
 import { afpRatesService, parseSbsHtml } from './afpRatesService.js';
+import { authService } from '../../services/authService.js';
 import { MESES } from './payrollConfig.js';
 import { num } from './payrollUtils.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
@@ -13,6 +14,7 @@ const AFPS = ['HABITAT', 'INTEGRA', 'PRIMA', 'PROFUTURO'];
 const SBS_URL = 'https://www.sbs.gob.pe/app/spp/empleadores/comisiones_spp/paginas/comision_prima.aspx';
 
 export function renderAfpTab(root) {
+  const canEdit = authService.isSuperAdmin();
   const now = new Date();
   let year = now.getFullYear();
   let month = now.getMonth() + 1;
@@ -32,6 +34,7 @@ export function renderAfpTab(root) {
         </div>
       </div>
       <div class="card__body">
+        ${canEdit ? '' : '<p class="form-hint" data-readonly>Solo el superadministrador puede modificar los parámetros AFP (comisiones, prima y tope). Estos valores son de solo lectura.</p>'}
         <div class="form-group" style="margin-bottom:var(--space-4);">
           <label class="form-label">Pegar tabla de la SBS (método recomendado)</label>
           <textarea class="form-input" data-paste rows="3" placeholder="Abre la SBS en tu navegador → selecciona las 4 filas (HABITAT…PROFUTURO) → Ctrl+C → pega aquí (Ctrl+V)."></textarea>
@@ -61,6 +64,10 @@ export function renderAfpTab(root) {
   const hint = root.querySelector('[data-hint]');
   const historyEl = root.querySelector('[data-history]');
 
+  if (!canEdit) {
+    root.querySelectorAll('[data-year],[data-month],[data-paste],[data-save],input[data-field]').forEach((el) => { el.disabled = true; });
+  }
+
   function renderHistory() {
     const saved = afpRatesService.savedPeriods();
     historyEl.textContent = saved.length
@@ -87,6 +94,7 @@ export function renderAfpTab(root) {
     hint.textContent = saved
       ? `Parámetros guardados para ${MESES[month - 1]} ${year}.`
       : `Sin datos guardados para ${MESES[month - 1]} ${year}; se muestran valores base. Pulsa "Actualizar desde la SBS" o edita y guarda.`;
+    if (!canEdit) tbody.querySelectorAll('input[data-field]').forEach((el) => { el.disabled = true; });
     renderHistory();
   }
 

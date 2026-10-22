@@ -7,10 +7,12 @@
    ========================================================================== */
 
 import { paramsService } from './paramsService.js';
+import { authService } from '../../services/authService.js';
 import { money, num } from './payrollUtils.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
 
 export function renderParamsTab(root) {
+  const canEdit = authService.isSuperAdmin();
   const nextYear = new Date().getFullYear() + 1;
 
   root.innerHTML = `
@@ -22,6 +24,7 @@ export function renderParamsTab(root) {
         </div>
       </div>
       <div class="card__body">
+        ${canEdit ? '' : '<p class="form-hint" data-readonly>Solo el superadministrador puede modificar los parámetros nacionales. Estos valores son de solo lectura.</p>'}
         <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;">
           <div class="form-group" style="margin:0;"><label class="form-label">Año</label>
             <input class="form-input" type="number" data-year value="${nextYear}" style="max-width:110px;" /></div>
@@ -51,6 +54,10 @@ export function renderParamsTab(root) {
   const rmvI = root.querySelector('[data-rmv]');
   const tbody = root.querySelector('[data-tbody]');
 
+  if (!canEdit) {
+    root.querySelectorAll('[data-year],[data-uit],[data-rmv],[data-save]').forEach((el) => { el.disabled = true; });
+  }
+
   function render() {
     const rows = paramsService.list();
     if (rows.length === 0) {
@@ -64,8 +71,8 @@ export function renderParamsTab(root) {
         <td class="cell-num">${money(r.rmv)}</td>
         <td>${r.custom ? '<span class="badge badge--gold">Personalizado</span>' : '<span class="badge badge--muted">Predeterminado</span>'}</td>
         <td><div class="table__actions">
-          <button type="button" class="icon-btn" data-edit="${r.year}" title="Editar">${ICONS.edit}</button>
-          ${r.custom ? `<button type="button" class="icon-btn icon-btn--danger" data-del="${r.year}" title="Quitar">${ICONS.trash}</button>` : ''}
+          ${canEdit ? `<button type="button" class="icon-btn" data-edit="${r.year}" title="Editar">${ICONS.edit}</button>` : ''}
+          ${canEdit && r.custom ? `<button type="button" class="icon-btn icon-btn--danger" data-del="${r.year}" title="Quitar">${ICONS.trash}</button>` : ''}
         </div></td>
       </tr>`).join('');
   }
