@@ -5,17 +5,19 @@
      1. Compras        Registro del período con formato SUNAT editable.
      2. Ventas         Registro del período con formato SUNAT editable.
      3. Proveedores    Directorio para autocompletar RUC y razón social.
-     4. Importar SIRE  Carga masiva de ZIP/CSV de la propuesta SIRE.
-     5. Resumen        Totales mensuales, IGV y exportación.
+     4. Tipo de Cambio Tipos de cambio SUNAT por fecha.
+     5. Importar SIRE  Carga masiva de ZIP/CSV de la propuesta SIRE.
+     6. Resumen        Totales mensuales, IGV y exportación.
    ========================================================================== */
 
 import { taxService } from './taxService.js';
 import { supplierService } from './supplierService.js';
+import { exchangeRateService } from './exchangeRateService.js';
 import { parseSireFiles, dedupeKey, toCsvText } from './sireParser.js';
 import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
-  baseGravadaOf, baseNoGravadaOf, igvOf, totalBaseOf,
+  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -57,16 +59,29 @@ function baseOf(rec) {
   return totalBaseOf(rec, rec.kind);
 }
 
+/** Tipo de cambio SUNAT para un comprobante, con respaldo por fecha. */
+function rateForRecord(rec) {
+  if (String(rec.currency || 'PEN').toUpperCase() === 'PEN') return null;
+  return exchangeRateService.rateFor(rec.issue_date, rec.currency);
+}
+
 /** Tipo de cambio a soles para consolidar totales. */
 function penRate(rec) {
   if (String(rec.currency || 'PEN').toUpperCase() === 'PEN') return 1;
-  const rate = Number(rec.exchange_rate || 0);
-  return rate > 0 ? rate : 1;
+  const own = Number(rec.exchange_rate || 0);
+  if (own > 1) return own;
+  return Number(rateForRecord(rec)?.rate || 0) || 1;
 }
 
-/** Moneda extranjera sin tipo de cambio informado (1.00 es el valor por defecto). */
-function hasMissingRate(rec) {
+/** Moneda extranjera sin tipo de cambio propio. */
+function needsRateAssignment(rec) {
   return String(rec.currency || 'PEN').toUpperCase() !== 'PEN' && !(Number(rec.exchange_rate) > 1);
+}
+
+/** Moneda extranjera sin tipo de cambio propio ni SUNAT para su fecha. */
+function hasMissingRate(rec) {
+  if (!needsRateAssignment(rec)) return false;
+  return !rateForRecord(rec);
 }
 
 function basePenOf(rec) {
@@ -109,11 +124,16 @@ export function render(root) {
     supplierSearch: '',
     supplierPage: 1,
     supplierPageSize: 25,
+    rateSearch: '',
+    ratePage: 1,
+    ratePageSize: 50,
   };
   let loading = true;
   let error = '';
   let supplierError = '';
   let supplierBusy = false;
+  let rateError = '';
+  let rateBusy = false;
   let parsed = null;
   let importStatus = '';
   let importBusy = false;
@@ -121,6 +141,7 @@ export function render(root) {
   let modalType = 'record';
   let modalRecord = null;
   let modalSupplierRecord = null;
+  let modalRateRecord = null;
   let modalInitial = null;
   let modalReadonly = false;
   let modalKind = 'compra';
@@ -145,6 +166,7 @@ export function render(root) {
       <button type="button" class="tab-btn is-active" data-tab="compra">Compras</button>
       <button type="button" class="tab-btn" data-tab="venta">Ventas</button>
       <button type="button" class="tab-btn" data-tab="proveedores">Proveedores</button>
+      <button type="button" class="tab-btn" data-tab="tipocambio">Tipo de Cambio</button>
       <button type="button" class="tab-btn" data-tab="importar">Importar SIRE</button>
       <button type="button" class="tab-btn" data-tab="resumen">Resumen</button>
     </div>
@@ -298,7 +320,7 @@ export function render(root) {
         <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(igvOf(r, r.kind))}</td>
-        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${hasMissingRate(r) ? ' · sin TC' : ''}</div></td>
+        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${hasMissingRate(r) ? ' · sin TC' : (needsRateAssignment(r) ? ' · TC SUNAT' : '')}</div></td>
         <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
         <td>
           <div class="table__actions">
@@ -466,6 +488,7 @@ export function render(root) {
           </div>
           ${importStatus ? `<p class="text-muted" data-import-status style="margin-top:var(--space-3);">${escapeHtml(importStatus)}</p>` : ''}
           ${warnings.length ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body">${warnings.map((w) => `<div style="font-size:var(--font-size-sm);">${ICONS.info} ${escapeHtml(w)}</div>`).join('')}</div></div>` : ''}
+          ${parsed?.rateStats?.assigned ? `<p class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-3);">${ICONS.check} Se asignará tipo de cambio SUNAT a ${parsed.rateStats.assigned} comprobante(s) al importar.</p>` : ''}
           ${files.length ? `
             <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);margin-top:var(--space-5);flex-wrap:wrap;">
               <h4 class="card__title" style="font-size:var(--font-size-lg);">Vista previa</h4>
@@ -514,7 +537,10 @@ export function render(root) {
   }
 
   function summaryYearOptions() {
-    const years = new Set([String(new Date().getFullYear()), String(state.summaryYear)]);
+    const current = new Date().getFullYear();
+    const years = new Set([String(state.summaryYear)]);
+    // Permite consultar y cargar información de otros años, no solo el actual.
+    for (let y = current - 10; y <= current + 1; y += 1) years.add(String(y));
     taxService.all().forEach((r) => { if (r.period) years.add(r.period.slice(0, 4)); });
     return [...years].filter(Boolean).sort().reverse();
   }
@@ -535,16 +561,17 @@ export function render(root) {
     const year = state.summaryYear;
     const rows = monthlyFor(year);
     const totals = rows.reduce((acc, r) => {
-      ['baseGravada', 'baseNoGravada', 'base', 'igv', 'total', 'count'].forEach((k) => {
+      ['baseGravada', 'baseNoGravada', 'base', 'igv', 'total'].forEach((k) => {
         acc.compra[k] += r.compra[k]; acc.venta[k] += r.venta[k];
       });
       return acc;
     }, {
-      compra: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0, count: 0 },
-      venta: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0, count: 0 },
+      compra: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0 },
+      venta: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0 },
     });
     const saldo = Math.round((totals.venta.igv - totals.compra.igv) * 100) / 100;
     const missingRate = taxService.all().filter((r) => String(r.period || '').startsWith(year) && hasMissingRate(r)).length;
+    const rateCount = exchangeRateService.all().length;
     return `
       ${localBanner()}
       <div class="stats">
@@ -555,17 +582,18 @@ export function render(root) {
       </div>
       <div class="card">
         <div class="card__header">
-          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}</p></div>
+          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
+            <button type="button" class="btn" data-go-rates>${ICONS.arrowRight} Tipo de cambio</button>
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
             <button type="button" class="btn" data-export-summary>${ICONS.arrowRight} Exportar resumen</button>
           </div>
         </div>
         <div class="card__body">
           <div class="table-wrap">
-            <table class="table" style="min-width:1240px;">
+            <table class="table" style="min-width:1160px;">
               <thead>
-                <tr class="table__group"><th></th><th colspan="4">Compras</th><th colspan="4">Ventas</th><th rowspan="2">Comprob.</th><th rowspan="2">Saldo IGV</th></tr>
+                <tr class="table__group"><th></th><th colspan="4">Compras</th><th colspan="4">Ventas</th><th rowspan="2">Saldo IGV</th></tr>
                 <tr><th>Mes</th><th style="text-align:right;">Base gravada</th><th style="text-align:right;">Base no gravada</th><th style="text-align:right;">IGV</th><th style="text-align:right;">Total</th><th style="text-align:right;">Base gravada</th><th style="text-align:right;">Base no gravada</th><th style="text-align:right;">IGV</th><th style="text-align:right;">Total</th></tr>
               </thead>
               <tbody>
@@ -573,7 +601,6 @@ export function render(root) {
                   <td>${escapeHtml(r.label)}</td>
                   <td class="cell-num">${num(r.compra.baseGravada)}</td><td class="cell-num">${num(r.compra.baseNoGravada)}</td><td class="cell-num">${num(r.compra.igv)}</td><td class="cell-num">${num(r.compra.total)}</td>
                   <td class="cell-num">${num(r.venta.baseGravada)}</td><td class="cell-num">${num(r.venta.baseNoGravada)}</td><td class="cell-num">${num(r.venta.igv)}</td><td class="cell-num">${num(r.venta.total)}</td>
-                  <td class="cell-num">${r.venta.count}</td>
                   <td class="cell-num ${r.venta.igv - r.compra.igv < 0 ? 'text-muted' : 'cell-strong'}">${num(r.venta.igv - r.compra.igv)}</td>
                 </tr>`).join('')}
               </tbody>
@@ -581,7 +608,6 @@ export function render(root) {
                 <th>Total ${year}</th>
                 <th class="cell-num">${num(totals.compra.baseGravada)}</th><th class="cell-num">${num(totals.compra.baseNoGravada)}</th><th class="cell-num">${num(totals.compra.igv)}</th><th class="cell-num">${num(totals.compra.total)}</th>
                 <th class="cell-num">${num(totals.venta.baseGravada)}</th><th class="cell-num">${num(totals.venta.baseNoGravada)}</th><th class="cell-num">${num(totals.venta.igv)}</th><th class="cell-num">${num(totals.venta.total)}</th>
-                <th class="cell-num">${totals.venta.count}</th>
                 <th class="cell-num">${num(saldo)}</th>
               </tr></tfoot>
             </table>
@@ -741,6 +767,217 @@ export function render(root) {
       </div>`;
   }
 
+  function rateLocalBanner() {
+    if (exchangeRateService.mode !== 'local') return '';
+    return `
+      <div class="card" style="border-color:var(--color-gold);margin-bottom:var(--space-4);">
+        <div class="card__body" style="display:flex;gap:var(--space-3);align-items:flex-start;">
+          <span style="color:var(--color-gold);flex-shrink:0;">${ICONS.info}</span>
+          <div>
+            <strong>Tipos de cambio en modo local.</strong>
+            La tabla <code>tax_exchange_rates</code> todavía no existe en Supabase. Los tipos de cambio se guardan solo en este navegador.
+            Ejecuta <code>supabase/compras_exchange_rates_schema.sql</code> en el SQL Editor y recarga el portal para activar el modo multiusuario.
+            <div style="margin-top:var(--space-3);">
+              <a class="btn" href="./supabase/compras_exchange_rates_schema.sql" target="_blank" rel="noopener">${ICONS.arrowRight} Abrir SQL de tipos de cambio</a>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function rateRowsHtml(rows) {
+    if (!rows.length) {
+      return `<tr><td colspan="6">
+        <div class="empty-state">
+          <span class="empty-state__icon">${ICONS.info}</span>
+          <div class="empty-state__title">${state.rateSearch ? 'Sin resultados' : 'Aún no hay tipos de cambio'}</div>
+          <div class="empty-state__desc">${state.rateSearch ? 'Prueba con otra fecha o moneda.' : 'Importa el archivo de SUNAT, pega una lista o crea uno manualmente.'}</div>
+        </div>
+      </td></tr>`;
+    }
+    return rows.map((r) => {
+      const source = r.source === 'manual' ? 'Manual' : (r.source === 'import' ? 'Importado' : 'SUNAT');
+      return `<tr>
+        <td><strong>${displayDate(r.rate_date)}</strong></td>
+        <td><span class="badge badge--muted">${escapeHtml(r.currency || 'USD')}</span></td>
+        <td class="cell-num cell-strong">${Number(r.rate || 0).toFixed(4)}</td>
+        <td>${escapeHtml(source)}</td>
+        <td class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(displayDateTime(r.updated_at))}</td>
+        <td>
+          <div class="table__actions">
+            <button type="button" class="icon-btn" data-rate-edit="${escapeHtml(r.id)}" title="Editar tipo de cambio">${ICONS.edit}</button>
+            <button type="button" class="icon-btn icon-btn--danger" data-rate-del="${escapeHtml(r.id)}" title="Eliminar tipo de cambio">${ICONS.trash}</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function ratePaginationHtml(total) {
+    const pages = Math.max(1, Math.ceil(total / state.ratePageSize));
+    if (state.ratePage > pages) state.ratePage = pages;
+    if (state.ratePage < 1) state.ratePage = 1;
+    const from = total ? (state.ratePage - 1) * state.ratePageSize + 1 : 0;
+    const to = Math.min(total, state.ratePage * state.ratePageSize);
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);margin-top:var(--space-4);flex-wrap:wrap;">
+        <span class="text-muted" style="font-size:var(--font-size-sm);">Mostrando ${from}–${to} de ${total}</span>
+        <div style="display:flex;gap:var(--space-2);">
+          <button type="button" class="btn" data-rate-page="prev" ${state.ratePage <= 1 ? 'disabled' : ''}>Anterior</button>
+          <span class="text-muted" style="padding:9px 4px;font-size:var(--font-size-sm);">Página ${state.ratePage} de ${pages}</span>
+          <button type="button" class="btn" data-rate-page="next" ${state.ratePage >= pages ? 'disabled' : ''}>Siguiente</button>
+        </div>
+      </div>`;
+  }
+
+  function updateRateList() {
+    const rows = exchangeRateService.list(state.rateSearch);
+    const pages = Math.max(1, Math.ceil(rows.length / state.ratePageSize));
+    if (state.ratePage > pages) state.ratePage = pages;
+    if (state.ratePage < 1) state.ratePage = 1;
+    const start = (state.ratePage - 1) * state.ratePageSize;
+    const tbody = content.querySelector('[data-rate-table-body]');
+    if (tbody) tbody.innerHTML = rateRowsHtml(rows.slice(start, start + state.ratePageSize));
+    const pag = content.querySelector('[data-rate-pagination]');
+    if (pag) pag.innerHTML = ratePaginationHtml(rows.length);
+    const count = content.querySelector('[data-rate-count]');
+    if (count) count.textContent = `${rows.length} fecha(s)`;
+  }
+
+  function renderRates() {
+    const all = exchangeRateService.all();
+    const rows = exchangeRateService.list(state.rateSearch);
+    const pages = Math.max(1, Math.ceil(rows.length / state.ratePageSize));
+    if (state.ratePage > pages) state.ratePage = pages;
+    const start = (state.ratePage - 1) * state.ratePageSize;
+    const pageRows = rows.slice(start, start + state.ratePageSize);
+    const latest = all[0] || null;
+    const missing = taxService.all().filter(needsRateAssignment).length;
+    const usdRates = all.filter((r) => r.currency === 'USD').length;
+    return `
+      ${rateError ? `<div class="card" style="border-color:var(--color-danger);margin-bottom:var(--space-4);"><div class="card__body"><strong>No se pudieron cargar los tipos de cambio.</strong><p class="text-muted" style="margin-top:var(--space-2);">${escapeHtml(rateError)}</p></div></div>` : ''}
+      ${rateLocalBanner()}
+      <div class="stats">
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${all.length}</div><div class="stat-card__label">Fechas de tipo de cambio</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${latest ? Number(latest.rate).toFixed(4) : '—'}</div><div class="stat-card__label">${latest ? `Último TC · ${displayDate(latest.rate_date)} · ${escapeHtml(latest.currency)}` : 'Sin tipos de cambio'}</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${usdRates}</div><div class="stat-card__label">Fechas en USD</div></div></div>
+        <div class="stat-card" ${missing ? 'style="border-color:var(--color-gold);"' : ''}><span class="stat-card__icon" ${missing ? 'style="color:var(--color-gold);"' : ''}>${ICONS.info}</span><div><div class="stat-card__value">${missing}</div><div class="stat-card__label">Comprobantes extranjeros sin TC</div></div></div>
+      </div>
+      <div class="card">
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Tipos de cambio SUNAT</h3>
+            <p class="card__subtitle" data-rate-count>${rows.length} fecha(s)</p>
+          </div>
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+            <button type="button" class="btn" data-rate-model>${ICONS.arrowRight} Descargar modelo</button>
+            <button type="button" class="btn" data-rate-file-trigger>${ICONS.arrowRight} Importar archivo</button>
+            <button type="button" class="btn btn--primary" data-rate-add>${ICONS.plus} Nuevo tipo de cambio</button>
+          </div>
+        </div>
+        <div class="card__body">
+          <div class="form-group" style="margin-bottom:var(--space-4);max-width:460px;">
+            <label class="form-label">Buscar por fecha o moneda</label>
+            <input class="form-input" data-rate-search value="${escapeHtml(state.rateSearch)}" placeholder="Ej. 2026-09, 15/09/2026 o USD…" />
+          </div>
+          <div class="table-wrap">
+            <table class="table" style="min-width:850px;">
+              <thead><tr><th>Fecha</th><th>Moneda</th><th style="text-align:right;">Tipo de cambio</th><th>Origen</th><th>Actualizado</th><th></th></tr></thead>
+              <tbody data-rate-table-body>${rateRowsHtml(pageRows)}</tbody>
+            </table>
+          </div>
+          <div data-rate-pagination>${ratePaginationHtml(rows.length)}</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:var(--space-4);">
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Carga masiva / copiar y pegar</h3>
+            <p class="card__subtitle">Sube el archivo de tipos de cambio de SUNAT o pega una lista desde Excel. Puedes cargar cualquier año. Formato: <code>Fecha, Tipo de Cambio, Moneda</code>.</p>
+          </div>
+        </div>
+        <div class="card__body">
+          <input type="file" data-rate-file accept=".csv,.txt,text/csv,text/plain" hidden />
+          <div class="form-group">
+            <label class="form-label">Tipos de cambio a importar</label>
+            <textarea class="form-input" data-rate-paste rows="7" placeholder="Fecha,Tipo de Cambio,Moneda&#10;01/09/2026,3.5120,USD&#10;02/09/2026,3.5080,USD&#10;01/09/2026,4.1200,EUR"></textarea>
+          </div>
+          <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;align-items:center;margin-top:var(--space-3);">
+            <button type="button" class="btn btn--primary" data-rate-paste-import ${rateBusy ? 'disabled' : ''}>${ICONS.check} Importar tipos de cambio</button>
+            <button type="button" class="btn" data-rate-file-trigger>${ICONS.arrowRight} Importar archivo CSV/TXT</button>
+            <button type="button" class="btn" data-rate-model>${ICONS.arrowRight} Descargar modelo CSV</button>
+            ${rateBusy ? '<span class="text-muted">Procesando…</span>' : ''}
+          </div>
+          <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
+            Acepta fechas <code>dd/mm/aaaa</code>, <code>aaaa-mm-dd</code> o <code>dd-mm-aaaa</code>, y tipos de cambio con punto o coma decimal.
+            Si no indicas moneda, se asume <strong>USD</strong>. Los tipos repetidos se actualizan.
+          </p>
+        </div>
+      </div>
+      <div class="card" style="margin-top:var(--space-4);">
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Asignar a comprobantes sin tipo de cambio</h3>
+            <p class="card__subtitle">Aplica el tipo de cambio SUNAT a los comprobantes en moneda extranjera que estén en blanco, en cero o con 1.00.</p>
+          </div>
+        </div>
+        <div class="card__body" style="display:flex;justify-content:space-between;gap:var(--space-4);align-items:center;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:600;">${missing} comprobante(s) sin tipo de cambio</div>
+            <div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-1);">Si no hay tasa para la fecha exacta, se usa la última publicada antes de esa fecha.</div>
+          </div>
+          <button type="button" class="btn btn--primary" data-rate-apply ${missing && !rateBusy ? '' : 'disabled'}>${ICONS.check} Aplicar tipos de cambio</button>
+        </div>
+      </div>`;
+  }
+
+  function rateFormHtml(rec, readonly) {
+    const r = rec || {};
+    const currencyOptions = CURRENCIES.filter((c) => c.value !== 'PEN');
+    return `
+      <form data-rate-form novalidate>
+        <div class="modal__header">
+          <h3 class="modal__title">${readonly ? 'Detalle del tipo de cambio' : (r.id ? 'Editar tipo de cambio' : 'Nuevo tipo de cambio')}</h3>
+          <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">${ICONS.close}</button>
+        </div>
+        <div class="modal__body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-4);">
+            ${dateField('rate_date', 'Fecha *', r.rate_date || TODAY)}
+            ${selectField('currency', 'Moneda', currencyOptions, r.currency || 'USD')}
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Tipo de cambio *</label>
+              <input class="form-input" type="number" min="0" step="0.0001" name="rate" value="${Number(r.rate || 0).toFixed(4)}" />
+            </div>
+          </div>
+          <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
+            Se usará automáticamente en comprobantes en moneda extranjera con la misma fecha. Si la fecha no tiene tasa exacta, se toma la última anterior.
+          </p>
+        </div>
+        <div class="modal__footer">
+          <button type="button" class="btn" data-cancel>${readonly ? 'Cerrar' : 'Cancelar'}</button>
+          ${readonly
+            ? `<button type="button" class="btn btn--primary" data-rate-edit-modal>${ICONS.edit} Editar</button>`
+            : `<button type="submit" class="btn btn--primary" data-submit>${ICONS.check} Guardar tipo de cambio</button>`}
+        </div>
+      </form>`;
+  }
+
+  function openRateModal(rec, readonly = false) {
+    if (modal.open) modal.close();
+    modalType = 'rate';
+    modalRecord = null;
+    modalSupplierRecord = null;
+    modalRateRecord = rec ? { ...rec } : null;
+    modalInitial = null;
+    modalReadonly = readonly;
+    modal.innerHTML = rateFormHtml(modalRateRecord, readonly);
+    const form = modal.querySelector('[data-rate-form]');
+    if (readonly) {
+      form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
+    }
+    modal.showModal();
+  }
+
   function renderContent() {
     if (loading) {
       content.innerHTML = `<div class="card"><div class="card__body text-muted">Cargando registro de compras y ventas…</div></div>`;
@@ -756,6 +993,7 @@ export function render(root) {
     if (state.tab === 'importar') content.innerHTML = renderImport();
     else if (state.tab === 'resumen') content.innerHTML = renderSummary();
     else if (state.tab === 'proveedores') content.innerHTML = renderSuppliers();
+    else if (state.tab === 'tipocambio') content.innerHTML = renderRates();
     else {
       content.innerHTML = renderRegistry();
       updateRegistry();
@@ -765,9 +1003,9 @@ export function render(root) {
   function syncHeaderAdd() {
     const btn = viewRoot.querySelector('.page-heading [data-add]');
     if (!btn) return;
-    btn.innerHTML = state.tab === 'proveedores'
-      ? `${ICONS.plus} Nuevo proveedor`
-      : `${ICONS.plus} Nuevo registro`;
+    if (state.tab === 'proveedores') btn.innerHTML = `${ICONS.plus} Nuevo proveedor`;
+    else if (state.tab === 'tipocambio') btn.innerHTML = `${ICONS.plus} Nuevo tipo de cambio`;
+    else btn.innerHTML = `${ICONS.plus} Nuevo registro`;
   }
 
   function setTab(tab) {
@@ -782,6 +1020,7 @@ export function render(root) {
     loading = true;
     error = '';
     supplierError = '';
+    rateError = '';
     renderContent();
     updateModeBadge();
     try {
@@ -793,6 +1032,14 @@ export function render(root) {
         }
       } catch (err) {
         supplierError = err.message || String(err);
+      }
+      try {
+        await exchangeRateService.refresh();
+        if (exchangeRateService.mode === 'remote' && exchangeRateService.lastError) {
+          rateError = exchangeRateService.lastError;
+        }
+      } catch (err) {
+        rateError = err.message || String(err);
       }
       ensurePeriod();
     } catch (err) {
@@ -877,7 +1124,9 @@ export function render(root) {
             ${textField('counterparty_name', isCompra ? 'Razón social del proveedor *' : 'Razón social / nombres *', r.counterparty_name, 'placeholder="Nombre de la contraparte"')}
             ${selectField('currency', 'Moneda', CURRENCIES, r.currency || 'PEN')}
             <div class="form-group" style="margin:0;"><label class="form-label">Tipo de cambio (moneda extranjera)</label>
-              <input class="form-input" type="number" min="0" step="0.0001" name="exchange_rate" value="${Number(r.id ? (r.exchange_rate ?? 0) : (r.exchange_rate ?? 1)).toFixed(4)}" /></div>
+              <input class="form-input" type="number" min="0" step="0.0001" name="exchange_rate" data-exchange-rate value="${Number(r.id ? (r.exchange_rate ?? 0) : (r.exchange_rate ?? 1)).toFixed(4)}" />
+              <div class="text-muted" data-rate-hint style="font-size:var(--font-size-xs);margin-top:var(--space-1);"></div>
+            </div>
             ${selectField('state', 'Estado del comprobante', STATES, r.state || '1')}
           </div>
           ${isCompra ? `<datalist id="supplier-options">${supplierOptionsHtml()}</datalist>
@@ -885,8 +1134,9 @@ export function render(root) {
 
           <h4 style="font-weight:600;color:var(--color-primary);margin:var(--space-5) 0 var(--space-3);">Importes</h4>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--space-4);">
-            ${virtualAmountField('data-base-gravada', 'Base gravada', baseGravadaOf(r, kind))}
-            ${virtualAmountField('data-base-no-gravada', 'Base no gravada', baseNoGravadaOf(r, kind))}
+            ${virtualAmountField('data-base-gravada', 'Base gravada (importe afecto)', baseGravadaOf(r, kind))}
+            ${virtualAmountField('data-base-no-gravada', 'Base no gravada (incl. cargos)', baseNoGravadaOf(r, kind))}
+            <input type="hidden" data-base-no-base value="${Number(nonTaxedBaseOf(r, kind)).toFixed(2)}" />
             ${virtualAmountField('data-igv', 'IGV / IPM', igvOf(r, kind))}
             ${amountField('isc', 'ISC', r.isc)}
             ${amountField('icbper', 'ICBPER', r.icbper)}
@@ -899,8 +1149,8 @@ export function render(root) {
           </div>
           <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular IGV (18%) y total automáticamente al editar importes</span></label>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
-            La <strong>base gravada</strong> es la afecta al IGV. La <strong>base no gravada</strong> incluye exoneradas, inafectas, exportación, valor no gravado y otras bases no afectas al IGV.
-            Los cargos que no forman base se registran en ISC, ICBPER u otros tributos. Al editar las bases, el comprobante se consolida en las columnas estándar del registro.
+            La <strong>base gravada</strong> es el importe afecto al IGV. La <strong>base no gravada</strong> incluye exoneradas, inafectas, exportación, valor no gravado y otras bases no afectas,
+            más ISC, ICBPER y otros cargos/tributos. Al editar las bases, el comprobante se consolida en las columnas estándar del registro.
           </p>
 
           <h4 style="font-weight:600;color:var(--color-primary);margin:var(--space-5) 0 var(--space-3);">Notas y documentos modificados</h4>
@@ -963,6 +1213,7 @@ export function render(root) {
     modalType = 'record';
     modalRecord = rec ? { ...rec } : null;
     modalSupplierRecord = null;
+    modalRateRecord = null;
     modalKind = kind;
     modalReadonly = readonly;
     modalInitial = {
@@ -976,6 +1227,7 @@ export function render(root) {
       form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
     }
     modal.showModal();
+    if (!readonly) syncModalRate(false);
   }
 
   function openSupplierModal(rec, readonly = false) {
@@ -983,6 +1235,7 @@ export function render(root) {
     modalType = 'supplier';
     modalRecord = null;
     modalSupplierRecord = rec ? { ...rec } : null;
+    modalRateRecord = null;
     modalInitial = null;
     modalReadonly = readonly;
     modal.innerHTML = supplierFormHtml(modalSupplierRecord, readonly);
@@ -999,17 +1252,59 @@ export function render(root) {
     modalType = 'record';
     modalRecord = null;
     modalSupplierRecord = null;
+    modalRateRecord = null;
     modalInitial = null;
     modalReadonly = false;
+  }
+
+  function syncModalRate(force = false) {
+    const form = modal.querySelector('[data-form]');
+    if (!form || modalReadonly) return;
+    const currency = String(form.querySelector('[name="currency"]')?.value || 'PEN').toUpperCase();
+    const date = form.querySelector('[name="issue_date"]')?.value || '';
+    const input = form.querySelector('[data-exchange-rate]');
+    const hint = form.querySelector('[data-rate-hint]');
+    if (!input) return;
+    if (currency === 'PEN') {
+      input.value = '1.0000';
+      input.dataset.auto = '1';
+      if (hint) hint.textContent = 'Moneda nacional: 1.0000.';
+      return;
+    }
+    const found = exchangeRateService.rateFor(date, currency);
+    const current = Number(input.value || 0);
+    const canFill = force || current <= 1 || input.dataset.auto === '1';
+    if (found && canFill) {
+      input.value = Number(found.rate).toFixed(4);
+      input.dataset.auto = '1';
+      if (hint) hint.textContent = `TC SUNAT ${found.rate_date === date ? 'de la fecha' : 'anterior'}: ${Number(found.rate).toFixed(4)} (${displayDate(found.rate_date)}).`;
+    } else if (found) {
+      if (hint) hint.textContent = `TC SUNAT disponible: ${Number(found.rate).toFixed(4)} (${displayDate(found.rate_date)}).`;
+    } else if (hint) {
+      hint.textContent = 'No hay tipo de cambio SUNAT para esta fecha. Cárgalo en la pestaña Tipo de Cambio.';
+    }
   }
 
   function recalcAmounts(target) {
     const form = modal.querySelector('[data-form]');
     if (!form || modalReadonly) return;
-    const auto = form.querySelector('[data-auto-total]');
-    if (!auto || !auto.checked) return;
     const byName = (name) => Number(form.querySelector(`[name="${name}"]`)?.value || 0);
     const byData = (attr) => Number(form.querySelector(`[${attr}]`)?.value || 0);
+    const baseNoInput = form.querySelector('[data-base-no-gravada]');
+    const baseNoBaseInput = form.querySelector('[data-base-no-base]');
+    const taxCharges = byName('isc') + byName('icbper') + byName('other_taxes');
+
+    // La base no gravada mostrada incluye ISC, ICBPER y otros cargos. Guardamos
+    // el componente no gravado puro para no duplicar esos importes en el total.
+    if (target?.matches('[data-base-no-gravada]') && baseNoBaseInput) {
+      baseNoBaseInput.value = (byData('data-base-no-gravada') - taxCharges).toFixed(2);
+    }
+    if (target?.matches('[name="isc"], [name="icbper"], [name="other_taxes"]') && baseNoInput) {
+      baseNoInput.value = (Number(baseNoBaseInput?.value || 0) + taxCharges).toFixed(2);
+    }
+
+    const auto = form.querySelector('[data-auto-total]');
+    if (!auto || !auto.checked) return;
     if (target?.matches('[data-base-gravada]')) {
       const igvInput = form.querySelector('[data-igv]');
       if (igvInput) igvInput.value = (byData('data-base-gravada') * 0.18).toFixed(2);
@@ -1017,9 +1312,6 @@ export function render(root) {
     const total = byData('data-base-gravada')
       + byData('data-base-no-gravada')
       + byData('data-igv')
-      + byName('isc')
-      + byName('icbper')
-      + byName('other_taxes')
       + (modalKind === 'venta' ? byName('ivap') : 0);
     const totalInput = form.querySelector('[data-total]');
     if (totalInput) totalInput.value = total.toFixed(2);
@@ -1048,9 +1340,15 @@ export function render(root) {
           if (el) el.textContent = msg || '';
         },
       });
+      const rateResult = exchangeRateService.applyMissingRates(res.records);
+      res.rateStats = rateResult;
+      if (rateResult.missing) {
+        res.warnings.push(`${rateResult.missing} comprobante(s) en moneda extranjera no tienen tipo de cambio para su fecha. Carga los TC SUNAT en la pestaña Tipo de Cambio.`);
+      }
       parsed = res;
       importStatus = '';
       renderContent();
+      if (rateResult.assigned) showToast(`Se asignó tipo de cambio SUNAT a ${rateResult.assigned} comprobante(s).`, 'info');
       if (res.records.length === 0) showToast('No se encontraron registros válidos en los archivos.', 'error');
     } catch (err) {
       importStatus = '';
@@ -1065,6 +1363,7 @@ export function render(root) {
     if (!parsed?.records?.length || importBusy) return;
     importBusy = true;
     const currentParsed = parsed;
+    const rateResult = exchangeRateService.applyMissingRates(currentParsed.records);
     const btn = content.querySelector('[data-do-import]');
     if (btn) { btn.disabled = true; btn.textContent = 'Importando…'; }
     try {
@@ -1098,6 +1397,8 @@ export function render(root) {
       if (supplierResult?.total) {
         showToast(`Directorio de proveedores: ${supplierResult.created} nuevo(s), ${supplierResult.updated} actualizado(s).`, 'info');
       }
+      if (rateResult.assigned) showToast(`Tipo de cambio SUNAT asignado a ${rateResult.assigned} comprobante(s).`, 'info');
+      if (rateResult.missing) showToast(`${rateResult.missing} comprobante(s) quedaron sin tipo de cambio. Cárgalo en Tipo de Cambio.`, 'error');
       if (res.warnings?.length) showToast(res.warnings[0], 'info');
       setTab(state.tab);
     } catch (err) {
@@ -1140,6 +1441,65 @@ export function render(root) {
       await importSupplierText(text, file.name);
     } catch (err) {
       showToast(err.message || String(err), 'error');
+    }
+  }
+
+  async function importRateText(text, origin = 'texto') {
+    if (rateBusy) return;
+    const parsedRates = exchangeRateService.parseText(text);
+    if (!parsedRates.rows.length) {
+      showToast(parsedRates.warnings?.[0] || 'No se encontraron fechas y tipos de cambio válidos.', 'error');
+      return;
+    }
+    rateBusy = true;
+    rateError = '';
+    renderContent();
+    try {
+      const res = await exchangeRateService.importRows(parsedRates.rows, { source: 'import' });
+      state.ratePage = 1;
+      showToast(`Tipos de cambio (${origin}): ${res.created} nuevo(s), ${res.updated} actualizado(s)${res.skipped ? `, ${res.skipped} omitido(s)` : ''}.`);
+      if (parsedRates.skipped && parsedRates.warnings?.length) showToast(parsedRates.warnings[0], 'info');
+    } catch (err) {
+      rateError = err.message || String(err);
+      showToast(rateError, 'error');
+    } finally {
+      rateBusy = false;
+      renderContent();
+    }
+  }
+
+  async function handleRateFile(file) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      await importRateText(text, file.name);
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
+    }
+  }
+
+  async function applyRatesToRecords() {
+    if (rateBusy) return;
+    const targets = taxService.all().filter(needsRateAssignment);
+    if (!targets.length) {
+      showToast('No hay comprobantes extranjeros pendientes de tipo de cambio.', 'info');
+      return;
+    }
+    const result = exchangeRateService.applyMissingRates(targets);
+    if (!result.assigned) {
+      showToast('No hay tipos de cambio cargados para las fechas de esos comprobantes.', 'error');
+      return;
+    }
+    rateBusy = true;
+    renderContent();
+    try {
+      await taxService.updateExchangeRates(result.changed.map((r) => ({ id: r.id, exchange_rate: r.exchange_rate })));
+      showToast(`Tipo de cambio aplicado a ${result.assigned} comprobante(s).${result.missing ? ` ${result.missing} siguen sin TC.` : ''}`);
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
+    } finally {
+      rateBusy = false;
+      renderContent();
     }
   }
 
@@ -1193,8 +1553,10 @@ export function render(root) {
     if (tab) { setTab(tab.dataset.tab); return; }
 
     if (e.target.closest('[data-import]')) { setTab('importar'); return; }
+    if (e.target.closest('[data-go-rates]')) { setTab('tipocambio'); return; }
     if (e.target.closest('[data-add]')) {
       if (state.tab === 'proveedores') openSupplierModal(null);
+      else if (state.tab === 'tipocambio') openRateModal(null);
       else openModal(null, state.tab === 'venta' ? 'venta' : 'compra');
       return;
     }
@@ -1248,6 +1610,58 @@ export function render(root) {
     }
     if (e.target.closest('[data-supplier-edit-modal]')) {
       openSupplierModal(modalSupplierRecord, false);
+      return;
+    }
+
+    if (e.target.closest('[data-rate-add]')) { openRateModal(null); return; }
+    if (e.target.closest('[data-rate-model]')) {
+      downloadText('MODELO_TIPO_CAMBIO.csv', exchangeRateService.modelCsv());
+      showToast('Modelo CSV descargado. Completa Fecha, Tipo de Cambio y Moneda.');
+      return;
+    }
+    if (e.target.closest('[data-rate-file-trigger]')) {
+      content.querySelector('[data-rate-file]')?.click();
+      return;
+    }
+    if (e.target.closest('[data-rate-paste-import]')) {
+      const text = content.querySelector('[data-rate-paste]')?.value || '';
+      importRateText(text, 'texto pegado');
+      return;
+    }
+    if (e.target.closest('[data-rate-apply]')) { applyRatesToRecords(); return; }
+    const rateEdit = e.target.closest('[data-rate-edit]');
+    if (rateEdit) {
+      openRateModal(exchangeRateService.getById(rateEdit.dataset.rateEdit));
+      return;
+    }
+    if (e.target.closest('[data-rate-edit-modal]')) {
+      openRateModal(modalRateRecord, false);
+      return;
+    }
+    const rateDel = e.target.closest('[data-rate-del]');
+    if (rateDel) {
+      const id = rateDel.dataset.rateDel;
+      const rate = exchangeRateService.getById(id);
+      confirmDialog({
+        title: 'Eliminar tipo de cambio',
+        message: `¿Eliminar el tipo de cambio del ${displayDate(rate?.rate_date)} (${rate?.currency || 'USD'})? Los comprobantes ya guardados conservarán su TC.`,
+        confirmText: 'Eliminar',
+        danger: true,
+      }).then(async (ok) => {
+        if (!ok) return;
+        try {
+          await exchangeRateService.remove(id);
+          state.ratePage = 1;
+          renderContent();
+          showToast('Tipo de cambio eliminado.');
+        } catch (err) { showToast(err.message || String(err), 'error'); }
+      });
+      return;
+    }
+    const ratePage = e.target.closest('[data-rate-page]');
+    if (ratePage) {
+      state.ratePage += ratePage.dataset.ratePage === 'next' ? 1 : -1;
+      updateRateList();
       return;
     }
 
@@ -1327,9 +1741,16 @@ export function render(root) {
       state.supplierPage = 1;
       updateSupplierList();
     }
+    if (e.target.matches('[data-rate-search]')) {
+      state.rateSearch = e.target.value;
+      state.ratePage = 1;
+      updateRateList();
+    }
   });
 
   viewRoot.addEventListener('change', (e) => {
+    if (modalType === 'record' && e.target.matches('[name="currency"]')) syncModalRate(true);
+    if (modalType === 'record' && e.target.matches('[name="issue_date"]')) syncModalRate(false);
     if (e.target.matches('[data-files]')) {
       handleFiles(e.target.files);
       return;
@@ -1338,6 +1759,12 @@ export function render(root) {
       const file = e.target.files?.[0];
       e.target.value = '';
       handleSupplierFile(file);
+      return;
+    }
+    if (e.target.matches('[data-rate-file]')) {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      handleRateFile(file);
       return;
     }
     if (e.target.matches('[data-period]')) {
@@ -1378,10 +1805,12 @@ export function render(root) {
   });
 
   modal.addEventListener('input', (e) => {
-    if (modalType === 'supplier' || modalReadonly) return;
+    if (modalType !== 'record' || modalReadonly) return;
     if (e.target.matches('[data-amount], [data-base-gravada], [data-base-no-gravada], [data-igv]')) {
       recalcAmounts(e.target);
     }
+    if (e.target.matches('[name="issue_date"], [name="currency"]')) syncModalRate(false);
+    if (e.target.matches('[data-exchange-rate]')) e.target.dataset.auto = '0';
     if (e.target.matches('[name="counterparty_name"]')) e.target.dataset.auto = '0';
     if (e.target.matches('[name="doc_id_number"]') && modalKind === 'compra') {
       const supplier = supplierService.getByDoc(e.target.value);
@@ -1439,6 +1868,39 @@ export function render(root) {
     }
 
     const form = e.target;
+
+    if (modalType === 'rate') {
+      const fd = new FormData(form);
+      const data = Object.fromEntries(fd.entries());
+      data.rate = Number(data.rate || 0);
+      data.source = modalRateRecord?.source === 'import' || modalRateRecord?.source === 'sunat' ? 'manual' : (modalRateRecord?.source || 'manual');
+      const missing = [];
+      if (!data.rate_date) missing.push('fecha');
+      if (!(data.rate > 0)) missing.push('tipo de cambio');
+      if (missing.length) {
+        showToast(`Completa: ${missing.join(', ')}.`, 'error');
+        return;
+      }
+      const submit = form.querySelector('[data-submit]');
+      if (submit) { submit.disabled = true; submit.textContent = 'Guardando…'; }
+      try {
+        if (modalRateRecord?.id) {
+          await exchangeRateService.update(modalRateRecord.id, data);
+          showToast('Tipo de cambio actualizado.');
+        } else {
+          await exchangeRateService.create(data);
+          showToast('Tipo de cambio registrado.');
+        }
+        closeModal();
+        state.ratePage = 1;
+        renderContent();
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+        if (submit) { submit.disabled = false; submit.innerHTML = `${ICONS.check} Guardar tipo de cambio`; }
+      }
+      return;
+    }
+
     const fd = new FormData(form);
     const data = Object.fromEntries(fd.entries());
     data.kind = modalKind;
@@ -1468,6 +1930,14 @@ export function render(root) {
     const baseGravadaChanged = changed(baseGravada, modalInitial?.baseGravada);
     const baseNoGravadaChanged = changed(baseNoGravada, modalInitial?.baseNoGravada);
     const igvChanged = changed(igv, modalInitial?.igv);
+    const taxCharges = Number(data.isc || 0) + Number(data.icbper || 0) + Number(data.other_taxes || 0);
+    const baseNoPure = baseNoGravada - taxCharges;
+    const initialBaseNoPure = nonTaxedBaseOf(modalRecord || {}, modalKind);
+    const baseNoPureChanged = changed(baseNoPure, initialBaseNoPure);
+    if (baseNoGravada >= 0 && baseNoPure < -0.004) {
+      showToast('La base no gravada debe incluir ISC, ICBPER y otros cargos. Revisa esos importes.', 'error');
+      return;
+    }
 
     if (baseGravadaChanged) {
       data.taxed_base = baseGravada;
@@ -1478,11 +1948,11 @@ export function render(root) {
         data.discount_base = 0;
       }
     }
-    if (baseNoGravadaChanged) {
+    if (baseNoGravadaChanged || baseNoPureChanged) {
       if (modalKind === 'compra') {
-        data.acq_value_ng = baseNoGravada;
+        data.acq_value_ng = baseNoPure;
       } else {
-        data.exonerated = baseNoGravada;
+        data.exonerated = baseNoPure;
         data.export_value = 0;
         data.unaffected = 0;
         data.ivap_base = 0;
@@ -1505,6 +1975,13 @@ export function render(root) {
     data.source = modalRecord?.source || 'manual';
     data.raw = modalRecord?.raw || {};
     data.dedupe_key = dedupeKey(data);
+
+    let rateMissing = false;
+    if (String(data.currency || 'PEN').toUpperCase() !== 'PEN' && !(Number(data.exchange_rate) > 1)) {
+      const found = exchangeRateService.rateFor(data.issue_date, data.currency);
+      if (found) data.exchange_rate = Number(found.rate);
+      else rateMissing = true;
+    }
 
     const missing = [];
     if (!/^\d{6}$/.test(data.period)) missing.push('período');
@@ -1531,6 +2008,7 @@ export function render(root) {
         showToast('Comprobante registrado.');
       }
       if (!Number(data.total)) showToast('El total quedó en 0.00; verifica el comprobante.', 'info');
+      if (rateMissing) showToast('El comprobante quedó sin tipo de cambio SUNAT. Cárgalo en la pestaña Tipo de Cambio.', 'info');
       closeModal();
       state.period = data.period;
       state.periodTouched = true;

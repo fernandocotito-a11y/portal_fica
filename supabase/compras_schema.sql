@@ -5,7 +5,8 @@
 --   1) Supabase Dashboard -> SQL Editor -> New query
 --   2) Pega TODO este contenido y pulsa "Run".
 --   3) Recarga el portal. La pestaña Compras y Ventas dejará el modo local.
--- Incluye tax_records, tax_import_batches y el directorio tax_suppliers.
+-- Incluye tax_records, tax_import_batches, el directorio tax_suppliers y los
+-- tipos de cambio SUNAT por fecha (tax_exchange_rates).
 -- ============================================================================
 
 -- 1) Lotes de importación -----------------------------------------------------
@@ -109,7 +110,20 @@ create table if not exists public.tax_suppliers (
   unique (company_id, doc_id_number)
 );
 
--- 4) RLS ---------------------------------------------------------------------
+-- 4) Tipos de cambio SUNAT por fecha ------------------------------------------
+create table if not exists public.tax_exchange_rates (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  rate_date date not null,
+  currency text not null default 'USD',
+  rate numeric(14, 4) not null check (rate > 0),
+  source text not null default 'sunat',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (company_id, rate_date, currency)
+);
+
+-- 5) RLS ---------------------------------------------------------------------
 -- Helper de acceso por empresa. payroll_schema.sql ya lo define; se replica
 -- aquí para que este script funcione también de forma independiente.
 create or replace function public.can_access_company(p_company uuid)
@@ -129,6 +143,7 @@ $$;
 alter table public.tax_import_batches enable row level security;
 alter table public.tax_records enable row level security;
 alter table public.tax_suppliers enable row level security;
+alter table public.tax_exchange_rates enable row level security;
 
 drop policy if exists "tax_import_batches_all" on public.tax_import_batches;
 create policy "tax_import_batches_all" on public.tax_import_batches
@@ -145,15 +160,21 @@ create policy "tax_suppliers_all" on public.tax_suppliers
   for all using (public.can_access_company(company_id))
   with check (public.can_access_company(company_id));
 
--- 5) Índices ------------------------------------------------------------------
+drop policy if exists "tax_exchange_rates_all" on public.tax_exchange_rates;
+create policy "tax_exchange_rates_all" on public.tax_exchange_rates
+  for all using (public.can_access_company(company_id))
+  with check (public.can_access_company(company_id));
+
+-- 6) Índices ------------------------------------------------------------------
 create index if not exists idx_tax_records_company on public.tax_records(company_id);
 create index if not exists idx_tax_records_company_kind_period on public.tax_records(company_id, kind, period);
 create index if not exists idx_tax_records_doc on public.tax_records(company_id, doc_id_number);
 create index if not exists idx_tax_records_dedupe on public.tax_records(company_id, dedupe_key);
 create index if not exists idx_tax_batches_company on public.tax_import_batches(company_id, created_at desc);
 create index if not exists idx_tax_suppliers_company on public.tax_suppliers(company_id, name);
+create index if not exists idx_tax_exchange_rates_company_date on public.tax_exchange_rates(company_id, rate_date desc, currency);
 
--- 6) Trigger updated_at -------------------------------------------------------
+-- 7) Trigger updated_at -------------------------------------------------------
 create or replace function public.touch_tax_record()
 returns trigger
 language plpgsql
@@ -184,7 +205,23 @@ create trigger trg_touch_tax_supplier
   before update on public.tax_suppliers
   for each row execute function public.touch_tax_supplier();
 
--- 7) Permisos -----------------------------------------------------------------
+create or replace function public.touch_tax_exchange_rate()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_touch_tax_exchange_rate on public.tax_exchange_rates;
+create trigger trg_touch_tax_exchange_rate
+  before update on public.tax_exchange_rates
+  for each row execute function public.touch_tax_exchange_rate();
+
+-- 8) Permisos -----------------------------------------------------------------
 grant select, insert, update, delete on public.tax_records to authenticated;
 grant select, insert, update, delete on public.tax_import_batches to authenticated;
 grant select, insert, update, delete on public.tax_suppliers to authenticated;
+grant select, insert, update, delete on public.tax_exchange_rates to authenticated;

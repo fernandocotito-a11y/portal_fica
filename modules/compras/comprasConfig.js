@@ -218,7 +218,8 @@ export function inputToPeriod(value) {
    El SIRE separa varios subtotales. Para el registro estándar se consolidan:
    - Base gravada: bases afectas al IGV.
    - Base no gravada: exonerada, inafecta, exportación, valor no gravado y
-     bases de otros tributos (IVAP), es decir, lo que no forma la base del IGV.
+     bases de otros tributos (IVAP), más ISC, ICBPER y otros cargos/tributos.
+     Es decir, todo importe que no forma la base del IGV.
    Los descuentos de ventas se muestran netos.
    ------------------------------------------------------------------------- */
 
@@ -231,9 +232,24 @@ export function baseGravadaOf(rec, kind = rec?.kind) {
   return n(rec?.taxed_base) - n(rec?.discount_base);
 }
 
-export function baseNoGravadaOf(rec, kind = rec?.kind) {
+/** Base no gravada sin ISC, ICBPER ni otros cargos (componente SIRE). */
+export function nonTaxedBaseOf(rec, kind = rec?.kind) {
   if (kind === 'compra') return n(rec?.acq_value_ng);
   return n(rec?.export_value) + n(rec?.exonerated) + n(rec?.unaffected) + n(rec?.ivap_base);
+}
+
+/** Cargos que no forman base del IGV y que se muestran dentro de la base no gravada. */
+export function taxChargesOf(rec) {
+  return n(rec?.isc) + n(rec?.icbper) + n(rec?.other_taxes);
+}
+
+/**
+ * Base no gravada del registro estándar: componente no gravado del SIRE más
+ * ISC, ICBPER y otros cargos/tributos. La base gravada sigue siendo el importe
+ * afecto al IGV.
+ */
+export function baseNoGravadaOf(rec, kind = rec?.kind) {
+  return nonTaxedBaseOf(rec, kind) + taxChargesOf(rec);
 }
 
 export function igvOf(rec, kind = rec?.kind) {

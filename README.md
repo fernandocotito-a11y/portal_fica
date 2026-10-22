@@ -40,7 +40,9 @@ Abre **http://localhost:3000**.
    de **Compras y Ventas / SIRE**, también aislado por empresa). Si ya habías
    ejecutado `compras_schema.sql`, ejecuta además
    `supabase/compras_suppliers_schema.sql` para crear el directorio de
-   proveedores. Si ya habías ejecutado el primero, añade la columna `email`:
+   proveedores y `supabase/compras_exchange_rates_schema.sql` para los tipos de
+   cambio SUNAT por fecha. Si ya habías ejecutado el primero, añade la columna
+   `email`:
 
    ```sql
    alter table public.profiles add column if not exists email text;
@@ -143,6 +145,7 @@ Portal/
     ├── payroll_schema.sql  # Tablas de Planillas
     ├── compras_schema.sql  # Tablas de Compras y Ventas / SIRE
     ├── compras_suppliers_schema.sql # Migración: directorio de proveedores
+    ├── compras_exchange_rates_schema.sql # Migración: tipos de cambio SUNAT
     └── functions/invite-user/  # Edge Function de invitación por correo
 ```
 
@@ -188,23 +191,33 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 - Los comprobantes quedan en formato SUNAT editable (alta, edición, detalle y
   eliminación) y se pueden exportar a CSV con los encabezados SIRE y BOM UTF-8.
 - El formulario de alta/edición trabaja con **Base gravada** y **Base no
-  gravada**. El IGV se calcula automáticamente al 18% sobre la base gravada y
-  también se pueden registrar **ISC**, **ICBPER**, **IVAP** y otros cargos. La
-  base no gravada agrupa exoneradas, inafectas, exportación, valor no gravado y
-  otras bases no afectas al IGV.
+  gravada**. La base gravada es el importe afecto al IGV; la base no gravada
+  incluye exoneradas, inafectas, exportación, valor no gravado, otras bases no
+  afectas y además **ISC**, **ICBPER** y otros cargos/tributos. El IGV se calcula
+  automáticamente al 18% sobre la base gravada y también se registran **IVAP** y
+  otros cargos.
 - Incluye un **directorio de proveedores** por empresa: alta, edición,
   eliminación, búsqueda, descarga de modelo CSV, importación de CSV/TXT y carga
   masiva pegando texto desde Excel. Al escribir el RUC en una compra, se completa
   automáticamente la razón social. Las importaciones SIRE también alimentan el
   directorio con los proveedores de compras.
+- Incluye una pestaña **Tipo de Cambio** para cargar los tipos de cambio SUNAT
+  por fecha (CSV/TXT, pegado desde Excel, alta manual y CRUD), para cualquier año.
+  Al registrar un comprobante en moneda extranjera o importar el SIRE, el tipo de
+  cambio se asigna automáticamente por fecha; si no hay tasa exacta se usa la
+  última publicada antes de esa fecha. También permite aplicar el TC a
+  comprobantes ya guardados que estén sin tipo de cambio.
 - El **Resumen** consolida compras, ventas, base gravada, base no gravada, IGV y
-  saldo mensual en soles. Los comprobantes en moneda extranjera usan su tipo de
-  cambio; si la fuente no lo trae, la interfaz lo advierte para completarlo.
+  saldo mensual en soles, con selector de año (incluye años anteriores y el año
+  actual). Los comprobantes en moneda extranjera usan su tipo de cambio o el TC
+  SUNAT cargado; si no existe, la interfaz lo advierte para completarlo.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
   **modo local** con `localStorage` y muestra un aviso. El directorio de
-  proveedores tiene su propio aviso si falta `compras_suppliers_schema.sql`. Al
+  proveedores y los tipos de cambio tienen su propio aviso si faltan
+  `compras_suppliers_schema.sql` o `compras_exchange_rates_schema.sql`. Al
   aplicar los esquemas, recarga el portal para pasar a Supabase multiusuario con
-  RLS; los proveedores creados en modo local se migran automáticamente.
+  RLS; los proveedores y tipos de cambio creados en modo local se migran
+  automáticamente.
 - La carpeta `sire/` contiene archivos de prueba privados y está en `.gitignore`;
   no se publica en el repositorio.
 

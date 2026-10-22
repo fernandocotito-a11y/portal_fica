@@ -12,6 +12,7 @@ import {
   HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf,
 } from './comprasConfig.js';
 import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
+import { exchangeRateService } from './exchangeRateService.js';
 
 let records = [];
 let batches = [];
@@ -285,6 +286,46 @@ export const taxService = {
     return row;
   },
 
+  /** Actualiza masivamente el tipo de cambio de comprobantes ya guardados. */
+  async updateExchangeRates(items) {
+    const companyId = cid();
+    if (!companyId) throw new Error('No hay empresa activa.');
+    const clean = (items || []).filter((item) => item?.id && Number(item.exchange_rate) > 0);
+    if (!clean.length) return 0;
+    await detectMode();
+    if (mode === 'local') {
+      const prev = records;
+      records = records.map((r) => {
+        const item = clean.find((x) => x.id === r.id);
+        return item ? { ...r, exchange_rate: Number(item.exchange_rate), updated_at: nowIso() } : r;
+      });
+      try {
+        saveLocal(companyId);
+      } catch (err) {
+        records = prev;
+        throw err;
+      }
+      return clean.length;
+    }
+    for (let i = 0; i < clean.length; i += 8) {
+      const chunk = clean.slice(i, i + 8);
+      await Promise.all(chunk.map(async (item) => {
+        const { data, error } = await supabase
+          .from('tax_records')
+          .update({ exchange_rate: Number(item.exchange_rate), updated_at: nowIso() })
+          .eq('id', item.id)
+          .eq('company_id', companyId)
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        const row = rowToRecord(data);
+        const index = records.findIndex((r) => r.id === item.id);
+        if (index >= 0) records[index] = row;
+      }));
+    }
+    return clean.length;
+  },
+
   async remove(id) {
     const companyId = cid();
     if (!companyId) throw new Error('No hay empresa activa.');
@@ -453,9 +494,13 @@ export const taxService = {
     };
     if (!rows.length) return s;
     rows.forEach((r) => {
+      const ownRate = Number(r.exchange_rate || 0);
+      const sunatRate = String(r.currency || 'PEN').toUpperCase() === 'PEN'
+        ? null
+        : exchangeRateService.rateFor(r.issue_date, r.currency);
       const rate = String(r.currency || 'PEN').toUpperCase() === 'PEN'
         ? 1
-        : (Number(r.exchange_rate || 0) || 1);
+        : (ownRate > 1 ? ownRate : (Number(sunatRate?.rate || 0) || 1));
       const baseGravada = baseGravadaOf(r, kind);
       const baseNoGravada = baseNoGravadaOf(r, kind);
       s.baseGravada += baseGravada * rate;
