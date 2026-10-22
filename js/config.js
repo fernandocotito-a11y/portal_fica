@@ -76,9 +76,9 @@ export const MODULES = [
   {
     key: 'compras',
     name: 'Compras y Ventas',
-    description: 'Registro de compras y ventas.',
+    description: 'Registro SUNAT de compras y ventas con importación SIRE.',
     icon: ic('<circle cx="9" cy="20" r="1.5"/><circle cx="17" cy="20" r="1.5"/><path d="M3 3h2l2.5 12h9.5l2-7H6"/>'),
-    status: 'soon',
+    status: 'active',
     adminOnly: false,
     group: 'operations',
   },
@@ -194,5 +194,6 @@ export function moduleHash(key) {
   if (key === 'users') return '#/users';
   if (key === 'companies') return '#/companies';
   if (key === 'planillas') return '#/payroll';
+  if (key === 'compras') return '#/compras';
   return `#/module/${key}`;
 }

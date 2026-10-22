@@ -66,6 +66,13 @@ const routes = [
     loader: () => import('../modules/payroll/payrollView.js'),
   },
   {
+    pattern: /^\/compras\/?$/,
+    guard: 'auth',
+    company: true,
+    permission: 'compras',
+    loader: () => import('../modules/compras/comprasView.js'),
+  },
+  {
     pattern: /^\/module\/([\w-]+)\/?$/,
     guard: 'auth',
     company: true,

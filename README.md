@@ -35,9 +35,10 @@ Abre **http://localhost:3000**.
 1. Crea un proyecto en **supabase.com** y copia **Project URL** y **anon key**
    (las dejo en `js/supabase.js`).
 2. En **SQL Editor**, ejecuta `supabase/schema.sql` (crea tablas, RLS, trigger y
-   empresa inicial) y luego `supabase/payroll_schema.sql` (tablas del módulo de
-   **Planillas**, aisladas por empresa). Si ya habías ejecutado el primero, añade
-   la columna `email`:
+   empresa inicial), luego `supabase/payroll_schema.sql` (tablas del módulo de
+   **Planillas**, aisladas por empresa) y `supabase/compras_schema.sql` (Registro
+   de **Compras y Ventas / SIRE**, también aislado por empresa). Si ya habías
+   ejecutado el primero, añade la columna `email`:
 
    ```sql
    alter table public.profiles add column if not exists email text;
@@ -131,10 +132,14 @@ Portal/
 │   ├── dashboard/          # Panel principal
 │   ├── users/              # Gestión de usuarios
 │   ├── companies/          # Gestión de empresas
+│   ├── payroll/            # Planillas (RRHH)
+│   ├── compras/            # Registro de compras/ventas e importación SIRE
 │   └── placeholder/        # Maqueta de módulos futuros
 │
 └── supabase/
     ├── schema.sql          # Tablas, RLS y semilla
+    ├── payroll_schema.sql  # Tablas de Planillas
+    ├── compras_schema.sql  # Tablas de Compras y Ventas / SIRE
     └── functions/invite-user/  # Edge Function de invitación por correo
 ```
 
@@ -169,7 +174,24 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 |---|---|
 | Panel Principal, Gestión de Usuarios, Gestión de Empresas | ✅ Activo |
 | **Planillas** (remuneraciones, asistencias, CTS/grati, Renta 5ta, liquidaciones) | ✅ Activo |
-| SIRE, Compras/Ventas, Retenciones, Declaraciones, Reportes | ⏳ Próximamente |
+| **Compras y Ventas** (importación SIRE ZIP/CSV, registro SUNAT editable, resumen IGV) | ✅ Activo |
+| SIRE, Retenciones, Declaraciones, Reportes | ⏳ Próximamente |
+
+### Compras y Ventas / SIRE
+
+- Acepta varios **ZIP de SIRE** (con CSV dentro) o **CSV directo**, de compras y/o
+  ventas, y detecta el tipo automáticamente. Muestra una vista previa antes de
+  importar y omite duplicados por período, documento, serie y número.
+- Los comprobantes quedan en formato SUNAT editable (alta, edición, detalle y
+  eliminación) y se pueden exportar a CSV con los encabezados SIRE y BOM UTF-8.
+- El **Resumen** consolida compras, ventas, IGV y saldo mensual en soles. Los
+  comprobantes en moneda extranjera usan su tipo de cambio; si la fuente no lo
+  trae, la interfaz lo advierte para completarlo.
+- Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
+  **modo local** con `localStorage` y muestra un aviso. Al aplicar el esquema,
+  recarga el portal para pasar a Supabase multiusuario con RLS.
+- La carpeta `sire/` contiene archivos de prueba privados y está en `.gitignore`;
+  no se publica en el repositorio.
 
 ---
 

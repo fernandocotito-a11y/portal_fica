@@ -608,6 +608,14 @@ button.module-card:hover {
   border-bottom-color: var(--color-gold);
 }
 
+/* ---- Encabezados agrupados de tablas ---- */
+.table__group th {
+  background: var(--color-cream-dark);
+  text-align: center;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
 /* ---- Tabla de planilla (ancha y con celdas editables) ---- */
 .table--payroll {
   min-width: 1840px;
@@ -779,6 +787,18 @@ dialog.modal {
   background: var(--color-surface);
   box-shadow: var(--shadow-lg);
   color: var(--color-text);
+}
+dialog.modal.modal--wide {
+  width: min(920px, calc(100vw - 32px));
+}
+dialog.modal--wide form {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+dialog.modal--wide .modal__body {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 dialog.modal::backdrop {
   background: rgba(26, 26, 26, 0.5);
