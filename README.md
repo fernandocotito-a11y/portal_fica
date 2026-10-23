@@ -42,8 +42,9 @@ Abre **http://localhost:3000**.
    `supabase/compras_suppliers_schema.sql` para crear el directorio de
    proveedores, `supabase/compras_exchange_rates_schema.sql` para los tipos de
    cambio SUNAT por fecha y `supabase/compras_glosa_schema.sql` para el campo
-   **glosa** de cada comprobante. Si ya habías ejecutado el primero, añade la
-   columna `email`:
+   **glosa** de cada comprobante. Para el módulo **Agentes de Retención**,
+   ejecuta `supabase/retencion_schema.sql`. Si ya habías ejecutado el primero,
+   añade la columna `email`:
 
    ```sql
    alter table public.profiles add column if not exists email text;
@@ -139,6 +140,7 @@ Portal/
 │   ├── companies/          # Gestión de empresas
 │   ├── payroll/            # Planillas (RRHH)
 │   ├── compras/            # Registro de compras/ventas e importación SIRE
+│   ├── retencion/          # Agentes de Retención / Percepción (SUNAT)
 │   └── placeholder/        # Maqueta de módulos futuros
 │
 └── supabase/
@@ -148,6 +150,7 @@ Portal/
     ├── compras_suppliers_schema.sql # Migración: directorio de proveedores
     ├── compras_exchange_rates_schema.sql # Migración: tipos de cambio SUNAT
     ├── compras_glosa_schema.sql # Migración: glosa / observación por comprobante
+    ├── retencion_schema.sql # Tablas de Agentes de Retención / Percepción
     └── functions/invite-user/  # Edge Function de invitación por correo
 ```
 
@@ -183,7 +186,8 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 | Panel Principal, Gestión de Usuarios, Gestión de Empresas | ✅ Activo |
 | **Planillas** (remuneraciones, asistencias, CTS/grati, Renta 5ta, liquidaciones) | ✅ Activo |
 | **Compras y Ventas** (importación SIRE ZIP/CSV, registro SUNAT editable, resumen IGV) | ✅ Activo |
-| SIRE, Retenciones, Declaraciones, Reportes | ⏳ Próximamente |
+| **Agentes de Retención** (importación de retenciones/percepciones SUNAT y reporte ordenado) | ✅ Activo |
+| SIRE (presentación), Declaraciones, Reportes | ⏳ Próximamente |
 
 ### Compras y Ventas / SIRE
 
@@ -225,6 +229,21 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   automáticamente.
 - La carpeta `sire/` contiene archivos de prueba privados y está en `.gitignore`;
   no se publica en el repositorio.
+
+### Agentes de Retención / Percepción
+
+- Importa el **Excel de SUNAT** (“Consulta de Comprobantes Emitidos/Recibidos” de
+  Agentes de Retención/Percepción, `.xls`/`.xlsx`) o un CSV/TXT exportado.
+- Detecta automáticamente **retenciones** y **percepciones**, y genera un reporte
+  ordenado con: comprobante, agente, tasa, estado, documento, total, pagado,
+  monto retenido/percibido y neto.
+- Al volver a importar el mismo período, **omite lo ya importado** y agrega solo
+  los registros nuevos (deduplicación por comprobante + documento + pago).
+- Incluye **resumen mensual** por tipo y exportación CSV del reporte y del resumen.
+- Aislado por empresa con RLS (`supabase/retencion_schema.sql`); si la tabla no
+  existe todavía, funciona en modo local con `localStorage`.
+- La carpeta `retencion/` contiene archivos de prueba privados y está en
+  `.gitignore`.
 
 ---
 

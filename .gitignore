@@ -10,5 +10,6 @@ Desktop.ini
 *.log
 npm-debug.log*
 
-Sunat/
-sire/
+/Sunat/
+/sire/
+/retencion/

@@ -94,9 +94,9 @@ export const MODULES = [
   {
     key: 'retenciones',
     name: 'Agentes de Retención',
-    description: 'Gestión de agentes de retención.',
+    description: 'Importación de retenciones y percepciones SUNAT con reporte ordenado.',
     icon: ic('<path d="M19 5 5 19"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/>'),
-    status: 'soon',
+    status: 'active',
     adminOnly: false,
     group: 'operations',
   },
@@ -195,5 +195,6 @@ export function moduleHash(key) {
   if (key === 'companies') return '#/companies';
   if (key === 'planillas') return '#/payroll';
   if (key === 'compras') return '#/compras';
+  if (key === 'retenciones') return '#/retencion';
   return `#/module/${key}`;
 }

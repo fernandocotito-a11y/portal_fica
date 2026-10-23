@@ -73,6 +73,13 @@ const routes = [
     loader: () => import('../modules/compras/comprasView.js'),
   },
   {
+    pattern: /^\/retencion\/?$/,
+    guard: 'auth',
+    company: true,
+    permission: 'retenciones',
+    loader: () => import('../modules/retencion/retencionView.js'),
+  },
+  {
     pattern: /^\/module\/([\w-]+)\/?$/,
     guard: 'auth',
     company: true,
