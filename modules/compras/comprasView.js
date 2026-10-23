@@ -316,7 +316,7 @@ export function render(root) {
         </td>
         <td>${escapeHtml(r.series || '—')}-${escapeHtml(r.number || '—')}${r.number_final ? `<div class="text-muted" style="font-size:var(--font-size-xs);">hasta ${escapeHtml(r.number_final)}</div>` : ''}</td>
         <td>${escapeHtml(r.doc_id_number || '—')}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.doc_id_type ? `Tipo ${r.doc_id_type}` : '')}</div></td>
-        <td><div class="table__name">${escapeHtml(r.counterparty_name || '—')}</div></td>
+        <td><div class="table__name">${escapeHtml(r.counterparty_name || '—')}</div>${r.glosa ? `<div class="text-muted" style="font-size:var(--font-size-xs);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.glosa)}">${escapeHtml(r.glosa)}</div>` : ''}</td>
         <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(igvOf(r, r.kind))}</td>
@@ -1163,6 +1163,12 @@ export function render(root) {
             ${textField('operation_type', 'Tipo de operación', r.operation_type, 'placeholder="Ej. 0101" maxlength="10"')}
             ${textField('dam', 'DAM / CP', r.dam, 'maxlength="40"')}
             ${textField('clu', 'CLU', r.clu, 'maxlength="40"')}
+          </div>
+
+          <h4 style="font-weight:600;color:var(--color-primary);margin:var(--space-5) 0 var(--space-3);">Glosa / observación</h4>
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Glosa del documento</label>
+            <textarea class="form-input" name="glosa" rows="2" maxlength="500" placeholder="Descripción, concepto u observación del comprobante (opcional)">${escapeHtml(r.glosa || '')}</textarea>
           </div>
         </div>
         <div class="modal__footer">

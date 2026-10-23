@@ -19,6 +19,7 @@ let batches = [];
 let mode = 'unknown'; // 'remote' | 'local'
 let checked = false;
 let lastError = '';
+let hasGlosaColumn = false;
 
 function cid() {
   const company = authService.activeCompany();
@@ -59,9 +60,10 @@ async function detectMode() {
   if (checked) return mode;
   checked = true;
   try {
-    const [r1, r2] = await Promise.all([
+    const [r1, r2, rGlosa] = await Promise.all([
       supabase.from('tax_records').select('id').limit(1),
       supabase.from('tax_import_batches').select('id').limit(1),
+      supabase.from('tax_records').select('glosa').limit(1),
     ]);
     const err = r1.error || r2.error;
     if (err && isMissingTable(err)) {
@@ -73,10 +75,14 @@ async function detectMode() {
     } else {
       mode = 'remote';
     }
+    // La columna glosa es opcional: si aún no se ejecutó su migración, no se
+    // envía en el payload para no romper la carga en Supabase.
+    hasGlosaColumn = mode === 'local' ? true : !rGlosa.error;
   } catch (err) {
     if (isMissingTable(err)) {
       mode = 'local';
       lastError = err.message;
+      hasGlosaColumn = true;
     } else {
       checked = false;
       throw err;
@@ -103,6 +109,10 @@ function cleanRecord(rec) {
   delete out.company_id;
   delete out.created_by;
   out.raw = out.raw && typeof out.raw === 'object' ? out.raw : {};
+  if ('glosa' in out) {
+    if (hasGlosaColumn) out.glosa = String(out.glosa || '').trim();
+    else delete out.glosa;
+  }
   // Las columnas date de Postgres no aceptan cadena vacía: se envían como null.
   ['issue_date', 'due_date', 'modified_date'].forEach((field) => {
     const value = String(out[field] || '').slice(0, 10);
@@ -193,7 +203,7 @@ export const taxService = {
     if (filters.search) {
       const q = String(filters.search).trim().toLowerCase();
       if (q) {
-        out = out.filter((r) => [r.counterparty_name, r.doc_id_number, r.series, r.number, r.ruc_empresa, r.car_sunat, r.source_file]
+        out = out.filter((r) => [r.counterparty_name, r.doc_id_number, r.series, r.number, r.ruc_empresa, r.car_sunat, r.source_file, r.glosa]
           .some((v) => String(v || '').toLowerCase().includes(q)));
       }
     }

@@ -40,9 +40,10 @@ Abre **http://localhost:3000**.
    de **Compras y Ventas / SIRE**, también aislado por empresa). Si ya habías
    ejecutado `compras_schema.sql`, ejecuta además
    `supabase/compras_suppliers_schema.sql` para crear el directorio de
-   proveedores y `supabase/compras_exchange_rates_schema.sql` para los tipos de
-   cambio SUNAT por fecha. Si ya habías ejecutado el primero, añade la columna
-   `email`:
+   proveedores, `supabase/compras_exchange_rates_schema.sql` para los tipos de
+   cambio SUNAT por fecha y `supabase/compras_glosa_schema.sql` para el campo
+   **glosa** de cada comprobante. Si ya habías ejecutado el primero, añade la
+   columna `email`:
 
    ```sql
    alter table public.profiles add column if not exists email text;
@@ -146,6 +147,7 @@ Portal/
     ├── compras_schema.sql  # Tablas de Compras y Ventas / SIRE
     ├── compras_suppliers_schema.sql # Migración: directorio de proveedores
     ├── compras_exchange_rates_schema.sql # Migración: tipos de cambio SUNAT
+    ├── compras_glosa_schema.sql # Migración: glosa / observación por comprobante
     └── functions/invite-user/  # Edge Function de invitación por correo
 ```
 
@@ -196,6 +198,9 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   afectas y además **ISC**, **ICBPER** y otros cargos/tributos. El IGV se calcula
   automáticamente al 18% sobre la base gravada y también se registran **IVAP** y
   otros cargos.
+- Cada comprobante admite una **glosa / observación** libre (el SIRE no la trae),
+  que se guarda por documento, se muestra en el detalle y es buscable. Requiere
+  la migración `compras_glosa_schema.sql` para guardarse en Supabase.
 - Incluye un **directorio de proveedores** por empresa: alta, edición,
   eliminación, búsqueda, descarga de modelo CSV, importación de CSV/TXT y carga
   masiva pegando texto desde Excel. Al escribir el RUC en una compra, se completa

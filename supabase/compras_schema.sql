@@ -82,6 +82,7 @@ create table if not exists public.tax_records (
   operation_type text,
   dam text,
   clu text,
+  glosa text,
 
   -- Metadatos
   raw jsonb not null default '{}'::jsonb,
