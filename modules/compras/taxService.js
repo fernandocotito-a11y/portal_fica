@@ -541,8 +541,10 @@ export const taxService = {
   },
 
   exportCsv(kind, rows) {
-    const headers = HEADERS[kind];
-    const data = rows.map((r) => recordToSunatRow(kind, r));
+    // Se conservan los encabezados SIRE exactos y se añade una columna "Glosa"
+    // al final. En una reimportación esa columna se ignora (no es un campo SIRE).
+    const headers = [...HEADERS[kind], 'Glosa'];
+    const data = rows.map((r) => [...recordToSunatRow(kind, r), r.glosa ?? '']);
     return { fileName: `REGISTRO_${kind === 'compra' ? 'COMPRAS' : 'VENTAS'}_${rows[0]?.period || 'SIN_PERIODO'}.csv`, text: toCsvText(headers, data) };
   },
 
