@@ -198,16 +198,13 @@ function makeRecord(block, cells, period, meta) {
 }
 
 function readWorkbookRows(file) {
-  if (typeof window === 'undefined' || !window.XLSX) {
-    return Promise.reject(new Error('La librería de lectura de Excel no está disponible. Recarga la página.'));
-  }
-  return new Promise((resolve, reject) => {
+  return ensureXlsx().then((XLSX) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb = window.XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
         resolve(rows.map((r) => (Array.isArray(r) ? r : [r])));
       } catch (err) {
         reject(new Error(`No se pudo leer "${file.name}": ${err.message}`));
@@ -215,7 +212,34 @@ function readWorkbookRows(file) {
     };
     reader.onerror = () => reject(new Error(`No se pudo leer "${file.name}".`));
     reader.readAsArrayBuffer(file);
+  }));
+}
+
+let xlsxPromise = null;
+
+/** Carga SheetJS bajo demanda si el script no se cargó con la página. */
+function ensureXlsx() {
+  if (typeof window !== 'undefined' && window.XLSX) return Promise.resolve(window.XLSX);
+  if (xlsxPromise) return xlsxPromise;
+  xlsxPromise = new Promise((resolve, reject) => {
+    if (typeof document === 'undefined') {
+      reject(new Error('No se pudo cargar la librería de Excel.'));
+      return;
+    }
+    const script = document.createElement('script');
+    try {
+      script.src = new URL('../../vendor/xlsx.full.min.js', import.meta.url).href;
+    } catch {
+      script.src = './vendor/xlsx.full.min.js';
+    }
+    script.onload = () => {
+      if (window.XLSX) resolve(window.XLSX);
+      else reject(new Error('No se pudo inicializar la librería de Excel.'));
+    };
+    script.onerror = () => reject(new Error('No se pudo cargar la librería de Excel. Verifica tu conexión y recarga la página.'));
+    document.head.appendChild(script);
   });
+  return xlsxPromise;
 }
 
 function detectKindOf(records) {

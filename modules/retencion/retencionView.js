@@ -63,9 +63,9 @@ export function render(root) {
         <button type="button" class="btn btn--primary" data-import>${ICONS.arrowRight} Importar Excel</button>
       </div>
     </div>
-    <div class="tabs" style="margin:var(--space-4) 0;">
+    <div class="tabs-bar" data-tabs>
       ${[['retencion', 'Retenciones'], ['percepcion', 'Percepciones'], ['importar', 'Importar'], ['resumen', 'Resumen']]
-        .map(([key, label]) => `<button type="button" class="tab ${state.tab === key ? 'is-active' : ''}" data-tab="${key}">${label}</button>`).join('')}
+        .map(([key, label]) => `<button type="button" class="tab-btn ${state.tab === key ? 'is-active' : ''}" data-tab="${key}">${label}</button>`).join('')}
     </div>
     <div data-content></div>
     </div>`;
@@ -470,8 +470,9 @@ export function render(root) {
       renderContent();
       if (!res.records.length) showToast('No se encontraron documentos válidos en los archivos.', 'error');
     } catch (err) {
-      state.importStatus = '';
-      showToast(err.message || String(err), 'error');
+      const message = err.message || String(err);
+      state.importStatus = message;
+      showToast(message, 'error');
       renderContent();
     } finally {
       state.parseBusy = false;
@@ -603,6 +604,25 @@ export function render(root) {
       state.page = 1;
       updateRegistry();
     }
+  });
+
+  // Arrastrar y soltar archivos sobre la zona de importación.
+  viewRoot.addEventListener('dragover', (e) => {
+    const drop = e.target.closest('[data-drop]');
+    if (!drop) return;
+    e.preventDefault();
+    drop.style.borderColor = 'var(--color-gold)';
+  });
+  viewRoot.addEventListener('dragleave', (e) => {
+    const drop = e.target.closest('[data-drop]');
+    if (drop) drop.style.borderColor = '';
+  });
+  viewRoot.addEventListener('drop', (e) => {
+    const drop = e.target.closest('[data-drop]');
+    if (!drop) return;
+    e.preventDefault();
+    drop.style.borderColor = '';
+    handleFiles(e.dataTransfer?.files);
   });
 
   modal.addEventListener('cancel', (e) => { e.preventDefault(); closeModal(); });
