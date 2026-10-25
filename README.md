@@ -141,6 +141,7 @@ Portal/
 │   ├── payroll/            # Planillas (RRHH)
 │   ├── compras/            # Registro de compras/ventas e importación SIRE
 │   ├── retencion/          # Agentes de Retención / Percepción (SUNAT)
+│   ├── sire/               # SIRE: conexión en línea con SUNAT
 │   └── placeholder/        # Maqueta de módulos futuros
 │
 └── supabase/
@@ -151,7 +152,11 @@ Portal/
     ├── compras_exchange_rates_schema.sql # Migración: tipos de cambio SUNAT
     ├── compras_glosa_schema.sql # Migración: glosa / observación por comprobante
     ├── retencion_schema.sql # Tablas de Agentes de Retención / Percepción
-    └── functions/invite-user/  # Edge Function de invitación por correo
+    ├── sire_credentials_schema.sql # Credenciales de API SUNAT (por empresa)
+    └── functions/           # Edge Functions
+        ├── invite-user/    # Invitación de usuarios por correo
+        ├── sbs-rates/      # Parámetros AFP desde la SBS
+        └── sunat-sire/     # Conexión con el API SIRE de SUNAT
 ```
 
 ---
@@ -187,7 +192,8 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 | **Planillas** (remuneraciones, asistencias, CTS/grati, Renta 5ta, liquidaciones) | ✅ Activo |
 | **Compras y Ventas** (importación SIRE ZIP/CSV, registro SUNAT editable, resumen IGV) | ✅ Activo |
 | **Agentes de Retención** (importación de retenciones/percepciones SUNAT y reporte ordenado) | ✅ Activo |
-| SIRE (presentación), Declaraciones, Reportes | ⏳ Próximamente |
+| **SIRE** (conexión en línea con SUNAT para actualizar compras y ventas) | ✅ Activo |
+| Declaraciones, Reportes | ⏳ Próximamente |
 
 ### Compras y Ventas / SIRE
 
@@ -244,6 +250,19 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   existe todavía, funciona en modo local con `localStorage`.
 - La carpeta `retencion/` contiene archivos de prueba privados y está en
   `.gitignore`.
+
+### SIRE · Conexión SUNAT
+
+- Permite **actualizar en línea** el Registro de Compras y Ventas usando el
+  **Servicio Web API oficial del SIRE** de SUNAT (descarga la propuesta del
+  período y fusiona solo los comprobantes nuevos).
+- La **Configuración SUNAT** guarda `client_id`, `client_secret`, RUC y Clave SOL
+  por empresa en `supabase/sire_credentials_schema.sql`. La Clave SOL **nunca**
+  llega al navegador: la Edge Function `sunat-sire` la usa solo en el servidor.
+- Requiere: ejecutar `supabase/sire_credentials_schema.sql` y desplegar la Edge
+  Function `sunat-sire` (`supabase functions deploy sunat-sire --no-verify-jwt`,
+  requiere la CLI de Supabase y estar autenticado con `supabase login`).
+- La importación manual de ZIP/CSV sigue disponible como respaldo.
 
 ---
 

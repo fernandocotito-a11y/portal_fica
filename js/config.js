@@ -85,9 +85,9 @@ export const MODULES = [
   {
     key: 'sire',
     name: 'SIRE',
-    description: 'Importador y validador de archivos SUNAT.',
+    description: 'Conexión en línea con SUNAT para actualizar compras y ventas.',
     icon: ic('<path d="M12 16V5"/><path d="m7 10 5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>'),
-    status: 'soon',
+    status: 'active',
     adminOnly: false,
     group: 'operations',
   },
@@ -196,5 +196,6 @@ export function moduleHash(key) {
   if (key === 'planillas') return '#/payroll';
   if (key === 'compras') return '#/compras';
   if (key === 'retenciones') return '#/retencion';
+  if (key === 'sire') return '#/sire';
   return `#/module/${key}`;
 }
