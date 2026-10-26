@@ -27,6 +27,9 @@ interface Credentials {
 }
 
 const COD_LIBRO: Record<string, string> = { compra: "080000", venta: "140000" };
+const TICKET_ATTEMPTS = 25;
+const TICKET_DELAY_MS = 3000;
+const TICKET_TIMEOUT_S = Math.round((TICKET_ATTEMPTS * TICKET_DELAY_MS) / 1000);
 
 /** URL del servicio "descargar propuesta" (compras 5.34 / ventas 5.18). */
 function propuestaUrl(kind: string, period: string): string {
@@ -98,8 +101,8 @@ async function descargarPropuesta(creds: Credentials, kind: string, period: stri
   // 2) Consultar el estado del ticket hasta que termine (06 = Terminado).
   //    La consulta es por período: perIni/perFin son obligatorios.
   let estado: any = null;
-  for (let i = 0; i < 20; i += 1) {
-    await new Promise((r) => setTimeout(r, 3000));
+  for (let i = 0; i < TICKET_ATTEMPTS; i += 1) {
+    await new Promise((r) => setTimeout(r, TICKET_DELAY_MS));
     let r: any;
     try {
       r = await sunatJson(
@@ -130,7 +133,7 @@ async function descargarPropuesta(creds: Credentials, kind: string, period: stri
   }
   if (!estado) {
     throw new Error(
-      `SUNAT no terminó de generar la propuesta en 60 s. Ticket ${numTicket}. Reintenta en unos minutos.`
+      `SUNAT no terminó de generar la propuesta en ${TICKET_TIMEOUT_S} s. Ticket ${numTicket}. Reintenta en unos minutos.`
     );
   }
 
