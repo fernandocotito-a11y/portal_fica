@@ -100,13 +100,22 @@ async function descargarPropuesta(creds: Credentials, kind: string, period: stri
   let estado: any = null;
   for (let i = 0; i < 20; i += 1) {
     await new Promise((r) => setTimeout(r, 3000));
-    const r = await sunatJson(
-      `${SIRE_BASE}/rvierce/gestionprocesosmasivos/web/masivo/consultaestadotickets`
-        + `?perIni=${period}&perFin=${period}&page=1&perPage=50`
-        + `&numTicket=${encodeURIComponent(String(numTicket))}`,
-      token,
-      "GET"
-    );
+    let r: any;
+    try {
+      r = await sunatJson(
+        `${SIRE_BASE}/rvierce/gestionprocesosmasivos/web/masivo/consultaestadotickets`
+          + `?perIni=${period}&perFin=${period}&page=1&perPage=50`
+          + `&numTicket=${encodeURIComponent(String(numTicket))}`,
+        token,
+        "GET"
+      );
+    } catch (e) {
+      const msg = String((e as Error)?.message || e);
+      // 401/403 = token inválido: no tiene sentido seguir. El resto suele ser
+      // que el ticket todavía no está indexado; se reintenta.
+      if (msg.includes("(401)") || msg.includes("(403)")) throw e;
+      continue;
+    }
     const registros = Array.isArray(r.registros) ? r.registros : [];
     const match = registros.find((x: any) => String(x.numTicket) === String(numTicket)) || registros[0];
     if (match) {
