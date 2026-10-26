@@ -26,11 +26,17 @@ interface Credentials {
   password: string;
 }
 
+const COD_LIBRO: Record<string, string> = { compra: "080000", venta: "140000" };
+
 /** URL del servicio "descargar propuesta" (compras 5.34 / ventas 5.18). */
 function propuestaUrl(kind: string, period: string): string {
-  return kind === "venta"
-    ? `${SIRE_BASE}/rvie/propuesta/web/propuesta/${period}/exportapropuesta`
-    : `${SIRE_BASE}/rce/propuesta/web/propuesta/${period}/exportacioncomprobantepropuesta`;
+  // 0 = TXT. El ZIP resultante contiene un .txt separado por "|".
+  // codOrigenEnvio=2 = servicio web (en compras es obligatorio; en ventas también
+  // lo usa la implementación verificada).
+  if (kind === "venta") {
+    return `${SIRE_BASE}/rvie/propuesta/web/propuesta/${period}/exportapropuesta?codTipoArchivo=0&codOrigenEnvio=2`;
+  }
+  return `${SIRE_BASE}/rce/propuesta/web/propuesta/${period}/exportacioncomprobantepropuesta?codTipoArchivo=0&codOrigenEnvio=2`;
 }
 
 /** Obtiene el token OAuth2 de SUNAT. */
@@ -56,74 +62,119 @@ async function getToken(creds: Credentials): Promise<string> {
   return String(token);
 }
 
-async function sunatJson(url: string, token: string, method = "POST"): Promise<any> {
+async function sunatJson(url: string, token: string, method = "GET"): Promise<any> {
   const res = await fetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
-      "Content-Type": "application/json",
     },
   });
   const text = await res.text();
   let data: any;
   try { data = text ? JSON.parse(text) : {}; } catch { data = { _raw: text }; }
   if (!res.ok) {
-    const msg = data.message || data.mensaje || data.error || text.slice(0, 300);
-    throw new Error(`SUNAT (${res.status}): ${msg}`);
+    const msg = data.msg || data.message || data.mensaje || data.error || text.slice(0, 300);
+    const detail = Array.isArray(data.errors)
+      ? ` · ${data.errors.map((e: any) => e?.msg || e).join("; ")}`
+      : "";
+    throw new Error(`SUNAT (${res.status}): ${msg}${detail}`);
   }
   return data;
 }
 
-/** Descarga la propuesta y devuelve { fileName, base64, kind, period }. */
+/** Descarga la propuesta y devuelve { fileName, base64, kind, period, ticket }. */
 async function descargarPropuesta(creds: Credentials, kind: string, period: string) {
   const token = await getToken(creds);
+  const codLibro = COD_LIBRO[kind] || COD_LIBRO.compra;
 
-  // 1) Generar ticket de la propuesta.
-  const params = new URLSearchParams({ codTipoArchivo: "CSV", codOrigenEnvio: "1" });
-  const propUrl = `${propuestaUrl(kind, period)}?${params.toString()}`;
-  const prop = await sunatJson(propUrl, token);
+  // 1) Generar ticket de la propuesta (GET, no POST).
+  const prop = await sunatJson(propuestaUrl(kind, period), token, "GET");
   const numTicket = prop.numTicket ?? prop.num_ticket ?? prop.numeroTicket ?? prop.ticket;
   if (!numTicket) {
     throw new Error(`SUNAT no devolvió ticket de propuesta: ${JSON.stringify(prop).slice(0, 300)}`);
   }
 
-  // 2) Esperar a que el proceso termine (consulta de estado).
-  //    Nota: la URL exacta de "consultar estado" / "descargar archivo" puede
-  //    variar según el manual oficial; se ajusta en la primera prueba real.
-  let archivo: any = null;
-  for (let i = 0; i < 15; i += 1) {
-    await new Promise((r) => setTimeout(r, 2500));
-    const estado = await sunatJson(
-      `${SIRE_BASE}/rce/ticket/web/consultar?numTicket=${encodeURIComponent(String(numTicket))}`,
+  // 2) Consultar el estado del ticket hasta que termine (06 = Terminado).
+  //    La consulta es por período: perIni/perFin son obligatorios.
+  let estado: any = null;
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const r = await sunatJson(
+      `${SIRE_BASE}/rvierce/gestionprocesosmasivos/web/masivo/consultaestadotickets`
+        + `?perIni=${period}&perFin=${period}&page=1&perPage=50`
+        + `&numTicket=${encodeURIComponent(String(numTicket))}`,
       token,
       "GET"
     );
-    const terminado = estado.terminado ?? estado.codEstadoProceso === "01";
-    if (terminado) {
-      archivo = estado;
-      break;
+    const registros = Array.isArray(r.registros) ? r.registros : [];
+    const match = registros.find((x: any) => String(x.numTicket) === String(numTicket)) || registros[0];
+    if (match) {
+      const cod = String(match.codEstadoProceso || "");
+      if (cod === "06") { estado = match; break; }
+      if (["07", "08", "10"].includes(cod)) {
+        throw new Error(
+          `SUNAT no pudo generar la propuesta (${cod}): ${match.desEstadoProceso || "sin detalle"}`
+        );
+      }
     }
-    if (estado.expirado) throw new Error("El ticket de SUNAT expiró sin completarse.");
   }
-  if (!archivo) throw new Error("SUNAT no terminó de generar la propuesta. Reintenta en unos minutos.");
+  if (!estado) {
+    throw new Error(
+      `SUNAT no terminó de generar la propuesta en 60 s. Ticket ${numTicket}. Reintenta en unos minutos.`
+    );
+  }
 
-  // 3) Descargar el archivo (ZIP en base64).
-  const download = await sunatJson(
-    `${SIRE_BASE}/rce/archivo/web/descargar?numTicket=${encodeURIComponent(String(numTicket))}`,
-    token,
-    "GET"
-  );
-  const item = Array.isArray(download) ? download[0] : download;
-  const base64 = item?.archivoBase64 ?? item?.base64 ?? item?.data ?? download.archivoBase64;
-  if (!base64) throw new Error(`SUNAT no devolvió el archivo: ${JSON.stringify(download).slice(0, 300)}`);
+  // 3) Descargar el archivo generado (ZIP binario, no JSON).
+  const archivo = (Array.isArray(estado.archivoReporte) ? estado.archivoReporte[0] : null)
+    || (Array.isArray(estado.detalleTicket) ? estado.detalleTicket[0] : null);
+  const nomArchivoReporte = archivo?.nomArchivoReporte || estado.nomArchivoReporte;
+  const codTipoArchivoReporte =
+    archivo?.codTipoAchivoReporte ?? archivo?.codTipoArchivoReporte ?? estado.codTipoArchivoReporte ?? "00";
+  const codProceso = estado.codProceso || "10"; // 10 = exportar propuesta
+  if (!nomArchivoReporte) {
+    throw new Error(`SUNAT no devolvió el nombre del archivo: ${JSON.stringify(estado).slice(0, 300)}`);
+  }
+
+  const downloadUrl = new URL(`${SIRE_BASE}/rvierce/gestionprocesosmasivos/web/masivo/archivoreporte`);
+  downloadUrl.searchParams.set("nomArchivoReporte", String(nomArchivoReporte));
+  downloadUrl.searchParams.set("codTipoArchivoReporte", String(codTipoArchivoReporte));
+  downloadUrl.searchParams.set("codLibro", codLibro);
+  downloadUrl.searchParams.set("perTributario", period);
+  downloadUrl.searchParams.set("codProceso", String(codProceso));
+  downloadUrl.searchParams.set("numTicket", String(numTicket));
+
+  const res = await fetch(downloadUrl, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/zip, application/octet-stream, */*",
+    },
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`SUNAT descarga (${res.status}): ${t.slice(0, 300)}`);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (!bytes.length) throw new Error("SUNAT devolvió un archivo vacío.");
 
   return {
-    fileName: item?.nombreZip ?? item?.nombreTxt ?? `sire-${period}-${kind}.zip`,
-    base64: String(base64),
+    fileName: String(nomArchivoReporte),
+    base64: toBase64(bytes),
     kind,
     period,
+    ticket: String(numTicket),
   };
+}
+
+/** Uint8Array -> base64 sin desbordar la pila en archivos grandes. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x2000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
 }
 
 export default {

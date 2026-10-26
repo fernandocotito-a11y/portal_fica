@@ -11,6 +11,7 @@ import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from '../../js/supabase.js'
 import { authService } from '../../services/authService.js';
 import { parseSireFiles } from '../compras/sireParser.js';
 import { taxService } from '../compras/taxService.js';
+import { exchangeRateService } from '../compras/exchangeRateService.js';
 
 const FUNCTION_URL = `${SUPABASE_URL}/functions/v1/sunat-sire`;
 
@@ -62,16 +63,30 @@ export const sireService = {
 
   /**
    * Descarga de SUNAT y fusiona con el Registro de Compras/Ventas.
-   * Devuelve { imported, skipped, fileName }.
+   * Devuelve { imported, skipped, warnings, fileName }.
    */
   async sincronizar(kind, period, onProgress = () => {}) {
     const res = await this.descargar(kind, period);
-    const mime = /\.zip$/i.test(res.fileName) ? 'application/zip' : 'text/csv';
+    const mime = /\.zip$/i.test(res.fileName) ? 'application/zip' : 'text/plain';
     const file = new File([base64ToBytes(res.base64)], res.fileName, { type: mime });
 
+    const company = authService.activeCompany() || {};
     await taxService.refresh();
-    const parsed = await parseSireFiles([file], { onProgress });
-    if (!parsed.records.length) throw new Error('La propuesta descargada no contiene comprobantes.');
+    await exchangeRateService.refresh();
+    const parsed = await parseSireFiles([file], {
+      expectedRuc: String(company.ruc || '').replace(/\D/g, ''),
+      onProgress,
+    });
+    if (!parsed.records.length) {
+      const detail = parsed.warnings?.length ? ` (${parsed.warnings.join(' ')})` : '';
+      throw new Error(`La propuesta descargada no contiene comprobantes.${detail}`);
+    }
+    const rateResult = exchangeRateService.applyMissingRates(parsed.records);
+    if (rateResult.missing) {
+      parsed.warnings.push(
+        `${rateResult.missing} comprobante(s) en moneda extranjera no tienen tipo de cambio para su fecha.`
+      );
+    }
     const result = await taxService.importParsed(parsed.files);
     return { ...result, fileName: res.fileName, kind, period };
   },

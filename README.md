@@ -197,9 +197,10 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 
 ### Compras y Ventas / SIRE
 
-- Acepta varios **ZIP de SIRE** (con CSV dentro) o **CSV directo**, de compras y/o
-  ventas, y detecta el tipo automáticamente. Muestra una vista previa antes de
-  importar y omite duplicados por período, documento, serie y número.
+- Acepta varios **ZIP de SIRE** (con CSV o TXT dentro), **CSV directo** o **TXT**
+  directo, de compras y/o ventas, y detecta el tipo automáticamente. Muestra una
+  vista previa antes de importar y omite duplicados por período, documento, serie
+  y número.
 - Los comprobantes quedan en formato SUNAT editable (alta, edición, detalle y
   eliminación) y se pueden exportar a CSV con los encabezados SIRE y BOM UTF-8.
 - El formulario de alta/edición trabaja con **Base gravada** y **Base no
@@ -256,13 +257,19 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 - Permite **actualizar en línea** el Registro de Compras y Ventas usando el
   **Servicio Web API oficial del SIRE** de SUNAT (descarga la propuesta del
   período y fusiona solo los comprobantes nuevos).
-- La **Configuración SUNAT** guarda `client_id`, `client_secret`, RUC y Clave SOL
-  por empresa en `supabase/sire_credentials_schema.sql`. La Clave SOL **nunca**
-  llega al navegador: la Edge Function `sunat-sire` la usa solo en el servidor.
+- El flujo oficial es: `GET` de la propuesta → ticket → consulta de estado
+  (`consultaestadotickets`, estados `01/03/06/07/08/10`) → descarga del ZIP
+  (`archivoreporte`). La propuesta se pide en formato TXT (`codTipoArchivo=0`),
+  que el importador lee con separador `|` (también acepta CSV).
+- La **Configuración SUNAT** guarda `client_id`, `client_secret`, RUC, Usuario SOL
+  (opcional) y Clave SOL por empresa en `supabase/sire_credentials_schema.sql`.
+  El usuario del API se arma como **RUC + Usuario SOL** (sin separador). La Clave
+  SOL **nunca** llega al navegador: la Edge Function `sunat-sire` la usa solo en
+  el servidor.
 - Requiere: ejecutar `supabase/sire_credentials_schema.sql` y desplegar la Edge
   Function `sunat-sire` (`supabase functions deploy sunat-sire --no-verify-jwt`,
   requiere la CLI de Supabase y estar autenticado con `supabase login`).
-- La importación manual de ZIP/CSV sigue disponible como respaldo.
+- La importación manual de ZIP/CSV/TXT sigue disponible como respaldo.
 
 ---
 

@@ -1,7 +1,8 @@
 /* ============================================================================
-   sireParser.js — Lector de propuestas SIRE (ZIP / CSV) sin dependencias
+   sireParser.js — Lector de propuestas SIRE (ZIP / CSV / TXT) sin dependencias
    ----------------------------------------------------------------------------
    - Descomprime los ZIP de SUNAT con DecompressionStream.
+   - Acepta CSV y TXT (separador coma, punto y coma, tabulador o "|").
    - Detecta automáticamente si el archivo es COMPRAS o VENTAS.
    - Mapea las columnas oficiales a un modelo normalizado editable.
    ========================================================================== */
@@ -78,13 +79,19 @@ function detectDelimiter(text) {
   const firstLine = text.split(/\r?\n/, 1)[0] || '';
   let commas = 0;
   let semis = 0;
+  let pipes = 0;
+  let tabs = 0;
   let quoted = false;
   for (let i = 0; i < firstLine.length; i += 1) {
     const c = firstLine[i];
     if (c === '"') quoted = !quoted;
     else if (!quoted && c === ',') commas += 1;
     else if (!quoted && c === ';') semis += 1;
+    else if (!quoted && c === '|') pipes += 1;
+    else if (!quoted && c === '\t') tabs += 1;
   }
+  if (pipes > commas && pipes > semis && pipes > tabs) return '|';
+  if (tabs > commas && tabs > semis && tabs > pipes) return '\t';
   return semis > commas ? ';' : ',';
 }
 
@@ -299,15 +306,26 @@ function validateRecord(rec, expectedRuc) {
   return warnings;
 }
 
-function readCsvEntry(entry, fileName, expectedRuc) {
+function readTabularEntry(entry, fileName, expectedRuc) {
   const text = decodeText(entry.data);
   const rows = parseCsv(text);
-  if (rows.length < 2) throw new Error('El CSV no contiene filas de datos.');
-  const headers = rows[0].map((h) => String(h).trim());
-  const kind = detectKind(headers, fileName);
+  if (!rows.length) throw new Error('El archivo no contiene filas de datos.');
+  let headers = rows[0].map((h) => String(h).trim());
+  let kind = detectKind(headers, fileName);
+  let start = 1;
+  if (!kind) {
+    // Algunos TXT de SUNAT vienen sin cabecera: se deduce por el ancho.
+    const width = rows[0].length;
+    if (width >= 60) kind = 'compra';
+    else if (width >= 30) kind = 'venta';
+    if (kind) {
+      headers = HEADERS[kind].slice(0, width);
+      start = 0;
+    }
+  }
   if (!kind) throw new Error('No se reconoce si el archivo es de COMPRAS o VENTAS. Revisa el encabezado.');
   const records = [];
-  for (let i = 1; i < rows.length; i += 1) {
+  for (let i = start; i < rows.length; i += 1) {
     if (!rows[i].some((v) => String(v).trim() !== '')) continue;
     records.push(normalizeRecord(kind, headers, rows[i], { fileName, expectedRuc }));
   }
@@ -315,7 +333,7 @@ function readCsvEntry(entry, fileName, expectedRuc) {
 }
 
 /**
- * Procesa uno o varios ZIP/CSV de SIRE.
+ * Procesa uno o varios ZIP/CSV/TXT de SIRE.
  * @param {File[]} files
  * @param {{ expectedRuc?: string, onProgress?: (msg:string)=>void }} opts
  * @returns {Promise<{ files: object[], records: object[], warnings: string[] }>}
@@ -327,59 +345,47 @@ export async function parseSireFiles(files, opts = {}) {
   const globalWarnings = [];
   const seen = new Set();
 
+  const addParsed = (fileName, parsed) => {
+    const fresh = [];
+    let duplicates = 0;
+    for (const rec of parsed.records) {
+      if (seen.has(rec.dedupe_key)) { duplicates += 1; continue; }
+      seen.add(rec.dedupe_key);
+      fresh.push(rec);
+      allRecords.push(rec);
+    }
+    parsedFiles.push({
+      fileName,
+      kind: parsed.kind,
+      records: fresh,
+      duplicates,
+      warnings: [...new Set(fresh.flatMap((r) => r.warnings || []))],
+    });
+  };
+
   for (const file of files) {
     const lower = file.name.toLowerCase();
     onProgress(`Leyendo ${file.name}…`);
     try {
       if (lower.endsWith('.zip')) {
         const entries = await unzip(await file.arrayBuffer());
-        const csvEntries = entries.filter((e) => e.name.toLowerCase().endsWith('.csv'));
-        if (!csvEntries.length) {
-          parsedFiles.push({ fileName: file.name, kind: null, records: [], warnings: ['El ZIP no contiene archivos CSV.'], duplicates: 0 });
+        const dataEntries = entries.filter((e) => /\.(csv|txt)$/i.test(e.name));
+        if (!dataEntries.length) {
+          parsedFiles.push({ fileName: file.name, kind: null, records: [], warnings: ['El ZIP no contiene archivos CSV o TXT.'], duplicates: 0 });
           continue;
         }
-        for (const entry of csvEntries) {
+        for (const entry of dataEntries) {
           if (entry.error) {
             parsedFiles.push({ fileName: `${file.name}/${entry.name}`, kind: null, records: [], warnings: [entry.error], duplicates: 0 });
             continue;
           }
-          const parsed = readCsvEntry(entry, `${file.name}/${entry.name}`, expectedRuc);
-          const fresh = [];
-          let duplicates = 0;
-          for (const rec of parsed.records) {
-            if (seen.has(rec.dedupe_key)) { duplicates += 1; continue; }
-            seen.add(rec.dedupe_key);
-            fresh.push(rec);
-            allRecords.push(rec);
-          }
-          parsedFiles.push({
-            fileName: `${file.name}/${entry.name}`,
-            kind: parsed.kind,
-            records: fresh,
-            duplicates,
-            warnings: [...new Set(fresh.flatMap((r) => r.warnings || []))],
-          });
+          addParsed(`${file.name}/${entry.name}`, readTabularEntry(entry, `${file.name}/${entry.name}`, expectedRuc));
         }
-      } else if (lower.endsWith('.csv')) {
-        const text = decodeText(new Uint8Array(await file.arrayBuffer()));
-        const rows = parseCsv(text);
-        if (rows.length < 2) throw new Error('El CSV no contiene filas de datos.');
-        const headers = rows[0].map((h) => String(h).trim());
-        const kind = detectKind(headers, file.name);
-        if (!kind) throw new Error('No se reconoce si el archivo es de COMPRAS o VENTAS.');
-        const fresh = [];
-        let duplicates = 0;
-        for (let i = 1; i < rows.length; i += 1) {
-          if (!rows[i].some((v) => String(v).trim() !== '')) continue;
-          const rec = normalizeRecord(kind, headers, rows[i], { fileName: file.name, expectedRuc });
-          if (seen.has(rec.dedupe_key)) { duplicates += 1; continue; }
-          seen.add(rec.dedupe_key);
-          fresh.push(rec);
-          allRecords.push(rec);
-        }
-        parsedFiles.push({ fileName: file.name, kind, records: fresh, duplicates, warnings: [...new Set(fresh.flatMap((r) => r.warnings || []))] });
+      } else if (lower.endsWith('.csv') || lower.endsWith('.txt')) {
+        const entry = { name: file.name, data: new Uint8Array(await file.arrayBuffer()) };
+        addParsed(file.name, readTabularEntry(entry, file.name, expectedRuc));
       } else {
-        globalWarnings.push(`${file.name}: formato no soportado. Sube un ZIP de SIRE o un CSV.`);
+        globalWarnings.push(`${file.name}: formato no soportado. Sube un ZIP de SIRE o un CSV/TXT.`);
       }
     } catch (err) {
       parsedFiles.push({ fileName: file.name, kind: null, records: [], warnings: [err.message], duplicates: 0 });
