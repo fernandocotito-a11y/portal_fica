@@ -31,7 +31,7 @@ export function render(root) {
     testing: false,
     testResult: null,
     // Conserva lo escrito en el formulario entre re-renderizados (memoria del navegador).
-    form: { clientId: '', clientSecret: '', username: '', password: '' },
+    form: { clientId: '', clientSecret: '', ruc: '', solUser: '', password: '' },
   };
 
   root.innerHTML = `
@@ -154,7 +154,9 @@ export function render(root) {
           <form data-config-form novalidate style="margin-top:var(--space-4);display:grid;gap:var(--space-3);max-width:480px;">
             <div class="form-group" style="margin:0;"><label class="form-label">client_id</label><input class="form-input" name="clientId" autocomplete="off" value="${escapeHtml(f.clientId || '')}" /></div>
             <div class="form-group" style="margin:0;"><label class="form-label">client_secret</label><input class="form-input" name="clientSecret" type="password" autocomplete="new-password" value="${escapeHtml(f.clientSecret || '')}" /></div>
-            <div class="form-group" style="margin:0;"><label class="form-label">Usuario (RUC o RUC+usuario)</label><input class="form-input" name="username" placeholder="Ej. 20601705657 o 20601705657USUARIO" autocomplete="off" value="${escapeHtml(f.username || '')}" /></div>
+            <div class="form-group" style="margin:0;"><label class="form-label">RUC</label><input class="form-input" name="ruc" placeholder="11 dígitos" autocomplete="off" maxlength="11" value="${escapeHtml(f.ruc || '')}" /></div>
+            <div class="form-group" style="margin:0;"><label class="form-label">Usuario SOL</label><input class="form-input" name="solUser" placeholder="Ej. ABAINDCO" autocomplete="off" value="${escapeHtml(f.solUser || '')}" /></div>
+            <div class="text-muted" style="font-size:var(--font-size-xs);">Se enviará a SUNAT como: <code data-user-preview>${escapeHtml((f.ruc || '') + (f.solUser || '')) || '—'}</code></div>
             <div class="form-group" style="margin:0;"><label class="form-label">Clave SOL</label><input class="form-input" name="password" type="password" autocomplete="new-password" value="${escapeHtml(f.password || '')}" /></div>
             <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
               <button type="submit" class="btn btn--primary" data-save ${state.saving ? 'disabled' : ''}>${ICONS.check} Guardar credenciales</button>
@@ -206,22 +208,36 @@ export function render(root) {
     if (e.target.matches('[data-period]')) state.period = inputToPeriod(e.target.value) || CURRENT_PERIOD;
   });
 
+  // Vista previa en vivo del usuario que se enviará a SUNAT (RUC + usuario SOL).
+  viewRoot.addEventListener('input', (e) => {
+    if (!e.target.matches('[name="ruc"], [name="solUser"]')) return;
+    const ruc = String(content.querySelector('[name="ruc"]')?.value || '').replace(/\D/g, '');
+    const sol = String(content.querySelector('[name="solUser"]')?.value || '').trim().replace(/\s+/g, '');
+    const el = content.querySelector('[data-user-preview]');
+    if (el) el.textContent = (ruc + sol) || '—';
+  });
+
   viewRoot.addEventListener('submit', async (e) => {
     const form = e.target.closest('[data-config-form]');
     if (!form) return;
     e.preventDefault();
     const fd = new FormData(form);
     const data = Object.fromEntries(fd.entries());
+    const ruc = String(data.ruc || '').replace(/\D/g, '');
+    const solUser = String(data.solUser || '').trim().replace(/\s+/g, '');
+    const username = ruc + solUser;
     const missing = [];
     if (!data.clientId) missing.push('client_id');
     if (!data.clientSecret) missing.push('client_secret');
-    if (!data.username) missing.push('usuario/RUC');
+    if (!ruc) missing.push('RUC');
     if (!data.password) missing.push('Clave SOL');
     if (missing.length) { showToast(`Completa: ${missing.join(', ')}.`, 'error'); return; }
+    if (ruc.length !== 11) { showToast('El RUC debe tener 11 dígitos.', 'error'); return; }
     state.form = {
       clientId: data.clientId,
       clientSecret: data.clientSecret,
-      username: data.username,
+      ruc,
+      solUser,
       password: data.password,
     };
     state.saving = true;
@@ -230,7 +246,7 @@ export function render(root) {
       await sireService.saveCredentials({
         clientId: data.clientId,
         clientSecret: data.clientSecret,
-        username: data.username,
+        username,
         password: data.password,
       });
       showToast('Credenciales guardadas. Ahora puedes probar la conexión.');
@@ -247,14 +263,18 @@ export function render(root) {
     const form = content.querySelector('[data-config-form]');
     const fd = form ? new FormData(form) : null;
     const data = fd ? Object.fromEntries(fd.entries()) : {};
-    const allFilled = data.clientId && data.clientSecret && data.username && data.password;
+    const ruc = String(data.ruc || '').replace(/\D/g, '');
+    const solUser = String(data.solUser || '').trim().replace(/\s+/g, '');
+    const username = ruc + solUser;
+    const allFilled = data.clientId && data.clientSecret && ruc && data.password;
 
     // Guarda lo escrito para no perderlo al re-renderizar.
     if (allFilled) {
       state.form = {
         clientId: data.clientId,
         clientSecret: data.clientSecret,
-        username: data.username,
+        ruc,
+        solUser,
         password: data.password,
       };
     }
@@ -268,7 +288,7 @@ export function render(root) {
         await sireService.saveCredentials({
           clientId: data.clientId,
           clientSecret: data.clientSecret,
-          username: data.username,
+          username,
           password: data.password,
         });
         const s = await sireService.status();
