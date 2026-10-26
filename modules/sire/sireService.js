@@ -50,6 +50,11 @@ export const sireService = {
     return invoke('save', { clientId, clientSecret, username, password });
   },
 
+  /** Prueba solo el token contra SUNAT (diagnóstico). */
+  testConnection() {
+    return invoke('test');
+  },
+
   /** Descarga la propuesta de SUNAT (devuelve fileName + base64). */
   descargar(kind, period) {
     return invoke('descargar', { kind, period });

@@ -178,6 +178,44 @@ export default {
         return Response.json({ ok: true });
       }
 
+      if (action === "test") {
+        if (!isSuper) return Response.json({ error: "Solo el superadmin puede probar la conexión" }, { status: 403 });
+        const companyId = String(body.companyId || "");
+        if (!companyId) return Response.json({ error: "Falta empresa" }, { status: 400 });
+
+        const { data: cred } = await ctx.supabaseAdmin
+          .from("sunat_credentials")
+          .select("client_id, client_secret, username, password")
+          .eq("company_id", companyId)
+          .maybeSingle();
+        if (!cred) {
+          return Response.json({ ok: false, error: "No hay credenciales guardadas para esta empresa." });
+        }
+
+        const username = String(cred.username || "");
+        try {
+          const token = await getToken(cred as Credentials);
+          return Response.json({
+            ok: true,
+            message: "Token obtenido. El client_id, client_secret, usuario y Clave SOL son válidos.",
+            clientId: maskClientId(cred.client_id),
+            username: maskUser(username),
+            usernameLength: username.length,
+            tokenPreview: `${token.slice(0, 10)}…`,
+          });
+        } catch (e) {
+          const msg = String((e as Error)?.message || e);
+          return Response.json({
+            ok: false,
+            error: msg,
+            clientId: maskClientId(cred.client_id),
+            username: maskUser(username),
+            usernameLength: username.length,
+            hint: hintForTokenError(msg, username.length),
+          });
+        }
+      }
+
       if (action === "descargar") {
         const companyId = String(body.companyId || "");
         const kind = String(body.kind || "compra");
@@ -214,4 +252,27 @@ function maskClientId(id: string): string {
   const s = String(id || "");
   if (s.length <= 8) return "••••";
   return `${s.slice(0, 4)}••••${s.slice(-4)}`;
+}
+
+function maskUser(u: string): string {
+  const s = String(u || "");
+  if (s.length <= 4) return "••••";
+  return `${s.slice(0, 4)}••••${s.slice(-2)}`;
+}
+
+function hintForTokenError(msg: string, len: number): string {
+  const m = msg.toLowerCase();
+  if (m.includes("invalid_client") || m.includes("client authentication") || m.includes("unauthorized_client")) {
+    return "El client_id o client_secret no coinciden. Vuelve a copiar el ID y la Clave exactos de la aplicación en SUNAT.";
+  }
+  if (m.includes("invalid_scope") || m.includes("scope")) {
+    return "La credencial no tiene habilitado el servicio SIRE. Revisa la aplicación en SUNAT o consulta con tu proveedor de facturación.";
+  }
+  if (m.includes("autenticacion del usuario") || m.includes("access_denied")) {
+    if (len <= 11) {
+      return "Estás enviando SOLO el RUC (11 caracteres). Si usas un usuario secundario, el formato debe ser RUC + usuario, pegado y sin espacio (ej. 20601705657FACTURAONLINE). Si usas el usuario principal, revisa que la Clave SOL sea la correcta.";
+    }
+    return "Estás enviando RUC + usuario. Verifica que ese usuario exista en SOL, que esté habilitado y que la Clave SOL sea la de ESE usuario (no la del principal).";
+  }
+  return "Revisa los 4 datos con SUNAT (usuario, clave SOL, client_id y client_secret).";
 }
