@@ -294,9 +294,12 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
      clicable y muestra su composición por tasa (18% / 10% / otras).
   2. **PDT 621**: formulario mensual con casillas SUNAT, listo para **copiar** o
      **imprimir** y pasar los datos a SUNAT.
-  3. **Control de declaraciones**: fecha de vencimiento según cronograma SUNAT
-     (último dígito del RUC), fecha real de declaración y **interés moratorio
+  3. **Control de declaraciones**: fecha de vencimiento según el **cronograma
+     oficial SUNAT** (incluido para 2025–2026 y actualizable con el botón
+     *Actualizar desde SUNAT*), fecha real de declaración y **interés moratorio
      automático** (TIM 0.04% diario por día de atraso; editable manualmente).
+     La descarga se hace con la Edge Function `sunat-sire` (acción `cronograma`)
+     porque la página de SUNAT no permite lectura directa desde el navegador.
   4. **Saldos de créditos**: arrastre mes a mes del crédito fiscal IGV y de las
      percepciones/retenciones no aplicadas.
 - Los importes se recalculan siempre desde los módulos fuente; solo se guardan

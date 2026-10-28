@@ -18,6 +18,9 @@ import {
   round2, uitFor,
   recalculateAnnualTimeline, annualTotals,
 } from './declaracionesEngine.js';
+import {
+  vencimientoFor, descargarCronograma, cronogramaStatus,
+} from './cronogramaService.js';
 
 let mode = 'unknown';
 let checked = false;
@@ -33,8 +36,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-/* Cronograma SUNAT: día de vencimiento según el último dígito del RUC
-   (0→15, 1→16, …, 9→24) del mes siguiente al periodo declarado. */
+/* Cronograma SUNAT (respaldo): si no hay cronograma oficial para el ejercicio,
+   se estima el día según el último dígito del RUC (0→15, 1→16, …, 9→24). */
 const VENCIMIENTO_DIA = { 0: 15, 1: 16, 2: 17, 3: 18, 4: 19, 5: 20, 6: 21, 7: 22, 8: 23, 9: 24 };
 
 function rucLastDigit(ruc) {
@@ -42,8 +45,12 @@ function rucLastDigit(ruc) {
   return digits ? Number(digits.slice(-1)) : 0;
 }
 
-/** Fecha de vencimiento por defecto (YYYY-MM-DD) para un periodo. */
+/** Fecha de vencimiento por defecto (YYYY-MM-DD) para un periodo.
+ *  Usa el cronograma oficial SUNAT (descargado o incluido) y, si no existe,
+ *  estima con la regla histórica. */
 export function defaultVencimiento(year, month, ruc) {
+  const official = vencimientoFor(year, month, ruc);
+  if (official) return official;
   const day = VENCIMIENTO_DIA[rucLastDigit(ruc)] || 15;
   // month es 1-based: new Date(año, mes, día) cae en el mes siguiente.
   const d = new Date(Number(year), Number(month), day);
@@ -190,6 +197,30 @@ async function loadOverrides(companyId, year) {
   return map;
 }
 
+/** Borra el vencimiento guardado de los periodos indicados para que vuelvan
+ *  a seguir el cronograma oficial. */
+async function clearStoredVencimientos(companyId, year, months) {
+  if (!months.length) return;
+  if (mode === 'local') {
+    const key = periodsKey(companyId);
+    const raw = JSON.parse(localStorage.getItem(key) || '{}');
+    const yearMap = raw[year] || {};
+    for (const mes of months) {
+      if (yearMap[mes]) yearMap[mes].fecha_vencimiento = null;
+    }
+    raw[year] = yearMap;
+    localStorage.setItem(key, JSON.stringify(raw));
+    return;
+  }
+  const { error } = await supabase
+    .from('tax_declaration_periods')
+    .update({ fecha_vencimiento: null })
+    .eq('company_id', companyId)
+    .eq('anio', Number(year))
+    .in('mes', months);
+  if (error) throw new Error(error.message);
+}
+
 export const declaracionesService = {
   get mode() { return mode; },
   get lastError() { return lastError; },
@@ -283,6 +314,38 @@ export const declaracionesService = {
       .map((g) => ({ ...g, base: round2(g.base), igv: round2(g.igv) }))
       .sort((a, b) => b.base - a.base);
     return { rows: detail.sort((a, b) => String(b.issue_date || '').localeCompare(String(a.issue_date || ''))), groups: grouped };
+  },
+
+  /** Estado del cronograma de vencimientos del ejercicio. */
+  cronograma(year) {
+    return cronogramaStatus(year);
+  },
+
+  /**
+   * Descarga el cronograma oficial de SUNAT y lo aplica.
+   * Solo limpia los vencimientos guardados que coincidían con el cronograma
+   * anterior (es decir, los que nunca se ajustaron a mano).
+   */
+  async syncCronograma(year) {
+    const companyId = cid();
+    if (!companyId) throw new Error('No hay empresa activa.');
+    const company = authService.activeCompany() || {};
+    const previous = {};
+    for (let m = 1; m <= 12; m += 1) previous[m] = defaultVencimiento(year, m, company.ruc);
+
+    const data = await descargarCronograma(year);
+
+    await detectMode();
+    const overrides = await loadOverrides(companyId, year);
+    const automatic = [];
+    for (let m = 1; m <= 12; m += 1) {
+      const stored = overrides[m]?.fecha_vencimiento;
+      if (stored && stored === previous[m]) automatic.push(m);
+    }
+    await clearStoredVencimientos(companyId, year, automatic);
+
+    await this.refresh(year);
+    return { data, updated: automatic.length };
   },
 
   /** Saldos iniciales / configuración del ejercicio. */

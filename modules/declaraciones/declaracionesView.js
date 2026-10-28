@@ -501,6 +501,8 @@ export function render(root) {
   function renderControl() {
     const months = state.data.timeline.months;
     const totalInt = months.reduce((a, m) => a + Number(m.intereses || 0) + Number(m.interesesRenta || 0), 0);
+    const crono = declaracionesService.cronograma(state.year);
+    const cronoWhen = crono.fetchedAt ? new Date(crono.fetchedAt).toLocaleString('es-PE') : '';
     const rows = months.map((m) => {
       const st = statusInfo(m);
       return `<tr>
@@ -529,9 +531,21 @@ export function render(root) {
           </div>
         </div>
       </div>
+      <div class="card" style="margin-bottom:var(--space-4);">
+        <div class="card__body" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;">
+          <div>
+            <div class="cell-strong">Cronograma de vencimientos ${state.year}</div>
+            <div class="text-muted" style="font-size:var(--font-size-sm);">
+              ${escapeHtml(crono.label)}${cronoWhen ? ` · actualizado ${escapeHtml(cronoWhen)}` : ''} ·
+              <a href="${escapeHtml(crono.url)}" target="_blank" rel="noopener">ver cronograma en SUNAT</a>
+            </div>
+          </div>
+          <button type="button" class="btn" style="margin-left:auto;" data-sync-crono>${ICONS.arrowRight} Actualizar desde SUNAT</button>
+        </div>
+      </div>
       <div class="card">
         <div class="card__header"><div><h3 class="card__title">Control de declaraciones ${state.year}</h3>
-          <p class="card__subtitle">Vencimiento según cronograma SUNAT (último dígito del RUC); puedes ajustar la fecha real.</p></div></div>
+          <p class="card__subtitle">Vencimiento según cronograma oficial SUNAT; puedes ajustar la fecha real de declaración.</p></div></div>
         <div class="card__body" style="padding:0;">
           <div class="table-wrap">
             <table class="table">
@@ -786,9 +800,12 @@ export function render(root) {
     dialog.querySelector('form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
+      const autoVenc = declaracionesService.defaultVencimiento(state.year, mes, authService.activeCompany()?.ruc);
+      const typedVenc = String(fd.get('fecha_vencimiento') || '');
       try {
         await declaracionesService.savePeriod(state.year, mes, {
-          fecha_vencimiento: fd.get('fecha_vencimiento') || '',
+          // Si no se cambió la fecha, se guarda vacía para seguir el cronograma.
+          fecha_vencimiento: typedVenc && typedVenc !== autoVenc ? typedVenc : '',
           fecha_declaracion: fd.get('fecha_declaracion') || '',
           estado: fd.get('estado') || 'pendiente',
           interes_manual: fd.get('interes_manual') === 'on',
@@ -827,6 +844,25 @@ export function render(root) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  async function syncCronograma(btn) {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = 'Consultando SUNAT…';
+    try {
+      const { updated } = await declaracionesService.syncCronograma(state.year);
+      showToast(updated
+        ? `Cronograma ${state.year} actualizado desde SUNAT (${updated} vencimiento(s) automático(s) recalibrado(s)).`
+        : `Cronograma ${state.year} actualizado desde SUNAT.`);
+      await load();
+    } catch (err) {
+      const needsDeploy = /404|not found|failed to fetch|no encontrada/i.test(String(err.message || ''));
+      const hint = needsDeploy ? ' Vuelve a desplegar la Edge Function sunat-sire (acción "cronograma").' : '';
+      showToast(`No se pudo descargar el cronograma: ${err.message}.${hint} Se mantiene el cronograma incluido.`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  }
+
   /* ---------------------------- Eventos ---------------------------- */
 
   viewRoot.addEventListener('click', (e) => {
@@ -844,6 +880,9 @@ export function render(root) {
 
     if (e.target.closest('[data-saldos]')) { openSaldos(); return; }
     if (e.target.closest('[data-export]')) { exportCsv(); return; }
+
+    const syncCrono = e.target.closest('[data-sync-crono]');
+    if (syncCrono) { syncCronograma(syncCrono); return; }
 
     const copyBtn = e.target.closest('[data-copy-pdt]');
     if (copyBtn) {

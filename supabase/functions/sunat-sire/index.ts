@@ -9,6 +9,7 @@
 // Acciones (método POST, JSON body):
 //   { action: "status" }                          -> { configured, masked }
 //   { action: "save", clientId, clientSecret, username, password, companyId }
+//   { action: "cronograma", year }                -> { ok, months, source }
 //   { action: "descargar", kind: "compra"|"venta", period: "YYYYMM", companyId }
 // ============================================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -189,6 +190,81 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/* ------------------------- Cronograma de vencimientos ---------------------- */
+
+const MESES_ABBR: Record<string, number> = {
+  ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, oct: 10, nov: 11, dic: 12,
+};
+const GRUPOS_CRONO = ["0", "1", "2-3", "4-5", "6-7", "8-9", "bc"];
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+/** Extrae los vencimientos de la tabla publicada por SUNAT. */
+function parseCronograma(html: string, year: number) {
+  const months: Array<{ mes: number; dates: Record<string, string> }> = [];
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = rowRe.exec(html))) {
+    const cells = [...match[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)]
+      .map((c) => stripHtml(c[1]));
+    if (cells.length < GRUPOS_CRONO.length + 1) continue;
+    const head = normalizeText(cells[0]).match(/^([a-z]{3})-(\d{4})$/);
+    if (!head) continue;
+    const periodMonth = MESES_ABBR[head[1]];
+    const periodYear = Number(head[2]);
+    if (!periodMonth || periodYear !== year) continue;
+
+    const dates: Record<string, string> = {};
+    for (let i = 0; i < GRUPOS_CRONO.length; i += 1) {
+      const cell = normalizeText(cells[i + 1] || "");
+      const dm = cell.match(/^(\d{1,2})\s+([a-z]{3})(?:\s+(\d{4}))?$/);
+      if (!dm) { dates[GRUPOS_CRONO[i]] = ""; continue; }
+      const day = Number(dm[1]);
+      const month = MESES_ABBR[dm[2]];
+      if (!month) { dates[GRUPOS_CRONO[i]] = ""; continue; }
+      const explicitYear = dm[3] ? Number(dm[3]) : 0;
+      const deadlineYear = explicitYear || (month < periodMonth ? periodYear + 1 : periodYear);
+      dates[GRUPOS_CRONO[i]] =
+        `${deadlineYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+    months.push({ mes: periodMonth, dates });
+  }
+  return months.sort((a, b) => a.mes - b.mes);
+}
+
+async function fetchCronograma(year: number) {
+  const url = `https://www.sunat.gob.pe/orientacion/cronogramas/${year}/cObligacionMensual${year}.html`;
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) FICA-Portal/1.0",
+      Accept: "text/html,application/xhtml+xml",
+    },
+  });
+  if (!res.ok) throw new Error(`SUNAT respondió ${res.status} para el cronograma ${year}.`);
+  const html = await res.text();
+  const months = parseCronograma(html, year);
+  if (!months.length) {
+    throw new Error(`No se pudo interpretar el cronograma ${year} publicado por SUNAT.`);
+  }
+  return { months, source: url };
+}
+
 export default {
   fetch: withSupabase({ auth: "user" }, async (req, ctx) => {
     try {
@@ -276,6 +352,20 @@ export default {
             usernameLength: username.length,
             hint: hintForTokenError(msg, username.length),
           });
+        }
+      }
+
+      if (action === "cronograma") {
+        const year = Number(body.year);
+        if (!Number.isInteger(year) || year < 2020 || year > 2100) {
+          return Response.json({ error: "Ejercicio inválido" }, { status: 400 });
+        }
+        try {
+          const { months, source } = await fetchCronograma(year);
+          return Response.json({ ok: true, year, source, fetchedAt: new Date().toISOString(), months });
+        } catch (e) {
+          const msg = String((e as Error)?.message || e);
+          return Response.json({ ok: false, error: msg }, { status: 502 });
         }
       }
 
