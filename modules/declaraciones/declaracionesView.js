@@ -1,9 +1,10 @@
 /* ============================================================================
    declaracionesView.js — Declaraciones SUNAT · Liquidación IGV / Renta (621)
    ----------------------------------------------------------------------------
-   Dos vistas:
+   Reproduce los reportes del PDT 621:
      1. Matriz anual de liquidación (Enero → Diciembre) con totales.
-     2. Ficha mensual Formulario Virtual 621 (casillas SUNAT) en modal.
+     2. Ficha mensual Formulario Virtual 621 (desglose de casillas SUNAT) con
+        la "determinación" compacta (resumen del control) al inicio.
    Incluye formulario de saldos iniciales editables y ajustes por periodo.
    ========================================================================== */
 
@@ -17,72 +18,78 @@ const CURRENT_YEAR = now.getFullYear();
 
 const fmt = (v) => Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (v) => `${(Number(v || 0) * 100).toFixed(2)}%`;
+// Monto con negativos entre paréntesis (estilo PDT 621).
+const money = (v) => {
+  const n = Number(v || 0);
+  return n < 0 ? `(${fmt(Math.abs(n))})` : fmt(n);
+};
 
-/* Filas de la matriz anual. `get` recibe el resultado de un mes. */
+/* Filas de la matriz anual (reporte completo). */
 const MATRIX_ROWS = [
-  { section: 'IGV · Ventas' },
-  { key: 'base18V', label: 'Base gravada ventas 18%', get: (m) => m.base18V },
-  { key: 'igv18V', label: 'IGV ventas 18%', get: (m) => m.igv18V },
-  { key: 'base10V', label: 'Base gravada ventas 10%', get: (m) => m.base10V },
-  { key: 'igv10V', label: 'IGV ventas 10%', get: (m) => m.igv10V },
-  { section: 'IGV · Compras' },
-  { key: 'base18C', label: 'Base gravada compras 18%', get: (m) => m.base18C },
-  { key: 'igv18C', label: 'IGV compras 18%', get: (m) => m.igv18C },
-  { key: 'base10C', label: 'Base gravada compras 10%', get: (m) => m.base10C },
-  { key: 'igv10C', label: 'IGV compras 10%', get: (m) => m.igv10C },
-  { section: 'Determinación' },
-  { key: 'igvVentas', label: 'Débito fiscal (IGV ventas)', get: (m) => m.igvVentas, strong: true },
-  { key: 'igvCompras', label: 'Crédito fiscal (IGV compras)', get: (m) => m.igvCompras, strong: true },
-  { key: 'preliminar', label: 'Impuesto preliminar', get: (m) => m.preliminar },
-  { key: 'saldoIgvAnterior', label: 'Saldo a favor periodo anterior', get: (m) => m.saldoIgvAnterior, total: 'last' },
-  { section: 'Compensaciones' },
-  { key: 'percepAplic', label: 'Percepciones aplicadas', get: (m) => m.percepAplic },
-  { key: 'retenAplic', label: 'Retenciones aplicadas', get: (m) => m.retenAplic },
-  { section: 'Resultado IGV' },
-  { key: 'igvPorPagar', label: 'IGV a pagar', get: (m) => m.igvPorPagar, strong: true, hl: true },
-  { key: 'saldoFavorPeriodo', label: 'Saldo a favor IGV', get: (m) => m.saldoFavorPeriodo, hl: true },
-  { section: 'Renta (RMT)' },
-  { key: 'ventasNetasMes', label: 'Ingresos netos del mes', get: (m) => m.ventasNetasMes },
-  { key: 'ventasAcumuladas', label: 'Ingresos netos acumulados', get: (m) => m.ventasAcumuladas, total: 'last' },
-  { key: 'rentaPagar', label: 'Renta a pagar', get: (m) => m.rentaPagar, strong: true },
-  { section: 'Total' },
-  { key: 'totalAPagar', label: 'Total a pagar (IGV + Renta)', get: (m) => m.totalAPagar, strong: true, hl: true },
+  { section: 'IGV' },
+  { key: 'igvVentas', label: 'IGV VENTAS', get: (m) => m.igvVentas },
+  { key: 'igvCompras', label: '(-) IGV COMPRAS', get: (m) => m.igvCompras, minus: true },
+  { key: 'preliminar', label: 'IGV POR PAGAR / IGV A FAVOR', get: (m) => m.preliminar, strong: true },
+  { key: 'saldoIgvAnterior', label: '(-) SALDO ANTERIOR IGV A FAVOR', get: (m) => m.saldoIgvAnterior, minus: true, total: 'last' },
+  { key: 'igvNeto', label: 'SALDO DE IGV POR PAGAR O A FAVOR', get: (m) => m.igvNeto, strong: true },
+  { key: 'percepAplic', label: '(-) PERCEPCIONES', get: (m) => m.percepAplic, minus: true },
+  { key: 'saldoDespuesPercepciones', label: 'SALDO IMPUESTO POR PAGAR O A FAVOR', get: (m) => m.saldoDespuesPercepciones },
+  { key: 'retenAplic', label: '(-) RETENCIONES', get: (m) => m.retenAplic, minus: true },
+  { key: 'igvPorPagar', label: 'SALDO IMPUESTO POR PAGAR O A FAVOR', get: (m) => m.igvPorPagar, strong: true },
+  { key: 'intereses', label: 'INTERES TRIBUTARIO (0.04% DIARIO)', get: (m) => m.intereses },
+  { key: 'igvTotal', label: 'IGV TOTAL POR PAGAR', get: (m) => m.igvTotal, strong: true, hl: true },
+  { key: 'pagosPrevios', label: '(-) PAGOS EFECTUADOS', get: (m) => m.pagosPrevios, minus: true },
+  { key: 'igvRegularizar', label: 'IGV POR REGULARIZAR', get: (m) => m.igvRegularizar, strong: true, hl: true },
+  { section: 'RENTA (RMT)' },
+  { key: 'ventasNetasMes', label: 'VENTAS NETAS', get: (m) => m.ventasNetasMes },
+  { key: 'tasaRenta', label: '(%) COEFICIENTE (SEGÚN TIPO EMPRESA)', get: (m) => m.tasaRenta, pct: true, total: 'last' },
+  { key: 'rentaPagar', label: 'RENTA POR PAGAR', get: (m) => m.rentaPagar, strong: true },
+  { key: 'interesesRenta', label: 'INTERES TRIBUTARIO', get: (m) => m.interesesRenta },
+  { key: 'rentaTotal', label: 'RENTA TOTAL POR PAGAR', get: (m) => m.rentaTotal, strong: true },
+  { key: 'pagosPreviosRenta', label: '(-) PAGOS EFECTUADOS', get: (m) => m.pagosPreviosRenta, minus: true },
+  { key: 'rentaRegularizar', label: 'RENTA POR REGULARIZAR', get: (m) => m.rentaRegularizar, strong: true, hl: true },
 ];
 
 /* Casillas del Formulario Virtual 621. */
 const FICHA = [
   { section: 'IGV · Ventas' },
-  { casilla: '100', label: 'Base imponible — Ventas gravadas (18%)', value: (m) => m.base18V },
-  { casilla: '101', label: 'IGV — Ventas gravadas (18%)', value: (m) => m.igv18V },
-  { casilla: '172', label: 'Base imponible — Ventas gravadas (10%)', value: (m) => m.base10V, hideZero: true },
-  { casilla: '173', label: 'IGV — Ventas gravadas (10%)', value: (m) => m.igv10V, hideZero: true },
+  { casilla: '100', label: 'Ventas netas (base gravada)', value: (m) => m.baseGravadaV },
+  { casilla: '101', label: 'IGV ventas gravadas', value: (m) => m.igvVentas },
+  { casilla: '102', label: 'Descuentos concedidos y/o devoluciones (base)', value: () => 0, hideZero: true },
+  { casilla: '103', label: 'Descuentos y/o devoluciones (tributo)', value: () => 0, hideZero: true },
+  { casilla: '105', label: 'Ventas no gravadas (sin exportaciones)', value: (m) => m.baseNoGravadaV },
+  { casilla: '131', label: 'Total base ventas', value: (m) => (m.baseGravadaV || 0) + (m.baseNoGravadaV || 0) },
   { section: 'IGV · Compras' },
-  { casilla: '107', label: 'Base imponible — Compras gravadas (18%)', value: (m) => m.base18C },
-  { casilla: '108', label: 'IGV — Compras gravadas (18%)', value: (m) => m.igv18C },
-  { casilla: '174', label: 'Base imponible — Compras gravadas (10%)', value: (m) => m.base10C, hideZero: true },
-  { casilla: '175', label: 'IGV — Compras gravadas (10%)', value: (m) => m.igv10C, hideZero: true },
+  { casilla: '107', label: 'Compras netas destinadas a ventas gravadas (base)', value: (m) => m.baseGravadaC },
+  { casilla: '108', label: 'IGV compras (crédito fiscal)', value: (m) => m.igvCompras },
+  { casilla: '120', label: 'Compras internas no gravadas', value: (m) => m.baseNoGravadaC },
+  { casilla: '178', label: 'Total IGV compras (crédito fiscal)', value: (m) => m.igvCompras, strong: true },
+  { section: 'Renta · Régimen MYPE Tributario' },
+  { casilla: '301', label: 'Ingresos netos del mes (base)', value: (m) => m.ventasNetasMes },
+  { casilla: '312', label: 'Impuesto a pagar (renta)', value: (m) => m.rentaPagar },
+  { casilla: '315', label: 'Porcentaje', value: (m) => m.tasaRenta, pct: true },
+  { casilla: '380', label: 'Coeficiente', value: (m) => m.coeficienteRenta, raw: true },
   { section: 'Determinación del IGV' },
-  { casilla: '140', label: 'IGV — Débito fiscal (ventas)', value: (m) => m.igvVentas, strong: true },
-  { casilla: '145', label: 'IGV — Crédito fiscal (compras)', value: (m) => m.igvCompras, strong: true },
-  { casilla: '184', label: 'Impuesto resultante / saldo a favor (preliminar)', value: (m) => m.preliminar },
-  { casilla: '178', label: 'Saldo a favor del periodo anterior (IGV)', value: (m) => m.saldoIgvAnterior },
-  { casilla: '185', label: 'Saldo a favor del periodo (IGV)', value: (m) => m.saldoFavorPeriodo, hideZero: true },
-  { section: 'Percepciones del IGV' },
-  { casilla: '171', label: 'Percepciones del periodo', value: (m) => m.percepcionesMes },
-  { casilla: '168', label: 'Percepciones no aplicadas de periodos anteriores', value: (m) => m.percepcionesAnterior, hideZero: true },
-  { casilla: '164', label: 'Saldo de percepciones no aplicadas (resultante)', value: (m) => m.percepcionesNoAplicadas, hideZero: true },
-  { section: 'Retenciones del IGV' },
-  { casilla: '179', label: 'Retenciones del periodo', value: (m) => m.retencionesMes },
-  { casilla: '176', label: 'Retenciones no aplicadas de periodos anteriores', value: (m) => m.retencionesAnterior, hideZero: true },
-  { casilla: '165', label: 'Saldo de retenciones no aplicadas (resultante)', value: (m) => m.retencionesNoAplicadas, hideZero: true },
-  { section: 'Resultado IGV' },
-  { casilla: '188', label: 'IGV a pagar', value: (m) => m.igvPorPagar, strong: true, hl: true },
-  { section: 'Renta mensual (RMT)' },
-  { casilla: '301', label: 'Ingresos netos del mes', value: (m) => m.ventasNetasMes },
-  { casilla: '315', label: 'Ingresos netos acumulados', value: (m) => m.ventasAcumuladas },
-  { casilla: '312', label: 'Renta a pagar (pago a cuenta)', value: (m) => m.rentaPagar, strong: true },
-  { section: 'Total' },
-  { casilla: '681', label: 'Total a pagar (IGV + Renta)', value: (m) => m.totalAPagar, strong: true, hl: true },
+  { casilla: '140', label: 'Impuesto resultante o saldo a favor', value: (m) => m.preliminar, strong: true },
+  { casilla: '145', label: 'Saldo a favor del periodo anterior', value: (m) => m.saldoIgvAnterior },
+  { casilla: '184', label: 'Tributo a pagar o saldo a favor', value: (m) => m.igvNeto, strong: true },
+  { casilla: '171', label: 'Percepciones declaradas en el periodo', value: (m) => m.percepcionesMes },
+  { casilla: '168', label: 'Saldo de percepciones de periodos anteriores', value: (m) => m.percepcionesAnterior, hideZero: true },
+  { casilla: '164', label: 'Saldo de percepciones no aplicadas', value: (m) => m.percepcionesNoAplicadas, hideZero: true },
+  { casilla: '179', label: 'Retenciones declaradas en el periodo', value: (m) => m.retencionesMes },
+  { casilla: '176', label: 'Saldo de retenciones de periodos anteriores', value: (m) => m.retencionesAnterior, hideZero: true },
+  { casilla: '165', label: 'Saldo de retenciones no aplicadas', value: (m) => m.retencionesNoAplicadas, hideZero: true },
+  { casilla: '681', label: 'Sub total (IGV)', value: (m) => m.igvPorPagar, strong: true },
+  { casilla: '185', label: 'Pagos previos (IGV)', value: (m) => m.pagosPrevios },
+  { casilla: '187', label: 'Interés moratorio (IGV)', value: (m) => m.intereses },
+  { casilla: '188', label: 'Total deuda tributaria (IGV)', value: (m) => m.igvTotal, strong: true, hl: true },
+  { section: 'Determinación de la Renta' },
+  { casilla: '303', label: 'Impuesto resultante (renta)', value: (m) => m.rentaPagar },
+  { casilla: '304', label: 'Tributo a pagar o saldo a favor (renta)', value: (m) => m.rentaPagar },
+  { casilla: '682', label: 'Sub total (renta)', value: (m) => m.rentaPagar },
+  { casilla: '317', label: 'Pagos previos (renta)', value: (m) => m.pagosPreviosRenta },
+  { casilla: '319', label: 'Interés moratorio (renta)', value: (m) => m.interesesRenta },
+  { casilla: '324', label: 'Total deuda tributaria (renta)', value: (m) => m.rentaTotal, strong: true, hl: true },
 ];
 
 function yearOptions() {
@@ -114,7 +121,7 @@ export function render(root) {
   const state = {
     year: CURRENT_YEAR,
     busy: false,
-    data: null, // cache del servicio
+    data: null,
     error: '',
   };
 
@@ -147,6 +154,15 @@ export function render(root) {
     }
   }
 
+  /* ------------------------- Matriz anual ------------------------- */
+
+  function cellText(row, m) {
+    if (row.pct) return pct(row.get(m));
+    const v = Number(row.get(m) || 0);
+    if (row.minus) return v === 0 ? '0.00' : `(${fmt(Math.abs(v))})`;
+    return money(v);
+  }
+
   function matrixHtml() {
     const months = state.data.timeline.months;
 
@@ -154,9 +170,9 @@ export function render(root) {
       <thead>
         <tr>
           <th class="sticky-col">Concepto</th>
-          ${MONTHS.map((name, i) => `
-            <th class="cell-num month-click" data-month="${i + 1}" title="Ver Ficha 621 de ${escapeHtml(name)}">
-              ${escapeHtml(name)}<div class="text-muted" style="font-size:var(--font-size-xs);">Ficha 621</div>
+          ${months.map((m, i) => `
+            <th class="cell-num month-click" data-month="${m.mes}" title="Ver Ficha 621 de ${escapeHtml(MONTHS[i])}">
+              ${escapeHtml(MONTHS[i])}<div class="text-muted" style="font-size:var(--font-size-xs);">${String(m.mes).padStart(2, '0')}/${m.anio}</div>
             </th>`).join('')}
           <th class="cell-num total-col">Total</th>
         </tr>
@@ -166,12 +182,12 @@ export function render(root) {
       if (row.section) {
         return `<tr class="section-row"><td class="sticky-col" colspan="${months.length + 2}">${escapeHtml(row.section)}</td></tr>`;
       }
-      const cells = months.map((m) => `<td class="cell-num${row.strong ? ' cell-strong' : ''}">${fmt(row.get(m))}</td>`).join('');
-      const totalVal = annualTotalsForRow(row);
+      const cells = months.map((m) => `<td class="cell-num${row.strong ? ' cell-strong' : ''}">${cellText(row, m)}</td>`).join('');
+      const totalVal = totalForRow(row);
       return `<tr class="${row.hl ? 'row-hl' : ''}">
         <td class="sticky-col${row.strong ? ' cell-strong' : ''}">${escapeHtml(row.label)}</td>
         ${cells}
-        <td class="cell-num total-col${row.strong ? ' cell-strong' : ''}">${fmt(totalVal)}</td>
+        <td class="cell-num total-col${row.strong ? ' cell-strong' : ''}">${totalCellText(row, totalVal)}</td>
       </tr>`;
     }).join('');
 
@@ -183,9 +199,7 @@ export function render(root) {
     </div>`;
   }
 
-  // Valor de la columna "Total" por fila: suma, o el último mes para las
-  // filas acumulativas (saldo a favor anterior, ingresos acumulados).
-  function annualTotalsForRow(row) {
+  function totalForRow(row) {
     const months = state.data.timeline.months;
     if (row.total === 'last') {
       const last = months[months.length - 1];
@@ -194,17 +208,23 @@ export function render(root) {
     return months.reduce((acc, m) => acc + (Number(row.get(m)) || 0), 0);
   }
 
+  function totalCellText(row, value) {
+    if (row.pct) return pct(value);
+    const v = Number(value || 0);
+    if (row.minus) return v === 0 ? '0.00' : `(${fmt(Math.abs(v))})`;
+    return money(v);
+  }
+
   function statsHtml() {
     const t = state.data.totals;
-    const months = state.data.timeline.months;
-    const last = months[months.length - 1] || {};
+    const last = state.data.timeline.months[state.data.timeline.months.length - 1] || {};
     return `
       <div class="stats">
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.briefcase}</span><div><div class="stat-card__value">${fmt(t.igvVentas)}</div><div class="stat-card__label">IGV ventas (débito) ${state.year}</div></div></div>
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.building}</span><div><div class="stat-card__value">${fmt(t.igvCompras)}</div><div class="stat-card__label">IGV compras (crédito) ${state.year}</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.briefcase}</span><div><div class="stat-card__value">${fmt(t.igvVentas)}</div><div class="stat-card__label">IGV ventas ${state.year}</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.building}</span><div><div class="stat-card__value">${fmt(t.igvCompras)}</div><div class="stat-card__label">IGV compras ${state.year}</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${fmt(t.igvPorPagar)}</div><div class="stat-card__label">IGV a pagar ${state.year}</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${fmt(t.rentaPagar)}</div><div class="stat-card__label">Renta a pagar ${state.year}</div></div></div>
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${fmt(t.totalAPagar)}</div><div class="stat-card__label">Total a pagar ${state.year}</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${fmt(t.igvRegularizar + t.rentaRegularizar)}</div><div class="stat-card__label">Total a regularizar ${state.year}</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.shield}</span><div><div class="stat-card__value">${fmt(last.saldoFavorPeriodo)}</div><div class="stat-card__label">Saldo a favor final</div></div></div>
       </div>`;
   }
@@ -220,7 +240,7 @@ export function render(root) {
             </select>
           </div>
           <div class="text-muted" style="font-size:var(--font-size-sm);">
-            UIT ${state.data ? fmt(state.data.balances.uit) : '—'} · Tasa renta: 1.00% hasta 300 UIT, 1.50% por encima
+            UIT ${state.data ? fmt(state.data.balances.uit) : '—'} · Renta RMT: 1.00% hasta 300 UIT, 1.50% por encima
           </div>
           <div style="margin-left:auto;display:flex;gap:var(--space-2);">
             <button type="button" class="btn" data-saldos>${ICONS.edit} Saldos iniciales</button>
@@ -271,17 +291,42 @@ export function render(root) {
 
   /* ------------------------- Modales ------------------------- */
 
+  function compactHtml(m) {
+    const lines = [
+      { label: 'IMPUESTO RESULTANTE', value: m.preliminar },
+      { label: '(-) CRÉDITO FISCAL ANTERIOR', value: m.saldoIgvAnterior, minus: true },
+      { label: 'IMPUESTO NETO', value: m.igvNeto, strong: true },
+      { label: '(-) PERCEPCIONES APLICADAS', value: m.percepAplic, minus: true },
+      { label: '(-) RETENCIONES APLICADAS', value: m.retenAplic, minus: true },
+      { label: 'IMPUESTO NETO POR PAGAR', value: m.igvPorPagar, strong: true, hl: true },
+      { label: 'CRÉDITO FISCAL (SALDO A FAVOR)', value: m.saldoFavorPeriodo },
+      { label: 'PERCEPCIONES NO APLICADAS', value: m.percepcionesNoAplicadas },
+      { label: 'RETENCIONES NO APLICADAS', value: m.retencionesNoAplicadas },
+    ];
+    return lines.map((l) => {
+      const v = Number(l.value || 0);
+      const text = l.minus ? (v === 0 ? '0.00' : `(${fmt(Math.abs(v))})`) : money(v);
+      return `<tr class="${l.hl ? 'row-hl' : ''}">
+        <td${l.strong ? ' style="font-weight:600;"' : ''}>${escapeHtml(l.label)}</td>
+        <td class="cell-num${l.strong ? ' cell-strong' : ''}">${text}</td>
+      </tr>`;
+    }).join('');
+  }
+
   function openFicha(mes) {
     const m = state.data.timeline.months.find((x) => x.mes === mes);
     if (!m) return;
     const monthName = MONTHS[mes - 1];
+
     const rows = FICHA.filter((r) => r.section || !r.hideZero || Number(r.value(m) || 0) !== 0)
       .map((r) => {
         if (r.section) return `<tr class="section-row"><td colspan="3">${escapeHtml(r.section)}</td></tr>`;
+        const raw = Number(r.value(m) || 0);
+        const text = r.pct ? pct(raw) : r.raw ? raw.toFixed(4) : money(raw);
         return `<tr class="${r.hl ? 'row-hl' : ''}">
           <td class="cell-num casilla">${r.casilla}</td>
           <td>${escapeHtml(r.label)}</td>
-          <td class="cell-num${r.strong ? ' cell-strong' : ''}">${fmt(r.value(m))}</td>
+          <td class="cell-num${r.strong ? ' cell-strong' : ''}">${text}</td>
         </tr>`;
       }).join('');
 
@@ -289,6 +334,17 @@ export function render(root) {
       <div class="text-muted" style="font-size:var(--font-size-sm);margin-bottom:var(--space-3);">
         ${escapeHtml(monthName)} ${m.anio} · Estado: <strong>${m.estado === 'cerrado' ? 'Cerrado' : 'Calculado'}</strong> · Tasa renta ${pct(m.tasaRenta)} · UIT ${fmt(m.uit)}
       </div>
+
+      <div class="card" style="margin-bottom:var(--space-4);">
+        <div class="card__header"><div><h4 class="card__title" style="font-size:var(--font-size-md);">Resumen del control</h4></div></div>
+        <div class="card__body" style="padding:0;">
+          <table class="table">
+            <thead><tr><th>Concepto</th><th class="cell-num">Importe (S/)</th></tr></thead>
+            <tbody>${compactHtml(m)}</tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table class="table">
           <thead><tr><th class="cell-num">Casilla</th><th>Concepto</th><th class="cell-num">Importe (S/)</th></tr></thead>
@@ -336,21 +392,16 @@ export function render(root) {
     dialog.querySelector('form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      const patch = {
+      await declaracionesService.saveBalances(state.year, {
         saldo_igv_anterior: Number(fd.get('saldo_igv_anterior') || 0),
         percepciones_ant: Number(fd.get('percepciones_ant') || 0),
         retenciones_ant: Number(fd.get('retenciones_ant') || 0),
         uit: Number(fd.get('uit') || 0),
         coeficiente_renta: Number(fd.get('coeficiente_renta') || 0),
         is_manual_initial_balance: fd.get('is_manual_initial_balance') === 'on',
-      };
-      try {
-        await declaracionesService.saveBalances(state.year, patch);
-        showToast('Saldos iniciales guardados.');
-        close();
-      } catch (err) {
-        showToast(err.message || String(err), 'error');
-      }
+      });
+      showToast('Saldos iniciales guardados.');
+      close();
     });
   }
 
@@ -359,10 +410,14 @@ export function render(root) {
     if (!m) return;
     const body = `
       <form data-ajustes-form>
-        <div class="form-group"><label class="form-label">Pagos previos</label>
+        <div class="form-group"><label class="form-label">Pagos previos (IGV)</label>
           <input class="form-input" type="number" step="0.01" name="pagos_previos" value="${Number(m.pagosPrevios || 0).toFixed(2)}"></div>
-        <div class="form-group"><label class="form-label">Intereses</label>
+        <div class="form-group"><label class="form-label">Interés moratorio (IGV)</label>
           <input class="form-input" type="number" step="0.01" name="intereses" value="${Number(m.intereses || 0).toFixed(2)}"></div>
+        <div class="form-group"><label class="form-label">Pagos previos (Renta)</label>
+          <input class="form-input" type="number" step="0.01" name="pagos_previos_renta" value="${Number(m.pagosPreviosRenta || 0).toFixed(2)}"></div>
+        <div class="form-group"><label class="form-label">Interés moratorio (Renta)</label>
+          <input class="form-input" type="number" step="0.01" name="intereses_renta" value="${Number(m.interesesRenta || 0).toFixed(2)}"></div>
         <div class="form-group"><label class="form-label">Estado</label>
           <select class="form-input" name="estado">
             <option value="calculado"${m.estado === 'calculado' ? ' selected' : ''}>Calculado</option>
@@ -381,6 +436,8 @@ export function render(root) {
       await declaracionesService.savePeriod(state.year, mes, {
         pagos_previos: Number(fd.get('pagos_previos') || 0),
         intereses: Number(fd.get('intereses') || 0),
+        pagos_previos_renta: Number(fd.get('pagos_previos_renta') || 0),
+        intereses_renta: Number(fd.get('intereses_renta') || 0),
         estado: fd.get('estado') || 'calculado',
       });
       showToast('Ajustes guardados.');

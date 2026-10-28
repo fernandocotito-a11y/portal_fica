@@ -2,19 +2,19 @@
    declaracionesEngine.js — Motor de cálculo de Liquidación IGV / Renta (FV 621)
    ----------------------------------------------------------------------------
    Funciones PURAS (sin I/O). Reciben los importes ya extraídos por el servicio
-   y aplican la normativa SUNAT:
+   y aplican la normativa SUNAT (PDT 621).
 
-     - IGV Ventas  = base18 * 0.18 + base10 * 0.10   (16% IGV + 2% IPM)
-     - IGV Compras = base18 * 0.18 + base10 * 0.10   (crédito fiscal)
-     - Determinación con cascada de arrastre:
-         1) Saldo a favor de IGV del periodo anterior (casilla 178)
-         2) Percepciones del periodo + saldo anterior (171 + 168)  -> 164
-         3) Retenciones del periodo + saldo anterior (179 + 176)   -> 165
-     - Renta mensual RMT: ingresos netos acumulados vs 300 UIT (1.0% / 1.5%).
+   El IGV y las bases se toman DIRECTAMENTE de los registros SIRE (ya
+   solarizados y con los centavos reales), no se recalculan como base × 0.18,
+   para coincidir exactamente con el PDT.
+
+   Determinación en cascada (casillas 140/145/184/171/168/179/176):
+     1) Saldo a favor de IGV del periodo anterior (casilla 145)
+     2) Percepciones del periodo + saldo anterior (171 + 168)  -> 164
+     3) Retenciones del periodo + saldo anterior (179 + 176)   -> 165
+   Renta mensual RMT: ingresos netos acumulados vs 300 UIT (1.0% / 1.5%).
    ========================================================================== */
 
-export const RATE_18 = 0.18;
-export const RATE_10 = 0.10;
 export const LIMIT_UIT = 300;
 export const TASA_1 = 0.01;   // hasta 300 UIT
 export const TASA_2 = 0.015;  // por encima de 300 UIT
@@ -38,15 +38,17 @@ export function uitFor(year) {
  *
  * @param {object} periodData
  *   { anio, mes,
- *     base18V, igv18V, base10V, igv10V,      // ventas
- *     base18C, igv18C, base10C, igv10C,      // compras
+ *     igvVentas, igvCompras,                    // IGV real de SIRE
+ *     baseGravadaV, baseGravadaC,               // bases gravadas
+ *     baseNoGravadaV, baseNoGravadaC,           // bases no gravadas (informativo)
  *     percepcionesMes, retencionesMes,
- *     ventasNetasMes,                        // para renta RMT
- *     pagosPrevios = 0, intereses = 0 }
+ *     ventasNetasMes,                           // ingresos netos (renta RMT)
+ *     pagosPrevios = 0, intereses = 0,
+ *     pagosPreviosRenta = 0, interesesRenta = 0,
+ *     estado = 'calculado' }
  * @param {object} previousPeriodState
  *   { saldoIgvFavor, percepcionesNoAplicadas, retencionesNoAplicadas, ventasAcumuladas }
- * @param {object} config
- *   { uit, coeficienteRenta }
+ * @param {object} config { uit, coeficienteRenta }
  * @returns {object} resultado del mes con `nextState` para encadenar.
  */
 export function calculatePeriodTaxes(periodData, previousPeriodState, config = {}) {
@@ -59,26 +61,26 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
   const anio = Number(periodData.anio || 0);
   const mes = Number(periodData.mes || 0);
   const uit = Number(config.uit) || uitFor(anio);
+  const coeficienteRenta = Number(config.coeficienteRenta || 0);
 
-  /* --- IGV --- */
-  const igv18V = round2(periodData.igv18V);
-  const igv10V = round2(periodData.igv10V);
-  const igv18C = round2(periodData.igv18C);
-  const igv10C = round2(periodData.igv10C);
-  const base18V = round2(periodData.base18V);
-  const base10V = round2(periodData.base10V);
-  const base18C = round2(periodData.base18C);
-  const base10C = round2(periodData.base10C);
-
-  const igvVentas = round2(igv18V + igv10V);
-  const igvCompras = round2(igv18C + igv10C);
+  /* --- IGV (valores reales de SIRE) --- */
+  const igvVentas = round2(periodData.igvVentas || 0);
+  const igvCompras = round2(periodData.igvCompras || 0);
+  const baseGravadaV = round2(periodData.baseGravadaV || 0);
+  const baseGravadaC = round2(periodData.baseGravadaC || 0);
+  const baseNoGravadaV = round2(periodData.baseNoGravadaV || 0);
+  const baseNoGravadaC = round2(periodData.baseNoGravadaC || 0);
   const preliminar = round2(igvVentas - igvCompras);
+
+  const saldoIgvAnterior = round2(prev.saldoIgvFavor);
+  // Saldo tras aplicar el crédito fiscal anterior (puede ser negativo = a favor).
+  const igvNeto = round2(preliminar - saldoIgvAnterior);
 
   // Cascada de arrastre de créditos.
   let resto;
   let saldoFavorPeriodo;
   if (preliminar >= 0) {
-    const despuesSaldoAnt = round2(preliminar - prev.saldoIgvFavor);
+    const despuesSaldoAnt = round2(preliminar - saldoIgvAnterior);
     if (despuesSaldoAnt >= 0) {
       resto = despuesSaldoAnt;
       saldoFavorPeriodo = 0;
@@ -88,7 +90,7 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
     }
   } else {
     resto = 0;
-    saldoFavorPeriodo = round2(prev.saldoIgvFavor + -preliminar);
+    saldoFavorPeriodo = round2(saldoIgvAnterior + -preliminar);
   }
 
   const percepDisp = round2((periodData.percepcionesMes || 0) + prev.percepcionesNoAplicadas);
@@ -102,22 +104,28 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
   const retenNoAplic = round2(retenDisp - retenAplic);
 
   const igvPorPagar = round2(Math.max(0, resto));
+  const saldoDespuesPercepciones = round2(Math.max(0, igvNeto - percepAplic));
 
   /* --- Renta mensual (RMT) --- */
   const ventasNetasMes = round2(periodData.ventasNetasMes || 0);
   const ventasAcumuladas = round2(prev.ventasAcumuladas + ventasNetasMes);
   let tasaRenta = TASA_1;
   if (ventasAcumuladas > LIMIT_UIT * uit) {
-    const coef = Number(config.coeficienteRenta || 0);
-    tasaRenta = Math.max(TASA_2, coef);
+    tasaRenta = Math.max(TASA_2, coeficienteRenta);
   }
   const rentaPagar = round2(ventasNetasMes * tasaRenta);
 
-  /* --- Totales --- */
+  /* --- Totales IGV / Renta --- */
   const pagosPrevios = round2(periodData.pagosPrevios || 0);
   const intereses = round2(periodData.intereses || 0);
-  const subtotal = round2(igvPorPagar + rentaPagar);
-  const totalAPagar = round2(Math.max(0, subtotal - pagosPrevios) + intereses);
+  const pagosPreviosRenta = round2(periodData.pagosPreviosRenta || 0);
+  const interesesRenta = round2(periodData.interesesRenta || 0);
+
+  const igvTotal = round2(igvPorPagar + intereses);
+  const igvRegularizar = round2(Math.max(0, igvTotal - pagosPrevios));
+  const rentaTotal = round2(rentaPagar + interesesRenta);
+  const rentaRegularizar = round2(Math.max(0, rentaTotal - pagosPreviosRenta));
+  const totalAPagar = round2(igvRegularizar + rentaRegularizar);
 
   const nextState = {
     saldoIgvFavor: saldoFavorPeriodo,
@@ -131,11 +139,13 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
     mes,
     period: `${anio}${String(mes).padStart(2, '0')}`,
 
-    base18V, igv18V, base10V, igv10V,
-    base18C, igv18C, base10C, igv10C,
-    igvVentas, igvCompras, preliminar,
+    igvVentas, igvCompras,
+    baseGravadaV, baseGravadaC,
+    baseNoGravadaV, baseNoGravadaC,
+    preliminar,
 
-    saldoIgvAnterior: round2(prev.saldoIgvFavor),
+    saldoIgvAnterior,
+    igvNeto,
     saldoFavorPeriodo,
     percepcionesMes: round2(periodData.percepcionesMes || 0),
     percepcionesAnterior: round2(prev.percepcionesNoAplicadas),
@@ -145,16 +155,24 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
     retencionesAnterior: round2(prev.retencionesNoAplicadas),
     retencionesNoAplicadas: retenNoAplic,
     retenDisp, retenAplic, retenNoAplic,
+    saldoDespuesPercepciones,
     igvPorPagar,
 
     ventasNetasMes,
     ventasAcumuladas,
     uit,
+    coeficienteRenta,
     tasaRenta,
     rentaPagar,
 
     pagosPrevios,
     intereses,
+    pagosPreviosRenta,
+    interesesRenta,
+    igvTotal,
+    igvRegularizar,
+    rentaTotal,
+    rentaRegularizar,
     totalAPagar,
     estado: periodData.estado || 'calculado',
 
@@ -192,7 +210,9 @@ export function annualTotals(months) {
   const t = {
     igvVentas: 0, igvCompras: 0, igvPorPagar: 0, saldoFavorPeriodo: 0,
     percepAplic: 0, retenAplic: 0, rentaPagar: 0, totalAPagar: 0,
-    ventasNetas: 0, base18V: 0, base10V: 0, base18C: 0, base10C: 0,
+    ventasNetas: 0, intereses: 0, interesesRenta: 0,
+    pagosPrevios: 0, pagosPreviosRenta: 0,
+    igvTotal: 0, igvRegularizar: 0, rentaTotal: 0, rentaRegularizar: 0,
   };
   for (const m of months) {
     t.igvVentas = round2(t.igvVentas + m.igvVentas);
@@ -204,10 +224,14 @@ export function annualTotals(months) {
     t.rentaPagar = round2(t.rentaPagar + m.rentaPagar);
     t.totalAPagar = round2(t.totalAPagar + m.totalAPagar);
     t.ventasNetas = round2(t.ventasNetas + m.ventasNetasMes);
-    t.base18V = round2(t.base18V + m.base18V);
-    t.base10V = round2(t.base10V + m.base10V);
-    t.base18C = round2(t.base18C + m.base18C);
-    t.base10C = round2(t.base10C + m.base10C);
+    t.intereses = round2(t.intereses + m.intereses);
+    t.interesesRenta = round2(t.interesesRenta + m.interesesRenta);
+    t.pagosPrevios = round2(t.pagosPrevios + m.pagosPrevios);
+    t.pagosPreviosRenta = round2(t.pagosPreviosRenta + m.pagosPreviosRenta);
+    t.igvTotal = round2(t.igvTotal + m.igvTotal);
+    t.igvRegularizar = round2(t.igvRegularizar + m.igvRegularizar);
+    t.rentaTotal = round2(t.rentaTotal + m.rentaTotal);
+    t.rentaRegularizar = round2(t.rentaRegularizar + m.rentaRegularizar);
   }
   return t;
 }

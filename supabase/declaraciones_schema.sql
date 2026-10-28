@@ -35,6 +35,8 @@ create table if not exists public.tax_declaration_periods (
   mes int not null check (mes between 1 and 12),
   pagos_previos numeric(14, 2) not null default 0,
   intereses numeric(14, 2) not null default 0,
+  pagos_previos_renta numeric(14, 2) not null default 0,
+  intereses_renta numeric(14, 2) not null default 0,
   estado text not null default 'calculado' check (estado in ('calculado', 'cerrado')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

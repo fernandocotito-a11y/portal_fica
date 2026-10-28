@@ -12,9 +12,8 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import { taxService } from '../compras/taxService.js';
 import { retencionService } from '../retencion/retencionService.js';
-import { baseGravadaOf, igvOf } from '../compras/comprasConfig.js';
 import {
-  round2, RATE_18, RATE_10, uitFor,
+  round2, uitFor,
   recalculateAnnualTimeline, annualTotals,
 } from './declaracionesEngine.js';
 
@@ -74,48 +73,33 @@ function periodsKey(companyId) {
   return `fica.declaraciones.periods.${companyId}`;
 }
 
-/** Clasifica la base gravada en 18% / 10% según la relación IGV / base. */
-function splitByRate(rows, kind) {
-  let base18 = 0;
-  let base10 = 0;
-  for (const r of rows) {
-    const base = baseGravadaOf(r, kind);
-    if (!base) continue;
-    const igv = igvOf(r, kind);
-    const ratio = igv / base;
-    if (Math.abs(ratio - RATE_10) < Math.abs(ratio - RATE_18)) base10 += base;
-    else base18 += base;
-  }
-  return { base18: round2(base18), base10: round2(base10) };
-}
-
 /** Extrae los importes del mes desde los módulos fuente. */
 function extractSourceMonth(year, month) {
   const period = `${year}${String(month).padStart(2, '0')}`;
   const ventas = taxService.summary('venta', period);
   const compras = taxService.summary('compra', period);
-  const ventaSplit = splitByRate(taxService.list('venta', { period }), 'venta');
-  const compraSplit = splitByRate(taxService.list('compra', { period }), 'compra');
   const percepcionesMes = retencionService.summary('percepcion', period).retenido;
   const retencionesMes = retencionService.summary('retencion', period).retenido;
-  const ventasNetasMes = round2((ventas.base || 0) - (ventas.other || 0));
+  // "Ingresos netos" (ventas netas) para la renta RMT = base gravada del mes,
+  // igual que el PDT 621 (casilla 301 = base gravada neta de descuentos).
+  const ventasNetasMes = round2(ventas.baseGravada || 0);
 
   return {
     anio: year,
     mes: month,
-    base18V: ventaSplit.base18,
-    igv18V: round2(ventaSplit.base18 * RATE_18),
-    base10V: ventaSplit.base10,
-    igv10V: round2(ventaSplit.base10 * RATE_10),
-    base18C: compraSplit.base18,
-    igv18C: round2(compraSplit.base18 * RATE_18),
-    base10C: compraSplit.base10,
-    igv10C: round2(compraSplit.base10 * RATE_10),
+    igvVentas: round2(ventas.igv || 0),
+    igvCompras: round2(compras.igv || 0),
+    baseGravadaV: round2(ventas.baseGravada || 0),
+    baseGravadaC: round2(compras.baseGravada || 0),
+    baseNoGravadaV: round2(ventas.baseNoGravada || 0),
+    baseNoGravadaC: round2(compras.baseNoGravada || 0),
     percepcionesMes,
     retencionesMes,
     ventasNetasMes,
     pagosPrevios: 0,
     intereses: 0,
+    pagosPreviosRenta: 0,
+    interesesRenta: 0,
     estado: 'calculado',
   };
 }
@@ -192,6 +176,8 @@ export const declaracionesService = {
       if (ov) {
         src.pagosPrevios = Number(ov.pagos_previos || 0);
         src.intereses = Number(ov.intereses || 0);
+        src.pagosPreviosRenta = Number(ov.pagos_previos_renta || 0);
+        src.interesesRenta = Number(ov.intereses_renta || 0);
         src.estado = ov.estado || 'calculado';
       }
       sourceMonths.push(src);
@@ -264,6 +250,8 @@ export const declaracionesService = {
       mes: Number(mes),
       pagos_previos: round2(patch.pagos_previos || 0),
       intereses: round2(patch.intereses || 0),
+      pagos_previos_renta: round2(patch.pagos_previos_renta || 0),
+      intereses_renta: round2(patch.intereses_renta || 0),
       estado: patch.estado || 'calculado',
       updated_at: nowIso(),
     };
