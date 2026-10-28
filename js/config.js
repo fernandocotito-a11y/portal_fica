@@ -103,9 +103,9 @@ export const MODULES = [
   {
     key: 'declaraciones',
     name: 'Declaraciones SUNAT',
-    description: 'Control y cronograma de declaraciones juradas.',
+    description: 'Liquidación mensual de IGV y Renta (FV 621).',
     icon: ic('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/>'),
-    status: 'soon',
+    status: 'active',
     adminOnly: false,
     group: 'operations',
   },
@@ -197,5 +197,6 @@ export function moduleHash(key) {
   if (key === 'compras') return '#/compras';
   if (key === 'retenciones') return '#/retencion';
   if (key === 'sire') return '#/sire';
+  if (key === 'declaraciones') return '#/declaraciones';
   return `#/module/${key}`;
 }

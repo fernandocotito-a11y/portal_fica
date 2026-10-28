@@ -87,6 +87,13 @@ const routes = [
     loader: () => import('../modules/sire/sireView.js'),
   },
   {
+    pattern: /^\/declaraciones\/?$/,
+    guard: 'auth',
+    company: true,
+    permission: 'declaraciones',
+    loader: () => import('../modules/declaraciones/declaracionesView.js'),
+  },
+  {
     pattern: /^\/module\/([\w-]+)\/?$/,
     guard: 'auth',
     company: true,

@@ -1046,3 +1046,63 @@ dialog.modal::backdrop {
   border-color: var(--color-gold);
   box-shadow: 0 0 0 3px var(--color-gold-soft);
 }
+
+/* ============================ Declaraciones SUNAT ======================== */
+.decl-matrix {
+  min-width: 1200px;
+}
+.decl-matrix thead th {
+  text-align: right;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.decl-matrix thead th.month-click {
+  cursor: pointer;
+}
+.decl-matrix thead th.month-click:hover {
+  color: var(--color-primary);
+  background: var(--color-cream-dark);
+}
+.decl-matrix .sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  text-align: left;
+  font-weight: 500;
+  border-right: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.decl-matrix thead .sticky-col {
+  z-index: 2;
+  background: var(--color-cream);
+  font-weight: 600;
+}
+.decl-matrix .total-col {
+  font-weight: 700;
+  color: var(--color-primary);
+  background: var(--color-cream);
+}
+.decl-matrix .section-row td {
+  background: var(--color-cream-dark);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-primary);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.decl-matrix .row-hl td {
+  background: var(--color-gold-soft);
+}
+.decl-matrix .row-hl td.cell-strong {
+  color: var(--color-primary);
+}
+.decl-matrix tbody tr:hover td.sticky-col {
+  background: var(--color-cream);
+}
+.decl-matrix tbody tr.row-hl:hover td {
+  background: var(--color-gold-soft);
+}
+.casilla {
+  font-weight: 700;
+  color: var(--color-gold);
+}
