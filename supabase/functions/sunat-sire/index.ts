@@ -12,7 +12,8 @@
 //   { action: "cronograma", year }                -> { ok, months, source }
 //   { action: "descargar", kind: "compra"|"venta", period: "YYYYMM", companyId }
 // ============================================================================
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// El import de tipos de JSR (@supabase/functions-js) es opcional y hacía
+// fallar el bundle cuando jsr.io no responde; se omite a propósito.
 import { withSupabase } from "jsr:@supabase/server@^1";
 
 const TOKEN_URL = (clientId: string) =>
