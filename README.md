@@ -142,6 +142,7 @@ Portal/
 │   ├── compras/            # Registro de compras/ventas e importación SIRE
 │   ├── retencion/          # Agentes de Retención / Percepción (SUNAT)
 │   ├── sire/               # SIRE: conexión en línea con SUNAT
+│   ├── declaraciones/      # Liquidación IGV / Renta (FV 621)
 │   └── placeholder/        # Maqueta de módulos futuros
 │
 └── supabase/
@@ -153,6 +154,7 @@ Portal/
     ├── compras_glosa_schema.sql # Migración: glosa / observación por comprobante
     ├── retencion_schema.sql # Tablas de Agentes de Retención / Percepción
     ├── sire_credentials_schema.sql # Credenciales de API SUNAT (por empresa)
+    ├── declaraciones_schema.sql # Liquidación IGV / Renta (saldos y ajustes)
     └── functions/           # Edge Functions
         ├── invite-user/    # Invitación de usuarios por correo
         ├── sbs-rates/      # Parámetros AFP desde la SBS
@@ -193,7 +195,8 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 | **Compras y Ventas** (importación SIRE ZIP/CSV, registro SUNAT editable, resumen IGV) | ✅ Activo |
 | **Agentes de Retención** (importación de retenciones/percepciones SUNAT y reporte ordenado) | ✅ Activo |
 | **SIRE** (conexión en línea con SUNAT para actualizar compras y ventas) | ✅ Activo |
-| Declaraciones, Reportes | ⏳ Próximamente |
+| **Declaraciones SUNAT** (liquidación mensual IGV / Renta RMT, matriz anual y Ficha 621) | ✅ Activo |
+| Reportes Gerenciales | ⏳ Próximamente |
 
 ### Compras y Ventas / SIRE
 
@@ -275,6 +278,24 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   Function `sunat-sire` (`supabase functions deploy sunat-sire --no-verify-jwt`,
   requiere la CLI de Supabase y estar autenticado con `supabase login`).
 - La importación manual de ZIP/CSV/TXT sigue disponible como respaldo.
+
+### Declaraciones SUNAT · Liquidación IGV / Renta
+
+- Consolida los módulos de **Compras/Ventas** y **Retenciones/Percepciones** para
+  calcular la **liquidación mensual de IGV y Renta (Formulario Virtual 621)**.
+- **IGV**: base gravada 18% (16% IGV + 2% IPM) y 10% (Ley 31556). El impuesto
+  preliminar (débito − crédito) se compensa en cascada con el **saldo a favor
+  anterior**, luego **percepciones** y finalmente **retenciones**; los excedentes
+  no aplicados se arrastran al siguiente periodo (casillas 164/165).
+- **Renta (RMT)**: ingresos netos acumulados vs **300 UIT**; tasa 1.00% hasta el
+  límite y 1.50% por encima (o coeficiente si se define).
+- Vistas: **matriz anual** (Enero→Diciembre con totales) y **Ficha 621** por mes
+  con el desglose de casillas SUNAT. Saldos iniciales y ajustes por periodo
+  (pagos previos, intereses, estado) editables.
+- Los importes se recalculan siempre desde los módulos fuente; solo se guardan
+  los datos manuales. Requiere ejecutar `supabase/declaraciones_schema.sql`
+  (tablas `declaraciones_balances` y `tax_declaration_periods`, con RLS); si no
+  existe, funciona en modo local con `localStorage`.
 
 ---
 
