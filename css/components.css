@@ -1106,3 +1106,27 @@ dialog.modal::backdrop {
   font-weight: 700;
   color: var(--color-gold);
 }
+
+/* IGV clicable: abre el desglose por tasa (18% / 10%). */
+.igv-click {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.igv-click:hover {
+  color: var(--color-primary);
+  background: var(--color-gold-soft);
+}
+
+.decl-pdt {
+  min-width: 560px;
+}
+.decl-pdt thead th {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.text-danger {
+  color: #b42318;
+  font-weight: 600;
+}

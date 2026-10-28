@@ -37,11 +37,30 @@ create table if not exists public.tax_declaration_periods (
   intereses numeric(14, 2) not null default 0,
   pagos_previos_renta numeric(14, 2) not null default 0,
   intereses_renta numeric(14, 2) not null default 0,
-  estado text not null default 'calculado' check (estado in ('calculado', 'cerrado')),
+  fecha_declaracion date,
+  fecha_vencimiento date,
+  interes_manual boolean not null default false,
+  estado text not null default 'pendiente' check (estado in ('pendiente', 'declarado')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (company_id, anio, mes)
 );
+
+-- 2.1) Migración para instalaciones previas -----------------------------------
+-- Agrega las columnas de control de fechas si la tabla ya existía y normaliza
+-- los estados antiguos ('calculado' → 'pendiente', 'cerrado' → 'declarado').
+alter table public.tax_declaration_periods
+  add column if not exists fecha_declaracion date,
+  add column if not exists fecha_vencimiento date,
+  add column if not exists interes_manual boolean not null default false;
+
+alter table public.tax_declaration_periods drop constraint if exists tax_declaration_periods_estado_check;
+update public.tax_declaration_periods set estado = 'pendiente' where estado = 'calculado';
+update public.tax_declaration_periods set estado = 'declarado' where estado = 'cerrado';
+alter table public.tax_declaration_periods
+  alter column estado set default 'pendiente';
+alter table public.tax_declaration_periods
+  add constraint tax_declaration_periods_estado_check check (estado in ('pendiente', 'declarado'));
 
 -- 3) RLS ---------------------------------------------------------------------
 create or replace function public.can_access_company(p_company uuid)

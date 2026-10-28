@@ -289,9 +289,16 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   no aplicados se arrastran al siguiente periodo (casillas 164/165).
 - **Renta (RMT)**: ingresos netos acumulados vs **300 UIT**; tasa 1.00% hasta el
   límite y 1.50% por encima (o coeficiente si se define).
-- Vistas: **matriz anual** (Enero→Diciembre con totales) y **Ficha 621** por mes
-  con el desglose de casillas SUNAT. Saldos iniciales y ajustes por periodo
-  (pagos previos, intereses, estado) editables.
+- Vistas (pestañas):
+  1. **Matriz anual** (Enero→Diciembre con totales). El IGV de ventas/compras es
+     clicable y muestra su composición por tasa (18% / 10% / otras).
+  2. **PDT 621**: formulario mensual con casillas SUNAT, listo para **copiar** o
+     **imprimir** y pasar los datos a SUNAT.
+  3. **Control de declaraciones**: fecha de vencimiento según cronograma SUNAT
+     (último dígito del RUC), fecha real de declaración y **interés moratorio
+     automático** (TIM 0.04% diario por día de atraso; editable manualmente).
+  4. **Saldos de créditos**: arrastre mes a mes del crédito fiscal IGV y de las
+     percepciones/retenciones no aplicadas.
 - Los importes se recalculan siempre desde los módulos fuente; solo se guardan
   los datos manuales. Requiere ejecutar `supabase/declaraciones_schema.sql`
   (tablas `declaraciones_balances` y `tax_declaration_periods`, con RLS); si no

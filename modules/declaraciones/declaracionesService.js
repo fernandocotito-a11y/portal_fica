@@ -12,6 +12,8 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import { taxService } from '../compras/taxService.js';
 import { retencionService } from '../retencion/retencionService.js';
+import { baseGravadaOf, igvOf, isSolarized } from '../compras/comprasConfig.js';
+import { exchangeRateService } from '../compras/exchangeRateService.js';
 import {
   round2, uitFor,
   recalculateAnnualTimeline, annualTotals,
@@ -29,6 +31,40 @@ function cid() {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+/* Cronograma SUNAT: día de vencimiento según el último dígito del RUC
+   (0→15, 1→16, …, 9→24) del mes siguiente al periodo declarado. */
+const VENCIMIENTO_DIA = { 0: 15, 1: 16, 2: 17, 3: 18, 4: 19, 5: 20, 6: 21, 7: 22, 8: 23, 9: 24 };
+
+function rucLastDigit(ruc) {
+  const digits = String(ruc || '').replace(/\D/g, '');
+  return digits ? Number(digits.slice(-1)) : 0;
+}
+
+/** Fecha de vencimiento por defecto (YYYY-MM-DD) para un periodo. */
+export function defaultVencimiento(year, month, ruc) {
+  const day = VENCIMIENTO_DIA[rucLastDigit(ruc)] || 15;
+  // month es 1-based: new Date(año, mes, día) cae en el mes siguiente.
+  const d = new Date(Number(year), Number(month), day);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Tipo de cambio a soles para el detalle de IGV. */
+function penRate(rec) {
+  if (isSolarized(rec)) return 1;
+  if (String(rec.currency || 'PEN').toUpperCase() === 'PEN') return 1;
+  const own = Number(rec.exchange_rate || 0);
+  if (own > 1) return own;
+  return Number(exchangeRateService.rateFor(rec.issue_date, rec.currency)?.rate || 0) || 1;
+}
+
+/** Clasifica la tasa de IGV de un comprobante (18%, 10% u otra). */
+function rateBucket(rate) {
+  if (!(rate > 0)) return '0%';
+  if (Math.abs(rate - 0.18) < 0.005) return '18%';
+  if (Math.abs(rate - 0.10) < 0.005) return '10%';
+  return `${(rate * 100).toFixed(2)}%`;
 }
 
 function isMissingTable(err) {
@@ -162,6 +198,7 @@ export const declaracionesService = {
   async refresh(year) {
     const companyId = cid();
     if (!companyId) throw new Error('No hay empresa activa.');
+    const company = authService.activeCompany() || {};
     await detectMode();
     await taxService.refresh();
     await retencionService.refresh();
@@ -172,14 +209,15 @@ export const declaracionesService = {
     const sourceMonths = [];
     for (let m = 1; m <= 12; m += 1) {
       const src = extractSourceMonth(year, m);
-      const ov = overrides[m];
-      if (ov) {
-        src.pagosPrevios = Number(ov.pagos_previos || 0);
-        src.intereses = Number(ov.intereses || 0);
-        src.pagosPreviosRenta = Number(ov.pagos_previos_renta || 0);
-        src.interesesRenta = Number(ov.intereses_renta || 0);
-        src.estado = ov.estado || 'calculado';
-      }
+      const ov = overrides[m] || {};
+      src.pagosPrevios = Number(ov.pagos_previos || 0);
+      src.pagosPreviosRenta = Number(ov.pagos_previos_renta || 0);
+      src.fechaVencimiento = ov.fecha_vencimiento || defaultVencimiento(year, m, company.ruc);
+      src.fechaDeclaracion = ov.fecha_declaracion || '';
+      src.interesManual = !!ov.interes_manual;
+      src.intereses = Number(ov.intereses || 0);
+      src.interesesRenta = Number(ov.intereses_renta || 0);
+      src.estado = ov.estado || 'pendiente';
       sourceMonths.push(src);
     }
 
@@ -208,6 +246,43 @@ export const declaracionesService = {
   /** Devuelve el último timeline cacheado (null si aún no se calculó). */
   current() {
     return cache;
+  },
+
+  /**
+   * Desglose del IGV de un periodo por tasa (18% / 10% / otras).
+   * Sirve para verificar cómo se compone el IGV de compras o ventas.
+   */
+  igvDetail(kind, period) {
+    const rows = taxService.list(kind, { period });
+    const detail = [];
+    const groups = new Map();
+    for (const r of rows) {
+      const rate = penRate(r);
+      const base = round2(baseGravadaOf(r, kind) * rate);
+      const igv = round2(igvOf(r) * rate);
+      if (base === 0 && igv === 0) continue;
+      const bucket = rateBucket(base > 0 ? igv / base : 0);
+      detail.push({
+        id: r.id,
+        issue_date: r.issue_date,
+        doc_type: r.doc_type,
+        series: r.series,
+        number: r.number,
+        counterparty_name: r.counterparty_name,
+        base,
+        igv,
+        bucket,
+      });
+      const g = groups.get(bucket) || { bucket, count: 0, base: 0, igv: 0 };
+      g.count += 1;
+      g.base += base;
+      g.igv += igv;
+      groups.set(bucket, g);
+    }
+    const grouped = [...groups.values()]
+      .map((g) => ({ ...g, base: round2(g.base), igv: round2(g.igv) }))
+      .sort((a, b) => b.base - a.base);
+    return { rows: detail.sort((a, b) => String(b.issue_date || '').localeCompare(String(a.issue_date || ''))), groups: grouped };
   },
 
   /** Saldos iniciales / configuración del ejercicio. */
@@ -239,11 +314,15 @@ export const declaracionesService = {
     return cache;
   },
 
-  /** Ajuste manual de un periodo (pagos previos, intereses, estado). */
+  /** Ajuste manual de un periodo (fechas de control, pagos previos, estado). */
   async savePeriod(year, mes, patch) {
     const companyId = cid();
     if (!companyId) throw new Error('No hay empresa activa.');
     await detectMode();
+    const dateOrNull = (value) => {
+      const v = String(value || '').slice(0, 10);
+      return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+    };
     const row = {
       company_id: companyId,
       anio: Number(year),
@@ -252,7 +331,10 @@ export const declaracionesService = {
       intereses: round2(patch.intereses || 0),
       pagos_previos_renta: round2(patch.pagos_previos_renta || 0),
       intereses_renta: round2(patch.intereses_renta || 0),
-      estado: patch.estado || 'calculado',
+      fecha_declaracion: dateOrNull(patch.fecha_declaracion),
+      fecha_vencimiento: dateOrNull(patch.fecha_vencimiento),
+      interes_manual: !!patch.interes_manual,
+      estado: patch.estado || 'pendiente',
       updated_at: nowIso(),
     };
     if (mode === 'local') {

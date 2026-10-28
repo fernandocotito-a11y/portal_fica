@@ -13,11 +13,17 @@
      2) Percepciones del periodo + saldo anterior (171 + 168)  -> 164
      3) Retenciones del periodo + saldo anterior (179 + 176)   -> 165
    Renta mensual RMT: ingresos netos acumulados vs 300 UIT (1.0% / 1.5%).
+
+   Interés moratorio (casilla 187/319): se calcula automáticamente con los días
+   de atraso entre la fecha de vencimiento y la fecha real de declaración
+   (o la fecha de hoy si aún no se declaró), a la TIM diaria del 0.04%.
+   Se puede reemplazar por un importe manual (interesManual = true).
    ========================================================================== */
 
 export const LIMIT_UIT = 300;
 export const TASA_1 = 0.01;   // hasta 300 UIT
 export const TASA_2 = 0.015;  // por encima de 300 UIT
+export const TIM_DIARIO = 0.0004; // 0.04% de interés moratorio diario
 
 /** UIT por ejercicio (S/). */
 export const UIT_DEFAULTS = { 2024: 5150, 2025: 5350, 2026: 5400, 2027: 5650 };
@@ -33,6 +39,18 @@ export function uitFor(year) {
   return UIT_DEFAULTS[Number(year)] || 5400;
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Días calendario entre dos fechas ISO (YYYY-MM-DD). */
+function daysBetween(fromIso, toIso) {
+  const a = new Date(`${fromIso}T00:00:00`);
+  const b = new Date(`${toIso}T00:00:00`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 0;
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
 /**
  * Calcula la liquidación de un periodo.
  *
@@ -43,9 +61,14 @@ export function uitFor(year) {
  *     baseNoGravadaV, baseNoGravadaC,           // bases no gravadas (informativo)
  *     percepcionesMes, retencionesMes,
  *     ventasNetasMes,                           // ingresos netos (renta RMT)
- *     pagosPrevios = 0, intereses = 0,
- *     pagosPreviosRenta = 0, interesesRenta = 0,
- *     estado = 'calculado' }
+ *     pagosPrevios = 0,
+ *     pagosPreviosRenta = 0,
+ *     fechaVencimiento = '',                    // YYYY-MM-DD (cronograma SUNAT)
+ *     fechaDeclaracion = '',                    // YYYY-MM-DD real (vacío = sin declarar)
+ *     tasaInteresDiaria = TIM_DIARIO,           // 0.04% por defecto
+ *     interesManual = false,                    // true = usar intereses / interesesRenta
+ *     intereses = 0, interesesRenta = 0,
+ *     estado = 'pendiente' }
  * @param {object} previousPeriodState
  *   { saldoIgvFavor, percepcionesNoAplicadas, retencionesNoAplicadas, ventasAcumuladas }
  * @param {object} config { uit, coeficienteRenta }
@@ -117,9 +140,21 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
 
   /* --- Totales IGV / Renta --- */
   const pagosPrevios = round2(periodData.pagosPrevios || 0);
-  const intereses = round2(periodData.intereses || 0);
   const pagosPreviosRenta = round2(periodData.pagosPreviosRenta || 0);
-  const interesesRenta = round2(periodData.interesesRenta || 0);
+
+  // Interés moratorio: días de atraso entre vencimiento y declaración real
+  // (o hoy si aún no se declaró). TIM 0.04% diario por defecto.
+  const tasaInteres = Number(periodData.tasaInteresDiaria || 0) || TIM_DIARIO;
+  const fechaVencimiento = String(periodData.fechaVencimiento || '');
+  const fechaDeclaracion = String(periodData.fechaDeclaracion || '');
+  const fechaEfectiva = fechaDeclaracion || todayIso();
+  const diasAtraso = fechaVencimiento ? Math.max(0, daysBetween(fechaVencimiento, fechaEfectiva)) : 0;
+  const interesesAuto = round2(igvPorPagar * tasaInteres * diasAtraso);
+  const interesesRentaAuto = round2(rentaPagar * tasaInteres * diasAtraso);
+
+  const interesManual = periodData.interesManual === true;
+  const intereses = interesManual ? round2(periodData.intereses || 0) : interesesAuto;
+  const interesesRenta = interesManual ? round2(periodData.interesesRenta || 0) : interesesRentaAuto;
 
   const igvTotal = round2(igvPorPagar + intereses);
   const igvRegularizar = round2(Math.max(0, igvTotal - pagosPrevios));
@@ -174,7 +209,14 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
     rentaTotal,
     rentaRegularizar,
     totalAPagar,
-    estado: periodData.estado || 'calculado',
+    fechaVencimiento,
+    fechaDeclaracion,
+    tasaInteres,
+    diasAtraso,
+    interesesAuto,
+    interesesRentaAuto,
+    interesManual,
+    estado: periodData.estado || 'pendiente',
 
     nextState,
   };
