@@ -273,10 +273,36 @@ export function render(root) {
       </tr>`).join('');
   }
 
+  function diagnosticHtml(files) {
+    const parsed = files.find((f) => (f.previewRows || []).length) || files[0];
+    const rows = (parsed?.previewRows || []).slice(0, 15);
+    if (!rows.length) return '';
+    return `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);">
+      <div class="card__header"><div>
+        <h4 class="card__title" style="font-size:var(--font-size-md);">No se reconoció el formato del archivo</h4>
+        <p class="card__subtitle">Se leyó el archivo, pero ninguna fila coincidió con el reporte de SUNAT. Estas son las primeras filas detectadas:</p>
+      </div></div>
+      <div class="card__body" style="padding:0;overflow:auto;">
+        <table class="table" style="min-width:640px;">
+          <tbody>${rows.map((r) => `<tr>${r.map((c) => `<td style="font-size:var(--font-size-xs);white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(String(c || '').slice(0, 80))}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div class="card__body" style="border-top:1px solid var(--color-border);">
+        <div class="text-muted" style="font-size:var(--font-size-sm);">
+          Descarga el reporte desde <strong>SOL → Empresas → Comprobantes de pago → Consulta de comprobantes emitidos/recibidos</strong>
+          y súbelo sin convertirlo ni cambiarle el nombre. Si el archivo es un PDF, expórtalo primero a Excel.
+        </div>
+      </div>
+    </div>`;
+  }
+
   function renderImport() {
     const files = state.parsed?.files || [];
     const records = state.parsed?.records || [];
     const warnings = state.parsed?.warnings || [];
+    const duplicates = files.reduce((n, f) => n + Number(f.duplicates || 0), 0);
+    const onlyDuplicates = files.length > 0 && records.length === 0 && duplicates > 0;
+    const noRecords = files.length > 0 && records.length === 0 && !onlyDuplicates;
     return `
       ${localBanner()}
       <div class="card">
@@ -310,6 +336,8 @@ export function render(root) {
             </div>
           ` : ''}
 
+          ${noRecords ? diagnosticHtml(files) : ''}
+          ${onlyDuplicates ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body"><strong>Sin registros nuevos.</strong><p class="text-muted" style="margin-top:var(--space-2);">Las ${duplicates} fila(s) de este archivo están repetidas dentro del mismo archivo.</p></div></div>` : ''}
           ${warnings.length ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body">${warnings.map((w) => `<div style="font-size:var(--font-size-sm);">${ICONS.info} ${escapeHtml(w)}</div>`).join('')}</div></div>` : ''}
         </div>
       </div>`;
@@ -468,7 +496,13 @@ export function render(root) {
       state.parsed = res;
       state.importStatus = '';
       renderContent();
-      if (!res.records.length) showToast('No se encontraron documentos válidos en los archivos.', 'error');
+      if (!res.records.length) {
+        const dup = res.files.reduce((n, f) => n + Number(f.duplicates || 0), 0);
+        showToast(
+          dup ? `Las ${dup} fila(s) están repetidas dentro del archivo.` : 'No se encontraron documentos válidos en los archivos.',
+          dup ? 'success' : 'error',
+        );
+      }
     } catch (err) {
       const message = err.message || String(err);
       state.importStatus = message;
@@ -518,7 +552,12 @@ export function render(root) {
     const tab = e.target.closest('[data-tab]');
     if (tab) { setTab(tab.dataset.tab); return; }
 
-    if (e.target.closest('[data-import]')) { setTab('importar'); return; }
+    if (e.target.closest('[data-import]')) {
+      setTab('importar');
+      // Abre el selector en el mismo clic (evita que parezca que "no pasa nada").
+      content.querySelector('[data-files]')?.click();
+      return;
+    }
     if (e.target.closest('[data-retry]')) { loading = true; renderContent(); load(); return; }
 
     if (e.target.closest('[data-drop]') || e.target.closest('[data-drop] button')) {
@@ -578,7 +617,14 @@ export function render(root) {
   });
 
   viewRoot.addEventListener('change', (e) => {
-    if (e.target.matches('[data-files]')) { handleFiles(e.target.files); return; }
+    if (e.target.matches('[data-files]')) {
+      const input = e.target;
+      const selected = Array.from(input.files || []);
+      // Permite volver a seleccionar el mismo archivo si el primer intento falló.
+      input.value = '';
+      handleFiles(selected);
+      return;
+    }
     if (e.target.matches('[data-period]')) {
       state.period = inputToPeriod(e.target.value) || CURRENT_PERIOD;
       state.page = 1;

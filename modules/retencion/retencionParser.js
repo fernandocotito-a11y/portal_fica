@@ -104,10 +104,21 @@ const DATA_COLS = {
   docTipo: 0, serie: 1, numero: 2, fecha: 3, total: 4, nroPago: 5, pagado: 6, retenido: 7, neto: 8,
 };
 
+/** Devuelve el texto de la celda que coincide con `re` (la etiqueta). */
+function labelCell(cells, re) {
+  for (const cell of cells) if (re.test(norm(cell))) return String(cell || '');
+  return '';
+}
+
 /** Devuelve la celda que sigue a la que coincide con `re` (búsqueda por etiqueta). */
 function labelValue(cells, re) {
-  for (let i = 0; i < cells.length - 1; i += 1) {
-    if (re.test(norm(cells[i]))) return cells[i + 1] || '';
+  for (let i = 0; i < cells.length; i += 1) {
+    if (!re.test(norm(cells[i]))) continue;
+    const next = cells[i + 1];
+    if (next != null && String(next).trim()) return next;
+    // Algunos reportes traen "Periodo: 01/09/2026 - 30/09/2026" en una sola celda.
+    const inline = String(cells[i]).match(/:\s*(.+)$/);
+    if (inline) return inline[1].trim();
   }
   return '';
 }
@@ -128,9 +139,9 @@ function rowsToRecords(rows, meta) {
       continue;
     }
 
-    if (has(/^emisor/)) {
+    if (has(/^emisor/) || has(/^agente de (retenci|percepci)/)) {
       block = {
-        agente: parseRucNombre(labelValue(cells, /^emisor/)),
+        agente: parseRucNombre(labelValue(cells, /^(emisor|agente)/)),
         comprobante: parseSerieNumero(labelValue(cells, /comprobante/)),
       };
       inData = false;
@@ -139,8 +150,8 @@ function rowsToRecords(rows, meta) {
 
     if (!block) continue;
 
-    if (has(/^receptor/)) {
-      block.receptor = parseRucNombre(labelValue(cells, /^receptor/));
+    if (has(/^receptor/) || has(/^(proveedor|adquirente)/)) {
+      block.receptor = parseRucNombre(labelValue(cells, /^(receptor|proveedor|adquirente)/));
       block.fecha = parseDate(labelValue(cells, /fecha de emisi/));
       continue;
     }
@@ -149,11 +160,11 @@ function rowsToRecords(rows, meta) {
       block.total = parseAmount(labelValue(cells, /^importe total/));
       block.tasa = parseAmount(labelValue(cells, /^tasa/));
       block.estado = labelValue(cells, /^estado/);
-      block.kind = /percib/i.test(labelValue(cells, /^importe total/)) ? 'percepcion' : 'retencion';
+      block.kind = /percib/i.test(labelCell(cells, /^importe total/)) ? 'percepcion' : 'retencion';
       continue;
     }
 
-    if (has(/^tipo de documento/)) { inData = true; continue; }
+    if (has(/^tipo de (documento|comprobante)/)) { inData = true; continue; }
 
     if (inData && cells.some((c) => c !== '')) {
       const docTipo = cells[DATA_COLS.docTipo] || '';
@@ -161,6 +172,129 @@ function rowsToRecords(rows, meta) {
         records.push(makeRecord(block, cells, period, meta));
       }
     }
+  }
+  // Si el reporte no trae bloques "Emisor/Receptor", se intenta leer como
+  // tabla plana (una fila por comprobante, con encabezados en columnas).
+  if (!records.length) return rowsToRecordsFlat(rows, meta);
+  return records;
+}
+
+/* ------------------- Lector alternativo: tabla plana ---------------------- */
+
+function columnIndex(cells, patterns, exclude = null) {
+  for (let i = 0; i < cells.length; i += 1) {
+    const value = norm(cells[i]);
+    if (!value) continue;
+    if (exclude && exclude.test(value)) continue;
+    for (const re of patterns) if (re.test(value)) return i;
+  }
+  return -1;
+}
+
+function findHeaderRow(rows) {
+  const limit = Math.min(rows.length, 60);
+  for (let i = 0; i < limit; i += 1) {
+    const cells = rows[i].map((c) => norm(c));
+    if (!cells.some(Boolean)) continue;
+    const hasSerie = cells.some((c) => /serie/.test(c));
+    const hasNumero = cells.some((c) => /n(u|ú)mero/.test(c));
+    const hasComprobante = cells.some((c) => /comprobante/.test(c) && !/tipo/.test(c));
+    const hasAmount = cells.some((c) => /(importe|monto|total)/.test(c));
+    if ((hasSerie || hasComprobante) && (hasNumero || hasComprobante) && hasAmount) return i;
+  }
+  return -1;
+}
+
+function rowsToRecordsFlat(rows, meta) {
+  const headerIndex = findHeaderRow(rows);
+  if (headerIndex < 0) return [];
+  const header = rows[headerIndex];
+  const idx = {
+    tipo: columnIndex(header, [/tipo.*(documento|comprobante)/, /^tipo$/]),
+    serie: columnIndex(header, [/^serie$/, /serie/]),
+    numero: columnIndex(header, [/^n(u|ú)mero$/, /n(u|ú)mero/]),
+    comprobante: columnIndex(header, [/comprobante/], /tipo/),
+    fecha: columnIndex(header, [/fecha.*emisi/, /^fecha$/]),
+    compFecha: columnIndex(header, [/fecha.*(retenci|percep|comprobante)/]),
+    total: columnIndex(header, [/total.*comprobante/, /importe total/, /^total$/]),
+    pagado: columnIndex(header, [/importe pagado/, /^pagado$/]),
+    retenido: columnIndex(header, [/retenci(o|ó)n/, /retenid/, /percepci(o|ó)n/, /percibid/, /monto.*(retenido|percibido)/]),
+    neto: columnIndex(header, [/neto/]),
+    nroPago: columnIndex(header, [/nro.*pago/, /n(u|ú)mero.*pago/]),
+    agenteRuc: columnIndex(header, [/ruc.*(emisor|agente)/, /^ruc emisor$/]),
+    agenteNombre: columnIndex(header, [/raz(o|ó)n social.*(emisor|agente)/, /nombre.*(emisor|agente)/, /^emisor$/]),
+    receptorRuc: columnIndex(header, [/ruc.*(receptor|proveedor|adquirente)/]),
+    receptorNombre: columnIndex(header, [/raz(o|ó)n social.*(receptor|proveedor|adquirente)/, /^receptor$/]),
+  };
+
+  const context = norm(rows.slice(0, headerIndex).flat().join(' '));
+  const headerText = norm(header.join(' '));
+  let titlePeriod = '';
+  for (const row of rows.slice(0, headerIndex)) {
+    const cells = (Array.isArray(row) ? row : [row]).map((c) => String(c ?? '').trim());
+    const p = labelValue(cells, /^periodo/);
+    if (p) { titlePeriod = periodFromRange(p); break; }
+  }
+
+  const records = [];
+  for (const raw of rows.slice(headerIndex + 1)) {
+    const cells = (Array.isArray(raw) ? raw : [raw]).map((c) => String(c ?? '').trim());
+    if (!cells.some(Boolean)) continue;
+    const get = (i) => (i >= 0 ? cells[i] || '' : '');
+    const docTipo = get(idx.tipo);
+    if (/^total/.test(norm(docTipo))) continue;
+
+    const serie = get(idx.serie);
+    const numero = get(idx.numero);
+    const comp = parseSerieNumero(get(idx.comprobante) || `${serie} - ${numero}`);
+    if (!/\d/.test(numero) && !/\d/.test(comp.numero)) continue;
+
+    const docFecha = parseDate(get(idx.fecha));
+    const compFecha = parseDate(get(idx.compFecha)) || docFecha;
+    // El período de la retención/percepción es el del comprobante emitido,
+    // no necesariamente el de la factura. Si el reporte trae "Periodo:", manda.
+    const period = titlePeriod || (compFecha ? compFecha.slice(0, 7).replace('-', '') : '');
+
+    let kind = '';
+    if (/percepci/.test(docTipo) || /percepci/.test(headerText)) kind = 'percepcion';
+    else if (/retenci/.test(docTipo) || /retenci/.test(headerText)) kind = 'retencion';
+    else if (/percepci/.test(context) && !/retenci/.test(context)) kind = 'percepcion';
+    else if ((comp.serie || serie).toUpperCase().startsWith('P')) kind = 'percepcion';
+    else kind = 'retencion';
+
+    const retenido = parseAmount(get(idx.retenido));
+    const total = parseAmount(get(idx.total)) || parseAmount(get(idx.pagado));
+    const monto = retenido || total;
+    const agente = parseRucNombre(get(idx.agenteRuc));
+    const receptor = parseRucNombre(get(idx.receptorRuc));
+
+    records.push({
+      kind,
+      period,
+      comprobante_serie: comp.serie || '',
+      comprobante_numero: comp.numero || '',
+      comprobante_fecha: compFecha || '',
+      estado: /anulado/i.test(cells.join(' ')) ? 'ANULADO' : '',
+      tasa: 0,
+      agente_ruc: agente.ruc || '',
+      agente_nombre: get(idx.agenteNombre) || agente.nombre || '',
+      receptor_ruc: receptor.ruc || '',
+      receptor_nombre: get(idx.receptorNombre) || receptor.nombre || '',
+      importe_total: monto,
+      doc_tipo: docTipo,
+      doc_serie: serie,
+      doc_numero: numero,
+      doc_fecha: docFecha,
+      total_comprobante: total,
+      nro_pago: get(idx.nroPago),
+      importe_pagado: parseAmount(get(idx.pagado)),
+      monto_retenido: monto,
+      monto_neto: parseAmount(get(idx.neto)),
+      currency: 'PEN',
+      source: 'excel',
+      source_file: meta.fileName,
+      raw: {},
+    });
   }
   return records;
 }
@@ -203,9 +337,18 @@ function readWorkbookRows(file) {
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
-        resolve(rows.map((r) => (Array.isArray(r) ? r : [r])));
+        // Algunos reportes traen una portada o una hoja resumen antes del detalle.
+        // Se elige la hoja que parece contener el reporte (encabezados conocidos).
+        const candidates = wb.SheetNames.map((name) => {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: false, defval: '' })
+            .map((r) => (Array.isArray(r) ? r : [r]));
+          const text = rows.flat().map((c) => String(c || '').toLowerCase()).join(' ');
+          const looksLikeReport = /tipo de (documento|comprobante)|serie|n[uú]mero|emisor|receptor/.test(text);
+          const filled = rows.filter((r) => r.some((c) => String(c || '').trim())).length;
+          return { rows, score: (looksLikeReport ? 1000 : 0) + filled };
+        });
+        candidates.sort((a, b) => b.score - a.score);
+        resolve(candidates[0]?.rows || []);
       } catch (err) {
         reject(new Error(`No se pudo leer "${file.name}": ${err.message}`));
       }
@@ -292,6 +435,8 @@ export async function parseRetencionFiles(files, opts = {}) {
         records: fresh,
         duplicates,
         warnings: [],
+        // Primeras filas tal como se leyeron (para diagnosticar formatos nuevos).
+        previewRows: rows.slice(0, 15).map((r) => (Array.isArray(r) ? r.map((c) => String(c ?? '')) : [String(r ?? '')])),
       });
     } catch (err) {
       parsedFiles.push({ fileName: file.name, kind: null, records: [], duplicates: 0, warnings: [err.message] });
