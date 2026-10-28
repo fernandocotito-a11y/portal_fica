@@ -9,11 +9,19 @@
 
 import { sireService } from './sireService.js';
 import { authService } from '../../services/authService.js';
-import { periodLabel, periodToInput, inputToPeriod } from '../compras/comprasConfig.js';
+import { MONTHS, periodLabel } from '../compras/comprasConfig.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
 
 const now = new Date();
-const CURRENT_PERIOD = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+const CURRENT_YEAR = now.getFullYear();
+const CURRENT_PERIOD = `${CURRENT_YEAR}${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+/** Años disponibles para consultar propuestas SIRE. */
+function yearOptions() {
+  const years = [];
+  for (let y = CURRENT_YEAR + 1; y >= 2020; y -= 1) years.push(y);
+  return years;
+}
 
 export function render(root) {
   const company = authService.activeCompany() || {};
@@ -66,6 +74,9 @@ export function render(root) {
 
   function renderActualizar() {
     const configured = state.configured;
+    const p = String(state.period || CURRENT_PERIOD);
+    const periodYear = Number(p.slice(0, 4)) || CURRENT_YEAR;
+    const periodMonth = Number(p.slice(4, 6)) || 1;
     const statusMsg = state.status
       ? `<div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-3);">${escapeHtml(state.status)}</div>`
       : '';
@@ -102,16 +113,26 @@ export function render(root) {
                 <option value="venta"${state.kind === 'venta' ? ' selected' : ''}>Ventas</option>
               </select>
             </div>
-            <div class="form-group" style="margin:0;min-width:170px;">
-              <label class="form-label">Período</label>
-              <input type="month" class="form-input" data-period value="${escapeHtml(periodToInput(state.period))}" />
+            <div class="form-group" style="margin:0;min-width:110px;">
+              <label class="form-label">Año</label>
+              <select class="form-input" data-year>
+                ${yearOptions().map((y) => `<option value="${y}"${y === periodYear ? ' selected' : ''}>${y}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin:0;min-width:150px;">
+              <label class="form-label">Mes</label>
+              <select class="form-input" data-month>
+                ${MONTHS.map((name, i) => `<option value="${i + 1}"${i + 1 === periodMonth ? ' selected' : ''}>${name}</option>`).join('')}
+              </select>
             </div>
             <button type="button" class="btn btn--primary" data-sync ${state.busy || configured === false ? 'disabled' : ''}>${ICONS.arrowRight} Actualizar desde SUNAT</button>
           </div>
           ${statusMsg}
           ${result}
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
-            Al actualizar, SUNAT entrega la propuesta del período y el módulo omite los comprobantes que ya existen. Puedes seguir usando la importación manual de ZIP/CSV en Compras y Ventas como respaldo.
+            Al actualizar, SUNAT entrega la propuesta del período y el módulo omite los comprobantes que ya existen.
+            SUNAT solo tiene propuestas desde que la empresa empezó a llevar SIRE (RCE desde oct-2022; RVIE según su obligación),
+            así que un período anterior puede devolver “sin propuesta”. También puedes usar la importación manual de ZIP/CSV como respaldo.
           </p>
         </div>
       </div>`;
@@ -205,7 +226,12 @@ export function render(root) {
 
   viewRoot.addEventListener('change', (e) => {
     if (e.target.matches('[data-kind]')) state.kind = e.target.value;
-    if (e.target.matches('[data-period]')) state.period = inputToPeriod(e.target.value) || CURRENT_PERIOD;
+    if (e.target.matches('[data-year], [data-month]')) {
+      const p = String(state.period || CURRENT_PERIOD);
+      const year = e.target.matches('[data-year]') ? Number(e.target.value) : Number(p.slice(0, 4));
+      const month = e.target.matches('[data-month]') ? Number(e.target.value) : Number(p.slice(4, 6));
+      state.period = `${year || CURRENT_YEAR}${String(month || 1).padStart(2, '0')}`;
+    }
   });
 
   // Vista previa en vivo del usuario que se enviará a SUNAT (RUC + usuario SOL).
