@@ -9,7 +9,7 @@
 import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import {
-  HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf,
+  HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
 } from './comprasConfig.js';
 import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
 import { exchangeRateService } from './exchangeRateService.js';
@@ -508,9 +508,11 @@ export const taxService = {
       const sunatRate = String(r.currency || 'PEN').toUpperCase() === 'PEN'
         ? null
         : exchangeRateService.rateFor(r.issue_date, r.currency);
-      const rate = String(r.currency || 'PEN').toUpperCase() === 'PEN'
+      const rate = isSolarized(r)
         ? 1
-        : (ownRate > 1 ? ownRate : (Number(sunatRate?.rate || 0) || 1));
+        : (String(r.currency || 'PEN').toUpperCase() === 'PEN'
+          ? 1
+          : (ownRate > 1 ? ownRate : (Number(sunatRate?.rate || 0) || 1)));
       const baseGravada = baseGravadaOf(r, kind);
       const baseNoGravada = baseNoGravadaOf(r, kind);
       s.baseGravada += baseGravada * rate;

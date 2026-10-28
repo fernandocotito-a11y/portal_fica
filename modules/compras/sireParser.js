@@ -7,7 +7,7 @@
    - Mapea las columnas oficiales a un modelo normalizado editable.
    ========================================================================== */
 
-import { FIELDS, HEADERS, normHeader } from './comprasConfig.js';
+import { FIELDS, HEADERS, normHeader, isSolarized } from './comprasConfig.js';
 
 const utf8 = new TextDecoder('utf-8');
 const win1252 = new TextDecoder('windows-1252');
@@ -297,7 +297,7 @@ function validateRecord(rec, expectedRuc) {
   if (!rec.number) warnings.push('Falta número de comprobante.');
   if (!rec.issue_date) warnings.push('Falta fecha de emisión.');
   if (!rec.total) warnings.push('Total en cero.');
-  if (rec.currency && rec.currency !== 'PEN' && !(Number(rec.exchange_rate) > 1)) {
+  if (!isSolarized(rec) && rec.currency && rec.currency !== 'PEN' && !(Number(rec.exchange_rate) > 1)) {
     warnings.push(`Moneda ${rec.currency} sin tipo de cambio; completa el TC para consolidar en soles.`);
   }
   if (expectedRuc && rec.ruc_empresa && rec.ruc_empresa !== expectedRuc) {

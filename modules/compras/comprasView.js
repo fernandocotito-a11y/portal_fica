@@ -17,7 +17,7 @@ import { parseSireFiles, dedupeKey, toCsvText } from './sireParser.js';
 import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
-  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf,
+  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -67,6 +67,7 @@ function rateForRecord(rec) {
 
 /** Tipo de cambio a soles para consolidar totales. */
 function penRate(rec) {
+  if (isSolarized(rec)) return 1; // SIRE ya viene en soles
   if (String(rec.currency || 'PEN').toUpperCase() === 'PEN') return 1;
   const own = Number(rec.exchange_rate || 0);
   if (own > 1) return own;
@@ -75,6 +76,7 @@ function penRate(rec) {
 
 /** Moneda extranjera sin tipo de cambio propio. */
 function needsRateAssignment(rec) {
+  if (isSolarized(rec)) return false;
   return String(rec.currency || 'PEN').toUpperCase() !== 'PEN' && !(Number(rec.exchange_rate) > 1);
 }
 
@@ -320,7 +322,7 @@ export function render(root) {
         <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(igvOf(r, r.kind))}</td>
-        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${hasMissingRate(r) ? ' · sin TC' : (needsRateAssignment(r) ? ' · TC SUNAT' : '')}</div></td>
+        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${isSolarized(r) && String(r.currency || 'PEN').toUpperCase() !== 'PEN' ? ' · soles' : (hasMissingRate(r) ? ' · sin TC' : (needsRateAssignment(r) ? ' · TC SUNAT' : ''))}</div></td>
         <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
         <td>
           <div class="table__actions">
@@ -421,7 +423,7 @@ export function render(root) {
           </div>
           <div data-pagination></div>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
-            La tabla muestra los importes en la moneda original del comprobante. Los indicadores superiores se consolidan a soles (PEN) usando el tipo de cambio.
+            Los importes del SIRE ya vienen en soles (SUNAT los solariza). Para registros manuales en moneda extranjera, la tabla muestra la moneda original y los indicadores se consolidan a soles (PEN) usando el tipo de cambio.
           </p>
         </div>
       </div>`;

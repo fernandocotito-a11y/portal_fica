@@ -8,6 +8,7 @@
 
 import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
+import { isSolarized } from './comprasConfig.js';
 
 const MODEL_HEADERS = ['Fecha', 'Tipo de Cambio', 'Moneda'];
 const VALID_CURRENCIES = new Set(['USD', 'EUR', 'PEN']);
@@ -378,6 +379,7 @@ export const exchangeRateService = {
     let missing = 0;
     const changed = [];
     (records || []).forEach((rec) => {
+      if (isSolarized(rec)) return; // SIRE ya viene en soles
       const currency = String(rec.currency || 'PEN').toUpperCase();
       if (currency === 'PEN') return;
       if (Number(rec.exchange_rate) > 1) return;

@@ -265,3 +265,13 @@ export function totalBaseOf(rec, kind = rec?.kind) {
 export function periodsForYear(year) {
   return Array.from({ length: 12 }, (_, i) => `${year}${String(i + 1).padStart(2, '0')}`);
 }
+
+/**
+ * Indica si los importes de un comprobante ya vienen solarizados (en soles).
+ * Los registros importados del SIRE de SUNAT ya traen base, IGV y total
+ * convertidos a soles (aunque la "Moneda" indique la divisa original), por lo
+ * que NO se deben volver a convertir con el tipo de cambio.
+ */
+export function isSolarized(rec) {
+  return String(rec?.source || '') === 'sire';
+}
