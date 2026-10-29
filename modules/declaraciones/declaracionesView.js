@@ -57,46 +57,218 @@ const MATRIX_ROWS = [
   { key: 'rentaRegularizar', label: 'RENTA POR REGULARIZAR', get: (m) => m.rentaRegularizar, strong: true, hl: true },
 ];
 
-/* Casillas del Formulario Virtual 621. */
+/* Casillas del Formulario Virtual 621, en el orden del formulario.
+   Cada fila tiene Base y Tributo; la casilla va dentro de cada celda.
+   Las casillas 101/103/131 y 108/111/115/117/178 son Tributo (IGV). */
 const FICHA = [
   { section: 'IGV · Ventas' },
-  { casilla: '100', label: 'Ventas netas (base gravada)', value: (m) => m.baseGravadaV },
-  { casilla: '101', label: 'IGV ventas gravadas', value: (m) => m.igvVentas, detail: 'venta' },
-  { casilla: '102', label: 'Descuentos concedidos y/o devoluciones (base)', value: () => 0, hideZero: true },
-  { casilla: '103', label: 'Descuentos y/o devoluciones (tributo)', value: () => 0, hideZero: true },
-  { casilla: '105', label: 'Ventas no gravadas (sin exportaciones)', value: (m) => m.baseNoGravadaV },
-  { casilla: '131', label: 'Total base ventas', value: (m) => (m.baseGravadaV || 0) + (m.baseNoGravadaV || 0) },
+  {
+    label: 'Ventas netas gravadas',
+    base: { casilla: '100', value: (m) => m.pdt?.ventas?.c100 || 0 },
+    tributo: { casilla: '101', value: (m) => m.pdt?.ventas?.c101 || 0, detail: 'venta' },
+  },
+  {
+    label: 'Descuentos concedidos y/o devoluciones de ventas',
+    base: { casilla: '102', value: (m) => m.pdt?.ventas?.c102 || 0 },
+    tributo: { casilla: '103', value: (m) => m.pdt?.ventas?.c103 || 0 },
+  },
+  {
+    label: 'Exportaciones facturadas en el periodo',
+    base: { casilla: '106', value: (m) => m.pdt?.ventas?.c106 || 0 },
+  },
+  {
+    label: 'Exportaciones embarcadas en el periodo',
+    base: { casilla: '127', value: (m) => m.pdt?.ventas?.c127 || 0 },
+  },
+  {
+    label: 'Ventas no gravadas (sin considerar exportaciones)',
+    base: { casilla: '105', value: (m) => m.pdt?.ventas?.c105 || 0 },
+  },
+  {
+    label: 'Ventas no gravadas (sin efecto en ratio)',
+    base: { casilla: '109', value: (m) => m.pdt?.ventas?.c109 || 0 },
+  },
+  {
+    label: 'Otras ventas (inciso ii) numeral 6.2 art. 6 del reglamento',
+    base: { casilla: '112', value: (m) => m.pdt?.ventas?.c112 || 0 },
+  },
+  {
+    label: 'Total IGV ventas',
+    tributo: { casilla: '131', value: (m) => m.pdt?.ventas?.c131 || 0, strong: true },
+  },
+
   { section: 'IGV · Compras' },
-  { casilla: '107', label: 'Compras netas destinadas a ventas gravadas (base)', value: (m) => m.baseGravadaC },
-  { casilla: '108', label: 'IGV compras (crédito fiscal)', value: (m) => m.igvCompras, detail: 'compra' },
-  { casilla: '120', label: 'Compras internas no gravadas', value: (m) => m.baseNoGravadaC },
-  { casilla: '178', label: 'Total IGV compras (crédito fiscal)', value: (m) => m.igvCompras, strong: true },
+  {
+    label: 'Compras netas destinadas a ventas gravadas exclusivamente',
+    base: { casilla: '107', value: (m) => m.pdt?.compras?.c107 || 0 },
+    tributo: { casilla: '108', value: (m) => m.pdt?.compras?.c108 || 0, detail: 'compra' },
+  },
+  {
+    label: 'Compras netas destinadas a ventas gravadas y no gravadas',
+    base: { casilla: '110', value: (m) => m.pdt?.compras?.c110 || 0 },
+    tributo: { casilla: '111', value: (m) => m.pdt?.compras?.c111 || 0, detail: 'compra' },
+  },
+  {
+    label: 'Compras netas destinadas a ventas no gravadas exclusivamente',
+    base: { casilla: '113', value: (m) => m.pdt?.compras?.c113 || 0 },
+  },
+  {
+    label: 'Compras netas importadas destinadas a ventas gravadas exclusivamente',
+    base: { casilla: '114', value: (m) => m.pdt?.compras?.c114 || 0 },
+    tributo: { casilla: '115', value: (m) => m.pdt?.compras?.c115 || 0, detail: 'compra' },
+  },
+  {
+    label: 'Compras netas importadas destinadas a ventas gravadas y no gravadas',
+    base: { casilla: '116', value: (m) => m.pdt?.compras?.c116 || 0 },
+    tributo: { casilla: '117', value: (m) => m.pdt?.compras?.c117 || 0, detail: 'compra' },
+  },
+  {
+    label: 'Compras netas importadas destinadas a ventas no gravadas exclusivamente',
+    base: { casilla: '119', value: (m) => m.pdt?.compras?.c119 || 0 },
+  },
+  {
+    label: 'Compras netas internas no gravadas',
+    base: { casilla: '120', value: (m) => m.pdt?.compras?.c120 || 0 },
+  },
+  {
+    label: 'Compras netas importadas no gravadas',
+    base: { casilla: '122', value: (m) => m.pdt?.compras?.c122 || 0 },
+  },
+  {
+    label: 'Total IGV compras',
+    tributo: { casilla: '178', value: (m) => m.pdt?.compras?.c178 || 0, strong: true },
+  },
+
   { section: 'Renta · Régimen MYPE Tributario' },
-  { casilla: '301', label: 'Ingresos netos del mes (base)', value: (m) => m.ventasNetasMes },
-  { casilla: '312', label: 'Impuesto a pagar (renta)', value: (m) => m.rentaPagar },
-  { casilla: '315', label: 'Porcentaje', value: (m) => m.tasaRenta, pct: true },
-  { casilla: '380', label: 'Coeficiente', value: (m) => m.coeficienteRenta, raw: true },
+  {
+    label: 'Ingresos netos',
+    base: { casilla: '301', value: (m) => m.pdt?.renta?.c301 || 0 },
+    tributo: { casilla: '312', value: (m) => m.pdt?.renta?.c312 || 0, strong: true },
+  },
+  {
+    label: 'Coeficiente',
+    base: { casilla: '380', value: (m) => m.pdt?.renta?.c380 || 0, fmt: 'raw' },
+  },
+  {
+    label: 'Porcentaje',
+    base: { casilla: '315', value: (m) => m.pdt?.renta?.c315 || 0, fmt: 'pct' },
+  },
+
   { section: 'Determinación del IGV' },
-  { casilla: '140', label: 'Impuesto resultante o saldo a favor', value: (m) => m.preliminar, strong: true },
-  { casilla: '145', label: 'Saldo a favor del periodo anterior', value: (m) => m.saldoIgvAnterior },
-  { casilla: '184', label: 'Tributo a pagar o saldo a favor', value: (m) => m.igvNeto, strong: true },
-  { casilla: '171', label: 'Percepciones declaradas en el periodo', value: (m) => m.percepcionesMes },
-  { casilla: '168', label: 'Saldo de percepciones de periodos anteriores', value: (m) => m.percepcionesAnterior, hideZero: true },
-  { casilla: '164', label: 'Saldo de percepciones no aplicadas', value: (m) => m.percepcionesNoAplicadas, hideZero: true },
-  { casilla: '179', label: 'Retenciones declaradas en el periodo', value: (m) => m.retencionesMes },
-  { casilla: '176', label: 'Saldo de retenciones de periodos anteriores', value: (m) => m.retencionesAnterior, hideZero: true },
-  { casilla: '165', label: 'Saldo de retenciones no aplicadas', value: (m) => m.retencionesNoAplicadas, hideZero: true },
-  { casilla: '681', label: 'Sub total (IGV)', value: (m) => m.igvPorPagar, strong: true },
-  { casilla: '185', label: 'Pagos previos (IGV)', value: (m) => m.pagosPrevios },
-  { casilla: '187', label: 'Interés moratorio (IGV)', value: (m) => m.intereses },
-  { casilla: '188', label: 'Total deuda tributaria (IGV)', value: (m) => m.igvTotal, strong: true, hl: true },
+  {
+    label: 'Impuesto resultante o saldo a favor',
+    tributo: { casilla: '140', value: (m) => m.pdt?.igv?.c140 || 0, strong: true },
+  },
+  {
+    label: 'Saldo a favor del periodo anterior',
+    tributo: { casilla: '145', value: (m) => m.pdt?.igv?.c145 || 0 },
+  },
+  {
+    label: 'Tributo a pagar o saldo a favor',
+    tributo: { casilla: '184', value: (m) => m.pdt?.igv?.c184 || 0, strong: true },
+  },
+  {
+    label: 'Percepciones declaradas en el periodo',
+    tributo: { casilla: '171', value: (m) => m.pdt?.igv?.c171 || 0 },
+  },
+  {
+    label: 'Saldo de percepciones de periodos anteriores',
+    tributo: { casilla: '168', value: (m) => m.pdt?.igv?.c168 || 0 },
+  },
+  {
+    label: 'Saldo de percepciones no aplicadas',
+    tributo: { casilla: '164', value: (m) => m.pdt?.igv?.c164 || 0 },
+  },
+  {
+    label: 'Retenciones declaradas en el periodo',
+    tributo: { casilla: '179', value: (m) => m.pdt?.igv?.c179 || 0 },
+  },
+  {
+    label: 'Saldo de retenciones de periodos anteriores',
+    tributo: { casilla: '176', value: (m) => m.pdt?.igv?.c176 || 0 },
+  },
+  {
+    label: 'Saldo de retenciones no aplicadas',
+    tributo: { casilla: '165', value: (m) => m.pdt?.igv?.c165 || 0 },
+  },
+  {
+    label: 'Sub total',
+    tributo: { casilla: '681', value: (m) => m.pdt?.igv?.c681 || 0, strong: true },
+  },
+  {
+    label: 'Pagos previos',
+    tributo: { casilla: '185', value: (m) => m.pdt?.igv?.c185 || 0 },
+  },
+  {
+    label: 'Interés moratorio',
+    tributo: { casilla: '187', value: (m) => m.pdt?.igv?.c187 || 0 },
+  },
+  {
+    label: 'Total deuda tributaria',
+    tributo: { casilla: '188', value: (m) => m.pdt?.igv?.c188 || 0, strong: true },
+    hl: true,
+  },
+  {
+    label: 'Importe a pagar',
+    tributo: { casilla: '189', value: (m) => m.pdt?.igv?.c189 || 0, strong: true },
+    hl: true,
+  },
+
   { section: 'Determinación de la Renta' },
-  { casilla: '303', label: 'Impuesto resultante (renta)', value: (m) => m.rentaPagar },
-  { casilla: '304', label: 'Tributo a pagar o saldo a favor (renta)', value: (m) => m.rentaPagar },
-  { casilla: '682', label: 'Sub total (renta)', value: (m) => m.rentaPagar },
-  { casilla: '317', label: 'Pagos previos (renta)', value: (m) => m.pagosPreviosRenta },
-  { casilla: '319', label: 'Interés moratorio (renta)', value: (m) => m.interesesRenta },
-  { casilla: '324', label: 'Total deuda tributaria (renta)', value: (m) => m.rentaTotal, strong: true, hl: true },
+  {
+    label: 'Impuesto resultante o saldo a favor',
+    tributo: { casilla: '302', value: (m) => m.pdt?.renta?.c302 || 0, strong: true },
+  },
+  {
+    label: 'Saldo a favor del periodo anterior',
+    tributo: { casilla: '303', value: (m) => m.pdt?.renta?.c303 || 0 },
+  },
+  {
+    label: 'Renta a pagar o saldo a favor',
+    tributo: { casilla: '304', value: (m) => m.pdt?.renta?.c304 || 0, strong: true },
+  },
+  {
+    label: 'Retenciones de tercera declaradas en el periodo',
+    tributo: { casilla: '326', value: (m) => m.pdt?.renta?.c326 || 0 },
+  },
+  {
+    label: 'Retenciones de tercera declaradas en periodos anteriores',
+    tributo: { casilla: '327', value: (m) => m.pdt?.renta?.c327 || 0 },
+  },
+  {
+    label: 'Compensación saldo a favor del exportador',
+    tributo: { casilla: '305', value: (m) => m.pdt?.renta?.c305 || 0 },
+  },
+  {
+    label: 'Impuesto Temporal a los Activos Netos',
+    tributo: { casilla: '328', value: (m) => m.pdt?.renta?.c328 || 0 },
+  },
+  {
+    label: 'Otros créditos permitidos por ley',
+    tributo: { casilla: '306', value: (m) => m.pdt?.renta?.c306 || 0 },
+  },
+  {
+    label: 'Sub total',
+    tributo: { casilla: '682', value: (m) => m.pdt?.renta?.c682 || 0, strong: true },
+  },
+  {
+    label: 'Pagos previos',
+    tributo: { casilla: '317', value: (m) => m.pdt?.renta?.c317 || 0 },
+  },
+  {
+    label: 'Interés moratorio',
+    tributo: { casilla: '319', value: (m) => m.pdt?.renta?.c319 || 0 },
+  },
+  {
+    label: 'Total deuda tributaria',
+    tributo: { casilla: '324', value: (m) => m.pdt?.renta?.c324 || 0, strong: true },
+    hl: true,
+  },
+  {
+    label: 'Importe a pagar',
+    tributo: { casilla: '307', value: (m) => m.pdt?.renta?.c307 || 0, strong: true },
+    hl: true,
+  },
 ];
 
 function yearOptions() {
@@ -351,41 +523,50 @@ export function render(root) {
 
   /* ------------------------------ PDT 621 ------------------------------ */
 
-  function fichaRows(m) {
-    return FICHA.filter((r) => r.section || !r.hideZero || Number(r.value(m) || 0) !== 0);
+  function pdtCellValue(cell, m) {
+    return Number(cell.value(m) || 0);
   }
 
-  function rawValue(r, m) {
-    const v = Number(r.value(m) || 0);
-    if (r.pct) return (v * 100).toFixed(2);
-    if (r.raw) return v.toFixed(4);
-    return v.toFixed(2);
-  }
-
-  function displayValue(r, m) {
-    const v = Number(r.value(m) || 0);
-    if (r.pct) return pct(v);
-    if (r.raw) return v.toFixed(4);
+  function pdtCellText(cell, m) {
+    const v = pdtCellValue(cell, m);
+    if (cell.fmt === 'pct') return pct(v);
+    if (cell.fmt === 'raw') return v.toFixed(4);
     return money(v);
   }
 
+  function pdtCellRaw(cell, m) {
+    const v = pdtCellValue(cell, m);
+    if (cell.fmt === 'pct') return (v * 100).toFixed(2);
+    if (cell.fmt === 'raw') return v.toFixed(4);
+    return v.toFixed(2);
+  }
+
+  function pdtCellHtml(cell, m) {
+    if (!cell) return '<span class="text-muted">—</span>';
+    const cls = ['pdt-amount', cell.strong ? 'cell-strong' : '', cell.detail ? 'igv-click' : ''].filter(Boolean).join(' ');
+    const attrs = cell.detail
+      ? ` data-igv="${cell.detail}" data-igv-mes="${m.mes}" title="Ver composición por tasa"`
+      : '';
+    return `<span class="casilla-tag">${cell.casilla}</span> <span class="${cls}"${attrs}>${pdtCellText(cell, m)}</span>`;
+  }
+
   function fichaTableHtml(m) {
-    const rows = fichaRows(m).map((r) => {
+    const rows = FICHA.map((r) => {
       if (r.section) return `<tr class="section-row"><td colspan="3">${escapeHtml(r.section)}</td></tr>`;
-      const detailAttr = r.detail
-        ? ` class="cell-num casilla igv-click" data-igv="${r.detail}" data-igv-mes="${m.mes}" title="Ver composición por tasa"`
-        : ' class="cell-num casilla"';
       return `<tr class="${r.hl ? 'row-hl' : ''}">
-        <td${detailAttr}>${r.casilla}</td>
         <td>${escapeHtml(r.label)}</td>
-        <td class="cell-num${r.strong ? ' cell-strong' : ''}">${displayValue(r, m)}</td>
+        <td class="cell-num">${pdtCellHtml(r.base, m)}</td>
+        <td class="cell-num">${pdtCellHtml(r.tributo, m)}</td>
       </tr>`;
     }).join('');
     return `<div class="table-wrap">
       <table class="table decl-pdt">
-        <thead><tr><th class="cell-num">Casilla</th><th>Concepto</th><th class="cell-num">Importe (S/)</th></tr></thead>
+        <thead><tr><th>Concepto</th><th class="cell-num">Base</th><th class="cell-num">Tributo</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
+    </div>
+    <div class="text-muted" style="padding:var(--space-3);font-size:var(--font-size-xs);border-top:1px solid var(--color-border);">
+      El número de casilla aparece en dorado dentro de cada columna. Los descuentos y notas de crédito se muestran aparte en 102 (base) y 103 (IGV).
     </div>`;
   }
 
@@ -414,19 +595,27 @@ export function render(root) {
   function pdtTsv(m) {
     const lines = [
       `PDT 621 - ${MONTHS[m.mes - 1]} ${m.anio} - RUC ${company.ruc || ''}`,
-      ['Casilla', 'Concepto', 'Importe'].join('\t'),
+      ['Concepto', 'Casilla Base', 'Base', 'Casilla Tributo', 'Tributo'].join('\t'),
     ];
-    for (const r of fichaRows(m)) {
+    for (const r of FICHA) {
       if (r.section) { lines.push(`# ${r.section}`); continue; }
-      lines.push([r.casilla, r.label, rawValue(r, m)].join('\t'));
+      lines.push([
+        r.label,
+        r.base?.casilla || '',
+        r.base ? pdtCellRaw(r.base, m) : '',
+        r.tributo?.casilla || '',
+        r.tributo ? pdtCellRaw(r.tributo, m) : '',
+      ].join('\t'));
     }
     return lines.join('\n');
   }
 
   function printPdt(m) {
-    const rowsHtml = fichaRows(m).map((r) => {
+    const rowsHtml = FICHA.map((r) => {
       if (r.section) return `<tr class="sec"><td colspan="3">${escapeHtml(r.section)}</td></tr>`;
-      return `<tr><td class="c">${r.casilla}</td><td>${escapeHtml(r.label)}</td><td class="n">${displayValue(r, m)}</td></tr>`;
+      const base = r.base ? `<span class="c">${r.base.casilla}</span> ${pdtCellText(r.base, m)}` : '';
+      const tributo = r.tributo ? `<span class="c">${r.tributo.casilla}</span> ${pdtCellText(r.tributo, m)}` : '';
+      return `<tr><td>${escapeHtml(r.label)}</td><td class="n">${base}</td><td class="n">${tributo}</td></tr>`;
     }).join('');
     const win = window.open('', '_blank');
     if (!win) { showToast('Permite las ventanas emergentes para imprimir.', 'error'); return; }
@@ -437,12 +626,12 @@ export function render(root) {
         h1{font-size:16px;margin:0 0 2px} h2{font-size:12px;font-weight:normal;color:#555;margin:0 0 16px}
         table{width:100%;border-collapse:collapse} th,td{border:1px solid #cbd5e1;padding:4px 6px}
         th{background:#f1f5f9;text-align:left} td.n{text-align:right;font-variant-numeric:tabular-nums}
-        td.c{text-align:right;width:64px;color:#92400e;font-weight:bold}
+        span.c{color:#92400e;font-weight:bold}
         tr.sec td{background:#e2e8f0;font-weight:bold}
       </style></head><body>
       <h1>Formulario Virtual 621 · ${escapeHtml(MONTHS[m.mes - 1])} ${m.anio}</h1>
       <h2>${escapeHtml(company.name || '')} · RUC ${escapeHtml(company.ruc || '')}</h2>
-      <table><thead><tr><th>Casilla</th><th>Concepto</th><th style="text-align:right">Importe (S/)</th></tr></thead>
+      <table><thead><tr><th>Concepto</th><th style="text-align:right">Base</th><th style="text-align:right">Tributo</th></tr></thead>
       <tbody>${rowsHtml}</tbody></table>
       </body></html>`);
     win.document.close();
@@ -489,7 +678,7 @@ export function render(root) {
 
       <div class="card">
         <div class="card__header"><div><h4 class="card__title" style="font-size:var(--font-size-md);">Formulario Virtual 621 · ${escapeHtml(MONTHS[m.mes - 1])} ${m.anio}</h4>
-          <p class="card__subtitle">Casillas SUNAT · haz clic en el IGV (101 o 108) para ver cómo se compone por tasa.</p></div></div>
+          <p class="card__subtitle">Formulario completo con columnas Base y Tributo. Clic en las casillas 101, 108, 111, 115 o 117 para ver el IGV por tasa.</p></div></div>
         <div class="card__body" style="padding:0;">
           ${fichaTableHtml(m)}
         </div>

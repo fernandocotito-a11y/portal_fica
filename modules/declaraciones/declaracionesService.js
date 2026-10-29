@@ -116,6 +116,71 @@ function periodsKey(companyId) {
   return `fica.declaraciones.periods.${companyId}`;
 }
 
+/** Detalle de ventas para las casillas Base/Tributo del PDT 621. */
+function pdtVentasDetail(period) {
+  const d = { c100: 0, c101: 0, c102: 0, c103: 0, c105: 0, c106: 0, c109: 0, c112: 0, c127: 0 };
+  for (const r of taxService.list('venta', { period })) {
+    const rate = penRate(r);
+    const base = Number(r.taxed_base || 0) * rate;
+    const igv = Number(r.igv || 0) * rate;
+    const discountBase = Number(r.discount_base || 0) * rate;
+    const discountIgv = Number(r.discount_igv || 0) * rate;
+    const isCredit = String(r.doc_type || '').padStart(2, '0') === '07' || base < 0 || igv < 0;
+    if (isCredit) {
+      // Notas de crédito / devoluciones: van aparte en 102 (base) y 103 (IGV).
+      d.c102 += Math.abs(base) || Math.abs(discountBase);
+      d.c103 += Math.abs(igv) || Math.abs(discountIgv);
+      continue;
+    }
+    d.c100 += base;
+    d.c101 += igv;
+    d.c102 += discountBase;
+    d.c103 += discountIgv;
+    d.c105 += (Number(r.exonerated || 0) + Number(r.unaffected || 0)) * rate;
+    d.c106 += Number(r.export_value || 0) * rate;
+  }
+  Object.keys(d).forEach((k) => { d[k] = round2(d[k]); });
+  return d;
+}
+
+/** Detalle de compras para las casillas Base/Tributo del PDT 621. */
+function pdtComprasDetail(period) {
+  const d = {
+    c107: 0, c108: 0, c110: 0, c111: 0, c113: 0,
+    c114: 0, c115: 0, c116: 0, c117: 0, c119: 0,
+    c120: 0, c122: 0, c172: 0, c169: 0,
+  };
+  for (const r of taxService.list('compra', { period })) {
+    const rate = penRate(r);
+    const docType = String(r.doc_type || '').padStart(2, '0');
+    const dam = String(r.dam || '').trim();
+    const imported = docType === '50' || (dam !== '' && dam !== '0');
+    const gravada = Number(r.taxed_base || 0) * rate;
+    const igvGravada = Number(r.igv || 0) * rate;
+    const gravadaNg = Number(r.taxed_base_ng || 0) * rate;
+    const igvGravadaNg = Number(r.igv_ng || 0) * rate;
+    const noGravada = Number(r.taxed_base_dng || 0) * rate;
+    const valorNg = Number(r.acq_value_ng || 0) * rate;
+    if (imported) {
+      d.c114 += gravada;
+      d.c115 += igvGravada;
+      d.c116 += gravadaNg;
+      d.c117 += igvGravadaNg;
+      d.c119 += noGravada;
+      d.c122 += valorNg;
+    } else {
+      d.c107 += gravada;
+      d.c108 += igvGravada;
+      d.c110 += gravadaNg;
+      d.c111 += igvGravadaNg;
+      d.c113 += noGravada;
+      d.c120 += valorNg;
+    }
+  }
+  Object.keys(d).forEach((k) => { d[k] = round2(d[k]); });
+  return d;
+}
+
 /** Extrae los importes del mes desde los módulos fuente. */
 function extractSourceMonth(year, month) {
   const period = `${year}${String(month).padStart(2, '0')}`;
@@ -136,6 +201,8 @@ function extractSourceMonth(year, month) {
     baseGravadaC: round2(compras.baseGravada || 0),
     baseNoGravadaV: round2(ventas.baseNoGravada || 0),
     baseNoGravadaC: round2(compras.baseNoGravada || 0),
+    pdtVentas: pdtVentasDetail(period),
+    pdtCompras: pdtComprasDetail(period),
     percepcionesMes,
     retencionesMes,
     ventasNetasMes,

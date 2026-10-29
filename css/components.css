@@ -1119,11 +1119,47 @@ dialog.modal::backdrop {
 }
 
 .decl-pdt {
-  min-width: 560px;
+  min-width: 620px;
 }
 .decl-pdt thead th {
   text-transform: none;
   letter-spacing: 0;
+}
+.decl-pdt th:first-child,
+.decl-pdt td:first-child {
+  width: auto;
+}
+.decl-pdt th:nth-child(2),
+.decl-pdt td:nth-child(2),
+.decl-pdt th:nth-child(3),
+.decl-pdt td:nth-child(3) {
+  width: 190px;
+}
+.decl-pdt .section-row td {
+  background: var(--color-cream-dark);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--color-primary);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+.decl-pdt .row-hl td {
+  background: var(--color-gold-soft);
+}
+.decl-pdt .casilla-tag {
+  display: inline-block;
+  min-width: 34px;
+  margin-right: 6px;
+  color: var(--color-gold);
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+.decl-pdt .pdt-amount {
+  font-variant-numeric: tabular-nums;
+}
+.decl-pdt .pdt-amount.cell-strong {
+  font-weight: 700;
+  color: var(--color-primary);
 }
 
 .text-danger {

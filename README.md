@@ -292,8 +292,10 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 - Vistas (pestañas):
   1. **Matriz anual** (Enero→Diciembre con totales). El IGV de ventas/compras es
      clicable y muestra su composición por tasa (18% / 10% / otras).
-  2. **PDT 621**: formulario mensual con casillas SUNAT, listo para **copiar** o
-     **imprimir** y pasar los datos a SUNAT.
+  2. **PDT 621**: formulario mensual completo en el orden oficial, con columnas
+     **Base** y **Tributo**. Incluye ventas, descuentos/notas de crédito en
+     102/103, compras nacionales e importadas, determinación del IGV y de la
+     Renta, listo para **copiar** o **imprimir** y pasar los datos a SUNAT.
   3. **Control de declaraciones**: fecha de vencimiento según el **cronograma
      oficial SUNAT** (incluido para 2025–2026 y actualizable con el botón
      *Actualizar desde SUNAT*), fecha real de declaración y **interés moratorio

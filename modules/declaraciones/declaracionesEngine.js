@@ -162,6 +162,88 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
   const rentaRegularizar = round2(Math.max(0, rentaTotal - pagosPreviosRenta));
   const totalAPagar = round2(igvRegularizar + rentaRegularizar);
 
+  /* --- Detalle completo del Formulario Virtual 621 ---------------------
+     El PDT tiene dos columnas (Base y Tributo). Las casillas 101/103/131
+     y 108/111/115/117/178 son Tributo (IGV), no Renta. Los descuentos y
+     notas de crédito se muestran aparte en 102/103, tal como en el PDT. */
+  const pv = periodData.pdtVentas || {};
+  const pc = periodData.pdtCompras || {};
+  const hasPv = Object.keys(pv).length > 0;
+  const hasPc = Object.keys(pc).length > 0;
+
+  const c100 = round2(pv.c100 ?? (hasPv ? 0 : baseGravadaV));
+  const c101 = round2(pv.c101 ?? (hasPv ? 0 : igvVentas));
+  const c102 = round2(pv.c102 || 0);
+  const c103 = round2(pv.c103 || 0);
+  const c105 = round2(pv.c105 ?? 0);
+  const c106 = round2(pv.c106 || 0);
+  const c109 = round2(pv.c109 || 0);
+  const c112 = round2(pv.c112 || 0);
+  const c127 = round2(pv.c127 || 0);
+  const c131 = round2(c101 - c103);
+
+  const c107 = round2(pc.c107 ?? (hasPc ? 0 : baseGravadaC));
+  const c108 = round2(pc.c108 ?? (hasPc ? 0 : igvCompras));
+  const c110 = round2(pc.c110 || 0);
+  const c111 = round2(pc.c111 || 0);
+  const c113 = round2(pc.c113 || 0);
+  const c114 = round2(pc.c114 || 0);
+  const c115 = round2(pc.c115 || 0);
+  const c116 = round2(pc.c116 || 0);
+  const c117 = round2(pc.c117 || 0);
+  const c119 = round2(pc.c119 || 0);
+  const c120 = round2(pc.c120 || 0);
+  const c122 = round2(pc.c122 || 0);
+  const c172 = round2(pc.c172 || 0);
+  const c169 = round2(pc.c169 || 0);
+  const c178 = round2(c108 + c111 + c115 + c117);
+
+  const c140 = round2(c131 - c178 - c172 - c169);
+  const c145 = saldoIgvAnterior;
+  const c184 = round2(c140 - c145);
+  const c171 = round2(periodData.percepcionesMes || 0);
+  const c168 = round2(prev.percepcionesNoAplicadas);
+  const c164 = percepNoAplic;
+  const c179 = round2(periodData.retencionesMes || 0);
+  const c176 = round2(prev.retencionesNoAplicadas);
+  const c165 = retenNoAplic;
+  const c681 = round2(c184 - (c171 + c168 + c179 + c176));
+  const c185 = pagosPrevios;
+  const c187 = intereses;
+  const c188 = round2(c681 - c185 + c187);
+  const c189 = round2(Math.max(0, c188));
+
+  const c301 = ventasNetasMes;
+  const c312 = rentaPagar;
+  const c380 = coeficienteRenta;
+  const c315 = tasaRenta;
+  const c302 = rentaPagar;
+  const c303 = round2(periodData.saldoFavorRentaAnterior || 0);
+  const c304 = round2(c302 - c303);
+  const c326 = round2(periodData.retencionesRentaMes || 0);
+  const c327 = round2(periodData.retencionesRentaAnterior || 0);
+  const c305 = round2(periodData.compensacionExportador || 0);
+  const c328 = round2(periodData.itan || 0);
+  const c306 = round2(periodData.otrosCreditosRenta || 0);
+  const c682 = round2(c304 - (c326 + c327 + c305 + c328 + c306));
+  const c317 = pagosPreviosRenta;
+  const c319 = interesesRenta;
+  const c324 = round2(c682 - c317 + c319);
+  const c307 = round2(Math.max(0, c324));
+
+  const pdt = {
+    ventas: { c100, c101, c102, c103, c105, c106, c109, c112, c127, c131 },
+    compras: { c107, c108, c110, c111, c113, c114, c115, c116, c117, c119, c120, c122, c172, c169, c178 },
+    igv: {
+      c140, c145, c184, c171, c168, c164, c179, c176, c165,
+      c681, c185, c187, c188, c189,
+    },
+    renta: {
+      c301, c312, c380, c315, c302, c303, c304,
+      c326, c327, c305, c328, c306, c682, c317, c319, c324, c307,
+    },
+  };
+
   const nextState = {
     saldoIgvFavor: saldoFavorPeriodo,
     percepcionesNoAplicadas: percepNoAplic,
@@ -219,6 +301,7 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
     estado: periodData.estado || 'pendiente',
 
     nextState,
+    pdt,
   };
 }
 
