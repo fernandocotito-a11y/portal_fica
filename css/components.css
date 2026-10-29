@@ -1145,17 +1145,25 @@ dialog.modal::backdrop {
 .decl-pdt .row-hl td {
   background: var(--color-gold-soft);
 }
+.decl-pdt .pdt-cell {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: baseline;
+  width: 100%;
+}
 .decl-pdt .casilla-tag {
-  display: inline-block;
-  min-width: 34px;
-  margin-right: 6px;
+  display: block;
   color: var(--color-gold);
   font-weight: 700;
   font-size: var(--font-size-xs);
   text-align: right;
+  white-space: nowrap;
 }
 .decl-pdt .pdt-amount {
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .decl-pdt .pdt-amount.cell-strong {
   font-weight: 700;

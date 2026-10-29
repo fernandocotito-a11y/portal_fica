@@ -542,12 +542,14 @@ export function render(root) {
   }
 
   function pdtCellHtml(cell, m) {
-    if (!cell) return '<span class="text-muted">—</span>';
+    if (!cell) {
+      return '<span class="pdt-cell"><span class="casilla-tag"></span><span class="pdt-amount text-muted">—</span></span>';
+    }
     const cls = ['pdt-amount', cell.strong ? 'cell-strong' : '', cell.detail ? 'igv-click' : ''].filter(Boolean).join(' ');
     const attrs = cell.detail
       ? ` data-igv="${cell.detail}" data-igv-mes="${m.mes}" title="Ver composición por tasa"`
       : '';
-    return `<span class="casilla-tag">${cell.casilla}</span> <span class="${cls}"${attrs}>${pdtCellText(cell, m)}</span>`;
+    return `<span class="pdt-cell"><span class="casilla-tag">${cell.casilla}</span><span class="${cls}"${attrs}>${pdtCellText(cell, m)}</span></span>`;
   }
 
   function fichaTableHtml(m) {
@@ -626,7 +628,7 @@ export function render(root) {
         h1{font-size:16px;margin:0 0 2px} h2{font-size:12px;font-weight:normal;color:#555;margin:0 0 16px}
         table{width:100%;border-collapse:collapse} th,td{border:1px solid #cbd5e1;padding:4px 6px}
         th{background:#f1f5f9;text-align:left} td.n{text-align:right;font-variant-numeric:tabular-nums}
-        span.c{color:#92400e;font-weight:bold}
+        span.c{display:inline-block;width:34px;margin-right:8px;text-align:right;color:#92400e;font-weight:bold}
         tr.sec td{background:#e2e8f0;font-weight:bold}
       </style></head><body>
       <h1>Formulario Virtual 621 · ${escapeHtml(MONTHS[m.mes - 1])} ${m.anio}</h1>
