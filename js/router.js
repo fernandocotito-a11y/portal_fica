@@ -94,6 +94,13 @@ const routes = [
     loader: () => import('../modules/declaraciones/declaracionesView.js'),
   },
   {
+    pattern: /^\/reportes\/?$/,
+    guard: 'auth',
+    company: true,
+    permission: 'reportes',
+    loader: () => import('../modules/reportes/reportesView.js'),
+  },
+  {
     pattern: /^\/module\/([\w-]+)\/?$/,
     guard: 'auth',
     company: true,

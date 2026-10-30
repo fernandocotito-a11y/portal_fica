@@ -143,6 +143,7 @@ Portal/
 │   ├── retencion/          # Agentes de Retención / Percepción (SUNAT)
 │   ├── sire/               # SIRE: conexión en línea con SUNAT
 │   ├── declaraciones/      # Liquidación IGV / Renta (FV 621)
+│   ├── reportes/           # Dashboard, comparativo tributario y simulación
 │   └── placeholder/        # Maqueta de módulos futuros
 │
 └── supabase/
@@ -176,7 +177,7 @@ Frontend (GitHub Pages)  ──▶  Supabase
   cargado al iniciar sesión); las **mutaciones** (login, CRUD) son asíncronas.
 - El control de acceso se aplica en dos capas: **RLS en la base de datos** y
   **guards en el router** (`#/login`, `#/set-password`, `#/select-company`,
-  `#/dashboard`, `#/users`, `#/companies`, `#/module/:key`).
+  `#/dashboard`, `#/users`, `#/companies`, `#/reportes`, `#/module/:key`).
 
 ### Añadir un módulo nuevo
 
@@ -196,7 +197,7 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 | **Agentes de Retención** (importación de retenciones/percepciones SUNAT y reporte ordenado) | ✅ Activo |
 | **SIRE** (conexión en línea con SUNAT para actualizar compras y ventas) | ✅ Activo |
 | **Declaraciones SUNAT** (liquidación mensual IGV / Renta RMT, matriz anual y Ficha 621) | ✅ Activo |
-| Reportes Gerenciales | ⏳ Próximamente |
+| **Reportes Gerenciales** (dashboard multiamercial, comparativo tributario y simulación intercompany) | ✅ Activo |
 
 ### Compras y Ventas / SIRE
 
@@ -308,6 +309,32 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   los datos manuales. Requiere ejecutar `supabase/declaraciones_schema.sql`
   (tablas `declaraciones_balances` y `tax_declaration_periods`, con RLS); si no
   existe, funciona en modo local con `localStorage`.
+
+### Reportes Gerenciales · Consolidado multiamercial
+
+- Integra **todas las empresas a las que el usuario tiene acceso** (el
+  superadministrador ve todas), consultando directamente Compras/Ventas,
+  Retenciones/Percepciones, Planillas y Declaraciones con `company_id` y RLS.
+- **Dashboard**: KPIs del ejercicio, evolución mensual de ventas/compras,
+  planilla y trabajadores, retenciones/percepciones, lectura gerencial,
+  cobertura de fuentes y resumen por empresa.
+- **Comparativo tributario**: posición PDT 621 resumida por empresa y período
+  (IGV ventas/compras, saldo anterior, percepciones, retenciones, crédito
+  disponible, IGV por pagar, Renta RMT y total), con vista mensual o acumulada
+  y exportación CSV.
+- **Simulación intercompany**: calcula una factura entre una empresa con crédito
+  fiscal y otra con IGV por pagar, mostrando el antes/después, el máximo
+  sugerido, el IGV liberado, el costo adicional de Renta RMT y el efecto neto.
+  Es referencial: no reemplaza una operación real ni el análisis de precios de
+  transferencia.
+- Los períodos de planilla **cerrados** usan la foto oficial; los **abiertos** se
+  estiman con sueldo base y conceptos registrados y quedan señalizados. Los
+  meses sin período abierto no se proyectan.
+- La exportación **PDF** usa una ventana de impresión A4 horizontal con la
+  identidad visual del portal; los controles y filtros se ocultan.
+- No crea tablas nuevas: reutiliza las tablas y políticas RLS existentes. Para
+  incluir saldos de declaraciones y retenciones reales deben estar ejecutados
+  `supabase/declaraciones_schema.sql` y `supabase/retencion_schema.sql`.
 
 ---
 

@@ -112,9 +112,9 @@ export const MODULES = [
   {
     key: 'reportes',
     name: 'Reportes Gerenciales',
-    description: 'Generador de reportes e informes gerenciales.',
+    description: 'Consolidado multiamercial, comparativo tributario y simulación intercompany.',
     icon: ic('<path d="M4 20h16"/><rect x="6" y="10" width="3" height="10" rx="1"/><rect x="11" y="6" width="3" height="14" rx="1"/><rect x="16" y="12" width="3" height="8" rx="1"/>'),
-    status: 'soon',
+    status: 'active',
     adminOnly: false,
     group: 'operations',
   },
@@ -198,5 +198,6 @@ export function moduleHash(key) {
   if (key === 'retenciones') return '#/retencion';
   if (key === 'sire') return '#/sire';
   if (key === 'declaraciones') return '#/declaraciones';
+  if (key === 'reportes') return '#/reportes';
   return `#/module/${key}`;
 }
