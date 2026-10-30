@@ -157,7 +157,8 @@ export function renderAfpTab(root) {
   });
 
   // Trae los parámetros vigentes desde la SBS a través de la Edge Function
-  // `sbs-rates` (consulta del lado del servidor, sin bloqueo de CORS).
+  // `sbs-rates` (consulta del lado del servidor, sin bloqueo de CORS) y los
+  // guarda en Supabase (tabla `afp_rates`) de forma automática.
   const fetchBtn = root.querySelector('[data-fetch-sbs]');
   const fetchLabel = fetchBtn.innerHTML;
   fetchBtn.addEventListener('click', async () => {
@@ -166,15 +167,18 @@ export function renderAfpTab(root) {
     try {
       const { period, rows } = await afpRatesService.fetchFromSBS();
       if (!rows || rows.length === 0) throw new Error('La SBS no devolvió filas de AFP.');
-      fillRows(rows);
+      const missing = AFPS.filter((a) => !rows.some((r) => r.afp === a));
+      if (missing.length) throw new Error(`Faltan AFP en la respuesta de la SBS: ${missing.join(', ')}.`);
       if (period && /^\d{4}-\d{2}$/.test(period)) {
         year = Number(period.slice(0, 4));
         month = Number(period.slice(5, 7));
         yearSel.value = String(year);
         monthSel.value = String(month);
       }
+      fillRows(rows);
+      await afpRatesService.saveMonth(year, month, collect());
       render();
-      showToast(`Datos de la SBS cargados para ${MESES[month - 1]} ${year}. Revisa y pulsa Guardar.`);
+      showToast(`Parámetros AFP actualizados (${MESES[month - 1]} ${year}).`);
     } catch (err) {
       showToast(err.message || 'No se pudo consultar la SBS.', 'error');
     } finally {
