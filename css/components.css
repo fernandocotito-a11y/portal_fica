@@ -1194,21 +1194,26 @@ dialog.modal::backdrop {
   border-left: 3px solid var(--color-gold);
 }
 .mgmt-toolbar__filters {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-4);
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 140px 170px minmax(300px, 1fr);
+  gap: var(--space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: end;
 }
 .mgmt-field {
-  min-width: 132px;
+  min-width: 0;
   margin: 0;
 }
 .mgmt-field--wide {
-  min-width: 280px;
+  min-width: 0;
 }
 .mgmt-field .form-input {
-  height: 38px;
+  height: 42px;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
   font-size: var(--font-size-sm);
+  line-height: 1.3;
 }
 .mgmt-toolbar__meta {
   display: flex;
@@ -1799,7 +1804,7 @@ dialog.modal::backdrop {
 }
 .mgmt-sim-form__grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.45fr) minmax(0, 0.9fr) minmax(0, 1.15fr);
   gap: var(--space-3);
 }
 .mgmt-sim-form .form-group { margin: 0; }
@@ -2088,7 +2093,7 @@ dialog.modal::backdrop {
   .mgmt-chart-card--wide { grid-column: auto; }
   .mgmt-toolbar { align-items: stretch; flex-direction: column; }
   .mgmt-toolbar__meta { padding-bottom: 0; white-space: normal; }
-  .mgmt-field--wide { min-width: 100%; }
+  .mgmt-toolbar__filters { grid-template-columns: 1fr; }
   .mgmt-comparative-head { align-items: flex-start; flex-direction: column; }
   .mgmt-sim-invoice__numbers,
   .mgmt-sim-limits,
@@ -2097,8 +2102,6 @@ dialog.modal::backdrop {
 }
 @media (max-width: 560px) {
   .mgmt-kpis { grid-template-columns: 1fr; }
-  .mgmt-toolbar__filters { flex-direction: column; align-items: stretch; }
-  .mgmt-field { min-width: 100%; }
   .mgmt-heading-actions { width: 100%; }
   .mgmt-heading-actions .btn { flex: 1; justify-content: center; }
   .mgmt-coverage { grid-template-columns: 1fr; }
