@@ -29,6 +29,7 @@ export function renderAfpTab(root) {
         <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">
           <select class="form-input" data-year style="max-width:110px;">${YEARS.map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
           <select class="form-input" data-month style="max-width:150px;">${MESES.map((m, i) => `<option value="${i + 1}"${i + 1 === month ? ' selected' : ''}>${m}</option>`).join('')}</select>
+          <button type="button" class="btn" data-fetch-sbs>${ICONS.arrowRight} Actualizar desde la SBS</button>
           <button type="button" class="btn" data-open-sbs>${ICONS.arrowRight} Abrir la SBS</button>
           <button type="button" class="btn btn--primary" data-save>${ICONS.check} Guardar</button>
         </div>
@@ -65,7 +66,7 @@ export function renderAfpTab(root) {
   const historyEl = root.querySelector('[data-history]');
 
   if (!canEdit) {
-    root.querySelectorAll('[data-year],[data-month],[data-paste],[data-save],input[data-field]').forEach((el) => { el.disabled = true; });
+    root.querySelectorAll('[data-year],[data-month],[data-paste],[data-save],[data-fetch-sbs],input[data-field]').forEach((el) => { el.disabled = true; });
   }
 
   function renderHistory() {
@@ -152,6 +153,33 @@ export function renderAfpTab(root) {
       render();
     } catch (err) {
       showToast(err.message, 'error');
+    }
+  });
+
+  // Trae los parámetros vigentes desde la SBS a través de la Edge Function
+  // `sbs-rates` (consulta del lado del servidor, sin bloqueo de CORS).
+  const fetchBtn = root.querySelector('[data-fetch-sbs]');
+  const fetchLabel = fetchBtn.innerHTML;
+  fetchBtn.addEventListener('click', async () => {
+    fetchBtn.disabled = true;
+    fetchBtn.innerHTML = 'Consultando SBS…';
+    try {
+      const { period, rows } = await afpRatesService.fetchFromSBS();
+      if (!rows || rows.length === 0) throw new Error('La SBS no devolvió filas de AFP.');
+      fillRows(rows);
+      if (period && /^\d{4}-\d{2}$/.test(period)) {
+        year = Number(period.slice(0, 4));
+        month = Number(period.slice(5, 7));
+        yearSel.value = String(year);
+        monthSel.value = String(month);
+      }
+      render();
+      showToast(`Datos de la SBS cargados para ${MESES[month - 1]} ${year}. Revisa y pulsa Guardar.`);
+    } catch (err) {
+      showToast(err.message || 'No se pudo consultar la SBS.', 'error');
+    } finally {
+      fetchBtn.disabled = false;
+      fetchBtn.innerHTML = fetchLabel;
     }
   });
 

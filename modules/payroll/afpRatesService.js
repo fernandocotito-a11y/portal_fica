@@ -11,7 +11,7 @@ import { num } from './payrollUtils.js';
 import { AFP_BASE, AFP_REM_MAX_ASEGURABLE } from './payrollConfig.js';
 
 const AFPS = ['HABITAT', 'INTEGRA', 'PRIMA', 'PROFUTURO'];
-const SBS_FUNCTION_URL = 'https://kiogxgcrexgpgumfpgnq.supabase.co/functions/v1/smooth-task';
+const SBS_FUNCTION_URL = 'https://kiogxgcrexgpgumfpgnq.supabase.co/functions/v1/sbs-rates';
 
 let cache = {}; // 'YYYY-MM' -> [ { afp, comisionFlujo, ... } ]
 

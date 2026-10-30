@@ -1,5 +1,5 @@
 // ============================================================================
-// FICA Portal — Edge Function "smooth-task" (importa parámetros AFP desde la SBS)
+// FICA Portal — Edge Function "sbs-rates" (importa parámetros AFP desde la SBS)
 // ----------------------------------------------------------------------------
 // Consulta la web de la SBS (evita CORS) y devuelve el período + las 4 filas AFP.
 // Intenta seguir redirecciones automáticamente y, si falla, manualmente con
