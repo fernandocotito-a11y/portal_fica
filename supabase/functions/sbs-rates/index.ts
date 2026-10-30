@@ -2,18 +2,24 @@
 // FICA Portal — Edge Function "sbs-rates" (importa parámetros AFP desde la SBS)
 // ----------------------------------------------------------------------------
 // Consulta la web de la SBS (evita CORS) y devuelve el período + las 4 filas AFP.
-// Intenta seguir redirecciones automáticamente y, si falla, manualmente con
-// cookies. Ante un fallo devuelve un diagnóstico claro.
-// auth: 'user' -> solo usuarios autenticados del portal.
+// Usa Deno.serve, sin dependencias externas, para desplegar en cualquier versión
+// del runtime de Supabase. Incluye manejo de CORS (OPTIONS) para evitar
+// "Failed to fetch" desde el navegador.
 // ============================================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "jsr:@supabase/server@^1";
 
 const SBS_URL =
   "https://www.sbs.gob.pe/app/spp/empleadores/comisiones_spp/paginas/comision_prima.aspx";
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
 const AFPS = ["HABITAT", "INTEGRA", "PRIMA", "PROFUTURO"];
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Content-Type": "application/json",
+};
 
 function pct(s: string): number {
   const n = parseFloat(String(s).replace("%", "").replace(",", ".").trim());
@@ -25,7 +31,14 @@ function numPe(s: string): number {
 }
 
 function parseSbs(html: string) {
-  const rows: unknown[] = [];
+  const rows: {
+    afp: string;
+    comisionFlujo: number;
+    comisionSaldo: number;
+    primaSeguro: number;
+    aporteObligatorio: number;
+    remMaxAsegurable: number;
+  }[] = [];
   for (const chunk of html.split("JER_filaContenido")) {
     const tds = [...chunk.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) =>
       m[1].replace(/<[^>]+>/g, "").trim()
@@ -93,26 +106,33 @@ async function fetchSbsHtml() {
   return last;
 }
 
-export default {
-  fetch: withSupabase({ auth: "user" }, async () => {
-    try {
-      const { html, status, finalUrl, mode } = await fetchSbsHtml();
-      const rows = parseSbs(html);
-      const periodMatch = html.match(/id="lblMes1"[^>]*>\s*([\d]{4}-[\d]{2})/);
-      if (rows.length === 0) {
-        return Response.json(
-          {
-            error:
-              `No se pudo leer la tabla. status=${status} modo=${mode} final=${finalUrl} ` +
-              `len=${html.length} JER=${html.includes("JER_filaContenido")} HABITAT=${html.includes("HABITAT")} ` +
-              `head=${html.slice(0, 160).replace(/\s+/g, " ")}`,
-          },
-          { status: 502 }
-        );
-      }
-      return Response.json({ period: periodMatch ? periodMatch[1] : null, rows });
-    } catch (e) {
-      return Response.json({ error: String(e?.message || e) }, { status: 502 });
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: CORS_HEADERS });
+  }
+  try {
+    const { html, status, finalUrl, mode } = await fetchSbsHtml();
+    const rows = parseSbs(html);
+    const periodMatch = html.match(/id="lblMes1"[^>]*>\s*([\d]{4}-[\d]{2})/);
+    if (rows.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error:
+            `No se pudo leer la tabla. status=${status} modo=${mode} final=${finalUrl} ` +
+            `len=${html.length} JER=${html.includes("JER_filaContenido")} HABITAT=${html.includes("HABITAT")} ` +
+            `head=${html.slice(0, 160).replace(/\s+/g, " ")}`,
+        }),
+        { status: 502, headers: CORS_HEADERS }
+      );
     }
-  }),
-};
+    return new Response(
+      JSON.stringify({ period: periodMatch ? periodMatch[1] : null, rows }),
+      { headers: CORS_HEADERS }
+    );
+  } catch (e) {
+    return new Response(
+      JSON.stringify({ error: String(e?.message || e) }),
+      { status: 502, headers: CORS_HEADERS }
+    );
+  }
+});
