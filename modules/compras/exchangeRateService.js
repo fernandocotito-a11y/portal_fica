@@ -6,7 +6,7 @@
    desde Excel, CRUD y búsqueda del tipo de cambio por fecha/moneda.
    ========================================================================== */
 
-import { supabase } from '../../js/supabase.js';
+import { supabase, SUPABASE_URL } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import { isSolarized } from './comprasConfig.js';
 
@@ -309,6 +309,154 @@ export function parseRateText(text) {
   return { rows: result, skipped, warnings };
 }
 
+/* ---------------------------------------------------------------------------
+   Tipo de cambio automático desde el BCRP
+   ----------------------------------------------------------------------------
+   Serie PD04640PD = "Tipo de cambio - TC Sistema bancario SBS (S/ por US$)
+   - Venta", la que se usa para convertir operaciones en moneda extranjera.
+
+   La API del BCRP no envía cabeceras CORS, así que el navegador no puede
+   llamarla directamente. Se intentan tres vías, en este orden:
+
+     1. Edge Function propia (`bcrp-rates`): lectura del lado servidor.
+     2. `data/tc-bcrp.json`: archivo del propio portal, actualizado a diario
+        por GitHub Actions (mismo origen, sin CORS).
+     3. Llamada directa al BCRP (solo funcionaría si algún día abren CORS).
+   ------------------------------------------------------------------------- */
+
+const BCRP_SERIES = 'PD04640PD';
+const BCRP_BASE = 'https://estadisticas.bcrp.gob.pe/estadisticas/series/api';
+
+const BCRP_MONTHS = {
+  ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, sep: 9, oct: 10, nov: 11, dic: 12,
+  jan: 1, apr: 4, aug: 8, dec: 12,
+};
+
+/** Convierte "02.Nov.26" (formato del BCRP) a "2026-11-02". */
+function bcrpIsoDate(label) {
+  const text = String(label || '').trim();
+  let match = text.match(/^(\d{1,2})[.\-/]([A-Za-zÁÉÍÓÚáéíóú]{3,})[.\-/](\d{2,4})$/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = BCRP_MONTHS[match[2].toLowerCase().slice(0, 3)];
+    let year = Number(match[3]);
+    if (year < 100) year += 2000;
+    if (!month) return '';
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  match = text.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (match) {
+    return `${match[3]}-${String(match[2]).padStart(2, '0')}-${String(match[1]).padStart(2, '0')}`;
+  }
+  return '';
+}
+
+/**
+ * Normaliza la respuesta del BCRP (`periods`) o del JSON estático (`rates`)
+ * a filas listas para `importRows()`.
+ */
+export function parseBcrpPayload(payload) {
+  const rows = [];
+  if (!payload || typeof payload !== 'object') return rows;
+
+  if (Array.isArray(payload.periods)) {
+    for (const period of payload.periods) {
+      const rateDate = bcrpIsoDate(period?.name);
+      const raw = String((period?.values || [])[0] ?? '').trim();
+      if (!rateDate || !/^\d+(\.\d+)?$/.test(raw)) continue;
+      const rate = Number(raw);
+      if (rate > 0) rows.push({ rate_date: rateDate, currency: 'USD', rate, source: 'bcrp' });
+    }
+    return rows;
+  }
+
+  if (payload.rates && typeof payload.rates === 'object') {
+    for (const [date, value] of Object.entries(payload.rates)) {
+      const rateDate = normalizeDate(date);
+      const rate = Number(value);
+      if (!rateDate || !(rate > 0)) continue;
+      rows.push({ rate_date: rateDate, currency: 'USD', rate, source: 'bcrp' });
+    }
+  }
+  return rows;
+}
+
+function bcrpMonthRange(year, month) {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const mm = String(month).padStart(2, '0');
+  return {
+    start: `${year}-${mm}-01`,
+    end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
+    prefix: `${year}-${mm}`,
+  };
+}
+
+async function bcrpFromEdge(year, month) {
+  const url = `${SUPABASE_URL}/functions/v1/bcrp-rates?year=${year}&month=${month}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rows = parseBcrpPayload(await res.json());
+  if (!rows.length) throw new Error('sin tasas en la respuesta');
+  return rows;
+}
+
+async function bcrpFromStatic(year, month) {
+  const { prefix } = bcrpMonthRange(year, month);
+  const url = new URL('data/tc-bcrp.json', document.baseURI);
+  url.searchParams.set('v', String(Date.now()));
+  const res = await fetch(url.toString(), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const rows = parseBcrpPayload(data).filter((row) => row.rate_date.startsWith(prefix));
+  if (!rows.length) throw new Error('ese mes no está en el archivo local');
+  return { rows, updatedAt: String(data.updatedAt || '') };
+}
+
+async function bcrpFromDirect(year, month) {
+  const { start, end } = bcrpMonthRange(year, month);
+  const url = `${BCRP_BASE}/${BCRP_SERIES}/json/${start}/${end}/ing`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const rows = parseBcrpPayload(await res.json());
+  if (!rows.length) throw new Error('sin tasas en la respuesta');
+  return rows;
+}
+
+/**
+ * Obtiene los tipos de cambio USD de un mes.
+ * @returns {Promise<{rows: Array, transport: string, year: number, month: number, updatedAt?: string, errors: string[]}>}
+ */
+export async function fetchBcrpRates({ year, month } = {}) {
+  const now = new Date();
+  const y = Number(year) || now.getFullYear();
+  const m = Number(month) || (now.getMonth() + 1);
+  const errors = [];
+
+  try {
+    return { rows: await bcrpFromEdge(y, m), transport: 'edge', year: y, month: m, errors };
+  } catch (err) {
+    errors.push(`servidor: ${err.message || err}`);
+  }
+
+  try {
+    const res = await bcrpFromStatic(y, m);
+    return { rows: res.rows, transport: 'static', updatedAt: res.updatedAt, year: y, month: m, errors };
+  } catch (err) {
+    errors.push(`archivo local: ${err.message || err}`);
+  }
+
+  try {
+    return { rows: await bcrpFromDirect(y, m), transport: 'direct', year: y, month: m, errors };
+  } catch (err) {
+    errors.push(`BCRP: ${err.message || err}`);
+  }
+
+  const error = new Error('No se pudo obtener el tipo de cambio del BCRP.');
+  error.details = errors;
+  throw error;
+}
+
 export const exchangeRateService = {
   get mode() { return mode; },
   get lastError() { return lastError; },
@@ -540,4 +688,7 @@ export const exchangeRateService = {
   },
 
   parseText: parseRateText,
+
+  /** Descarga el tipo de cambio USD del BCRP para un mes (año/mes). */
+  fetchFromBCRP: fetchBcrpRates,
 };

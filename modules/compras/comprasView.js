@@ -129,6 +129,9 @@ export function render(root) {
     rateSearch: '',
     ratePage: 1,
     ratePageSize: 50,
+    bcrpYear: String(new Date().getFullYear()),
+    bcrpMonth: String(new Date().getMonth() + 1),
+    bcrpApply: true,
   };
   let loading = true;
   let error = '';
@@ -136,6 +139,8 @@ export function render(root) {
   let supplierBusy = false;
   let rateError = '';
   let rateBusy = false;
+  let bcrpBusy = false;
+  let bcrpInfo = '';
   let parsed = null;
   let importStatus = '';
   let importBusy = false;
@@ -798,7 +803,9 @@ export function render(root) {
       </td></tr>`;
     }
     return rows.map((r) => {
-      const source = r.source === 'manual' ? 'Manual' : (r.source === 'import' ? 'Importado' : 'SUNAT');
+      const source = r.source === 'manual'
+        ? 'Manual'
+        : (r.source === 'import' ? 'Importado' : (r.source === 'bcrp' ? 'BCRP' : 'SUNAT'));
       return `<tr>
         <td><strong>${displayDate(r.rate_date)}</strong></td>
         <td><span class="badge badge--muted">${escapeHtml(r.currency || 'USD')}</span></td>
@@ -846,6 +853,52 @@ export function render(root) {
     if (count) count.textContent = `${rows.length} fecha(s)`;
   }
 
+  function bcrpCardHtml() {
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let y = currentYear + 1; y >= currentYear - 6; y -= 1) years.push(y);
+    const yearOptions = years
+      .map((y) => `<option value="${y}" ${String(y) === state.bcrpYear ? 'selected' : ''}>${y}</option>`)
+      .join('');
+    const monthOptions = MONTHS
+      .map((name, i) => {
+        const value = String(i + 1);
+        return `<option value="${value}" ${value === state.bcrpMonth ? 'selected' : ''}>${name}</option>`;
+      })
+      .join('');
+    return `
+      <div class="card" style="margin-bottom:var(--space-4);">
+        <div class="card__header">
+          <div>
+            <h3 class="card__title">Actualización automática desde el BCRP</h3>
+            <p class="card__subtitle">Descarga el tipo de cambio USD oficial (SBS venta) del mes elegido. Ya no hace falta subir archivos.</p>
+          </div>
+          <span class="badge badge--muted">Serie PD04640PD</span>
+        </div>
+        <div class="card__body">
+          <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;">
+            <div class="form-group" style="margin:0;min-width:120px;">
+              <label class="form-label">Año</label>
+              <select class="form-input" data-bcrp-year>${yearOptions}</select>
+            </div>
+            <div class="form-group" style="margin:0;min-width:170px;">
+              <label class="form-label">Mes</label>
+              <select class="form-input" data-bcrp-month>${monthOptions}</select>
+            </div>
+            <button type="button" class="btn btn--primary" data-bcrp-update ${bcrpBusy ? 'disabled' : ''}>
+              ${ICONS.arrowRight} ${bcrpBusy ? 'Consultando el BCRP…' : 'Actualizar desde BCRP'}
+            </button>
+            <label style="display:flex;gap:8px;align-items:center;font-size:var(--font-size-sm);padding-bottom:9px;">
+              <input type="checkbox" data-bcrp-apply ${state.bcrpApply ? 'checked' : ''} />
+              Aplicar a comprobantes sin TC
+            </label>
+            <span class="text-muted" style="font-size:var(--font-size-sm);padding-bottom:9px;">USD · TC Sistema bancario SBS venta</span>
+          </div>
+          ${bcrpInfo}
+        </div>
+      </div>`;
+  }
+
   function renderRates() {
     const all = exchangeRateService.all();
     const rows = exchangeRateService.list(state.rateSearch);
@@ -865,6 +918,7 @@ export function render(root) {
         <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${usdRates}</div><div class="stat-card__label">Fechas en USD</div></div></div>
         <div class="stat-card" ${missing ? 'style="border-color:var(--color-gold);"' : ''}><span class="stat-card__icon" ${missing ? 'style="color:var(--color-gold);"' : ''}>${ICONS.info}</span><div><div class="stat-card__value">${missing}</div><div class="stat-card__label">Comprobantes extranjeros sin TC</div></div></div>
       </div>
+      ${bcrpCardHtml()}
       <div class="card">
         <div class="card__header">
           <div>
@@ -1476,6 +1530,74 @@ export function render(root) {
     }
   }
 
+  async function updateFromBcrp() {
+    if (bcrpBusy) return;
+    const year = Number(state.bcrpYear) || new Date().getFullYear();
+    const month = Number(state.bcrpMonth) || (new Date().getMonth() + 1);
+    const monthName = MONTHS[month - 1] || String(month);
+    bcrpBusy = true;
+    bcrpInfo = '';
+    rateError = '';
+    renderContent();
+    try {
+      const result = await exchangeRateService.fetchFromBCRP({ year, month });
+      if (!result.rows.length) {
+        bcrpInfo = `<div class="alert alert--info" style="margin-top:var(--space-3);">
+          El BCRP todavía no publica tipos de cambio para <strong>${escapeHtml(monthName)} ${year}</strong>.
+        </div>`;
+        showToast(`El BCRP no tiene tasas publicadas para ${monthName} ${year}.`, 'info');
+        return;
+      }
+      const imported = await exchangeRateService.importRows(result.rows, { source: 'bcrp' });
+      state.ratePage = 1;
+
+      let applied = 0;
+      if (state.bcrpApply) {
+        const targets = taxService.all().filter(needsRateAssignment);
+        const rateResult = exchangeRateService.applyMissingRates(targets);
+        if (rateResult.assigned) {
+          await taxService.updateExchangeRates(
+            rateResult.changed.map((r) => ({ id: r.id, exchange_rate: r.exchange_rate }))
+          );
+          applied = rateResult.assigned;
+        }
+      }
+
+      const dates = result.rows.map((r) => r.rate_date).sort();
+      const via = result.transport === 'edge'
+        ? 'servidor del portal'
+        : result.transport === 'static'
+          ? 'archivo diario del portal'
+          : 'consulta directa al BCRP';
+      const updatedNote = result.updatedAt
+        ? ` Archivo actualizado el ${displayDateTime(result.updatedAt)}.`
+        : '';
+      bcrpInfo = `<div class="alert alert--success" style="margin-top:var(--space-3);">
+        <div>
+          <strong>${escapeHtml(monthName)} ${year}: ${result.rows.length} tasa(s) obtenida(s)</strong>
+          (${displayDate(dates[0])} → ${displayDate(dates[dates.length - 1])}).
+          Se guardaron ${imported.created} nueva(s) y ${imported.updated} actualizada(s).
+          ${applied ? `Se aplicó el tipo de cambio a ${applied} comprobante(s).` : ''}
+          Origen: ${escapeHtml(via)}.${escapeHtml(updatedNote)}
+        </div>
+      </div>`;
+      showToast(`BCRP ${monthName} ${year}: ${imported.created} nueva(s), ${imported.updated} actualizada(s)${applied ? `, ${applied} comprobante(s) actualizado(s)` : ''}.`);
+    } catch (err) {
+      const details = (err.details || []).join(' · ');
+      bcrpInfo = `<div class="alert alert--error" style="margin-top:var(--space-3);">
+        <div>
+          <strong>No se pudo consultar el BCRP.</strong>
+          ${escapeHtml(err.message || String(err))}
+          ${details ? `<div class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-1);">${escapeHtml(details)}</div>` : ''}
+        </div>
+      </div>`;
+      showToast(err.message || String(err), 'error');
+    } finally {
+      bcrpBusy = false;
+      renderContent();
+    }
+  }
+
   async function handleRateFile(file) {
     if (!file) return;
     try {
@@ -1622,6 +1744,16 @@ export function render(root) {
     }
 
     if (e.target.closest('[data-rate-add]')) { openRateModal(null); return; }
+    if (e.target.closest('[data-bcrp-update]')) {
+      const yearEl = content.querySelector('[data-bcrp-year]');
+      const monthEl = content.querySelector('[data-bcrp-month]');
+      const applyEl = content.querySelector('[data-bcrp-apply]');
+      if (yearEl?.value) state.bcrpYear = yearEl.value;
+      if (monthEl?.value) state.bcrpMonth = monthEl.value;
+      if (applyEl) state.bcrpApply = applyEl.checked;
+      updateFromBcrp();
+      return;
+    }
     if (e.target.closest('[data-rate-model]')) {
       downloadText('MODELO_TIPO_CAMBIO.csv', exchangeRateService.modelCsv());
       showToast('Modelo CSV descargado. Completa Fecha, Tipo de Cambio y Moneda.');
