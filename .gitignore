@@ -10,6 +10,13 @@ Desktop.ini
 *.log
 npm-debug.log*
 
+# Respaldos de base de datos (contienen datos reales y hashes de contraseñas).
+# Este repositorio es público: nunca los subas.
+*.backup.gz
+*.backup
+*.dump
+*.sql.gz
+
 /Sunat/
 /sire/
 /retencion/
