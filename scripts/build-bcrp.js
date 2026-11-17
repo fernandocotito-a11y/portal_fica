@@ -56,13 +56,20 @@ async function fetchRange(start, end) {
     },
   });
   if (!res.ok) throw new Error(`BCRP respondió HTTP ${res.status}`);
-  return res.json();
+  const text = await res.text();
+  let endIdx = text.indexOf('}<br');
+  if (endIdx === -1) endIdx = text.indexOf('}<font');
+  const jsonStr = endIdx !== -1 ? text.substring(0, endIdx + 1) : text;
+  return JSON.parse(jsonStr);
 }
 
 (async () => {
   const now = new Date();
   const end = now.toISOString().slice(0, 10);
-  const start = `${now.getUTCFullYear() - YEARS}-01-01`;
+  const startYear = now.getUTCFullYear() - YEARS;
+  // Consultar desde mediados de diciembre del año anterior para que el 1 de enero
+  // tenga el tipo de cambio oficial de cierre del último día hábil de diciembre.
+  const start = `${startYear - 1}-12-15`;
 
   console.log(`Consultando tipo de cambio oficial SBS (Compra y Venta) del ${start} al ${end}…`);
   const data = await fetchRange(start, end);
@@ -89,15 +96,18 @@ async function fetchRange(start, end) {
   const sortedHabil = [...businessDays.keys()].sort();
   if (!sortedHabil.length) throw new Error('El BCRP no devolvió ninguna tasa válida.');
 
-  // 2. Generar el calendario COMPLETO día por día (regla oficial SUNAT: forward-fill)
-  // Ningún día queda sin tipo de cambio: sábados, domingos, feriados y días pendientes
-  // repiten automáticamente el último día hábil anterior hasta el día de hoy.
-  const firstHabil = sortedHabil[0];
+  // 2. Generar el calendario COMPLETO día por día según normativa SUNAT:
+  // Para cualquier fecha calendario D, SUNAT publica la cotización de cierre SBS
+  // del último día hábil anterior (D_prev < D).
+  // Por eso, la tasa vigente en el día D es `lastKnown` (cierre del día hábil anterior).
+  // Si el día D es hábil bancario, su cotización de cierre se convertirá en `lastKnown`
+  // a partir del día siguiente D + 1.
+  const targetStart = `${startYear}-01-01`;
   const lastHabil = sortedHabil[sortedHabil.length - 1];
   const todayIso = new Date().toISOString().slice(0, 10);
   const targetEnd = todayIso > lastHabil ? todayIso : lastHabil;
 
-  const startDate = new Date(`${firstHabil}T00:00:00Z`);
+  const startDate = new Date(`${sortedHabil[0]}T00:00:00Z`);
   const endDate = new Date(`${targetEnd}T00:00:00Z`);
 
   const rates = {};
@@ -105,14 +115,16 @@ async function fetchRange(start, end) {
 
   for (let d = new Date(startDate); d <= endDate; d.setUTCDate(d.getUTCDate() + 1)) {
     const iso = d.toISOString().slice(0, 10);
-    if (businessDays.has(iso)) {
-      lastKnown = businessDays.get(iso);
-    }
-    if (lastKnown) {
+    // Asigna la tasa oficial SUNAT si ya cruzamos la fecha de inicio deseada
+    if (lastKnown && iso >= targetStart) {
       rates[iso] = {
         compra: lastKnown.compra,
         venta: lastKnown.venta,
       };
+    }
+    // Al cierre de operaciones del día hábil, se actualiza la tasa para los días siguientes
+    if (businessDays.has(iso)) {
+      lastKnown = businessDays.get(iso);
     }
   }
 

@@ -34,10 +34,10 @@ function json(body: unknown, status = 200) {
 function monthRange(year: number, month: number) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const mm = String(month).padStart(2, "0");
-  // Consultar desde 7 días antes para arrastrar el tipo de cambio oficial
+  // Consultar desde 15 días antes para arrastrar el tipo de cambio oficial
   // si el primer día del mes cae sábado, domingo o feriado (regla SUNAT).
   const prevDate = new Date(Date.UTC(year, month - 1, 1));
-  prevDate.setUTCDate(prevDate.getUTCDate() - 7);
+  prevDate.setUTCDate(prevDate.getUTCDate() - 15);
   return {
     start: prevDate.toISOString().slice(0, 10),
     end: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
@@ -83,7 +83,13 @@ Deno.serve(async (req) => {
 
     let payload: unknown;
     try {
-      payload = JSON.parse(text);
+      let clean = text.trim();
+      const firstBrace = clean.indexOf("{");
+      const lastBrace = clean.lastIndexOf("}");
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        clean = clean.substring(firstBrace, lastBrace + 1);
+      }
+      payload = JSON.parse(clean);
     } catch {
       return json({ error: "El BCRP no devolvió JSON válido.", detail: text.slice(0, 200) }, 502);
     }

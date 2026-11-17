@@ -256,9 +256,9 @@ export function parseRateText(text) {
   let start = 0;
   if (looksLikeHeader(rows[0])) {
     const headers = rows[0].map((h) => h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
-    let rateIndex = headers.findIndex((h) => /venta/.test(h) && !/fecha|date/.test(h));
+    let rateIndex = headers.findIndex((h) => /compra/.test(h) && !/fecha|date/.test(h));
     if (rateIndex < 0) {
-      rateIndex = headers.findIndex((h) => /cambio|rate|valor|compra/.test(h) && !/fecha|date/.test(h));
+      rateIndex = headers.findIndex((h) => /cambio|rate|valor|venta/.test(h) && !/fecha|date/.test(h));
     }
     map = {
       date: headers.findIndex((h) => /fecha|date|dia/.test(h)),
@@ -283,15 +283,29 @@ export function parseRateText(text) {
       dateValue = cells[map.date];
       rateValue = cells[map.rate];
       currencyValue = map.currency >= 0 ? cells[map.currency] : '';
+    } else if (cells.length >= 3 && /^\d+(\.\d+)?$/.test(cells[1].replace(',', '.')) && /^\d+(\.\d+)?$/.test(cells[2].replace(',', '.'))) {
+      // Formato típico SUNAT: Día / Compra / Venta
+      dateValue = cells[0];
+      rateValue = cells[1]; // Compra para Compras
+      currencyValue = cells[3] || 'USD';
     } else if (cells.length >= 2) {
       dateValue = cells[0];
       rateValue = cells[1];
       currencyValue = cells[2] || '';
     } else if (cells.length === 1) {
-      const match = cells[0].match(/^(\S+)\s+([\d.,]+)$/);
-      if (!match) { skipped += 1; continue; }
-      dateValue = match[1];
-      rateValue = match[2];
+      const parts = cells[0].trim().split(/\s+/);
+      if (parts.length >= 3 && /^\d+(\.\d+)?$/.test(parts[1].replace(',', '.')) && /^\d+(\.\d+)?$/.test(parts[2].replace(',', '.'))) {
+        dateValue = parts[0];
+        rateValue = parts[1]; // Compra
+        currencyValue = parts[3] || 'USD';
+      } else if (parts.length >= 2) {
+        dateValue = parts[0];
+        rateValue = parts[1];
+        currencyValue = parts[2] || 'USD';
+      } else {
+        skipped += 1;
+        continue;
+      }
     } else {
       skipped += 1;
       continue;
@@ -410,21 +424,25 @@ export function parseBcrpPayload(payload, targetPrefix = '') {
 
     for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
       const iso = d.toISOString().slice(0, 10);
+      // Regla SUNAT: el tipo de cambio oficial para la fecha calendario `iso`
+      // es la cotización de cierre del último día hábil anterior (last).
+      if (last) {
+        if (!targetPrefix || iso.startsWith(targetPrefix)) {
+          // Para Compras SUNAT rige el tipo de cambio COMPRA
+          const rate = last.compra > 0 ? last.compra : last.venta;
+          rows.push({
+            rate_date: iso,
+            currency: 'USD',
+            rate,
+            compra: last.compra,
+            venta: last.venta,
+            source: 'sunat',
+          });
+        }
+      }
+      // Al cierre de las operaciones del día hábil, la tasa rige a partir del día siguiente
       if (business.has(iso)) {
         last = business.get(iso);
-      }
-      if (last) {
-        if (targetPrefix && !iso.startsWith(targetPrefix)) continue;
-        // Para Compras SUNAT rige el tipo de cambio COMPRA
-        const rate = last.compra > 0 ? last.compra : last.venta;
-        rows.push({
-          rate_date: iso,
-          currency: 'USD',
-          rate,
-          compra: last.compra,
-          venta: last.venta,
-          source: 'sunat',
-        });
       }
     }
     return rows;
@@ -462,9 +480,9 @@ export function parseBcrpPayload(payload, targetPrefix = '') {
 function bcrpMonthRange(year, month) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const mm = String(month).padStart(2, '0');
-  // Consultar desde 7 días antes para arrastrar el tipo de cambio si el día 1 cae no laborable
+  // Consultar desde 15 días antes para arrastrar el tipo de cambio del último día hábil anterior
   const prevDate = new Date(Date.UTC(year, month - 1, 1));
-  prevDate.setUTCDate(prevDate.getUTCDate() - 7);
+  prevDate.setUTCDate(prevDate.getUTCDate() - 15);
   return {
     fetchStart: prevDate.toISOString().slice(0, 10),
     start: `${year}-${mm}-01`,
@@ -500,7 +518,12 @@ async function bcrpFromDirect(year, month) {
   const url = `${BCRP_BASE}/${BCRP_SERIES}/json/${fetchStart}/${end}/ing`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const rows = parseBcrpPayload(await res.json(), prefix);
+  const text = await res.text();
+  let clean = text.trim();
+  const firstBrace = clean.indexOf('{');
+  const lastBrace = clean.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1) clean = clean.substring(firstBrace, lastBrace + 1);
+  const rows = parseBcrpPayload(JSON.parse(clean), prefix);
   if (!rows.length) throw new Error('sin tasas en la respuesta');
   return rows;
 }
