@@ -256,9 +256,9 @@ export function parseRateText(text) {
   let start = 0;
   if (looksLikeHeader(rows[0])) {
     const headers = rows[0].map((h) => h.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
-    let rateIndex = headers.findIndex((h) => /compra/.test(h) && !/fecha|date/.test(h));
+    let rateIndex = headers.findIndex((h) => /venta/.test(h) && !/fecha|date/.test(h));
     if (rateIndex < 0) {
-      rateIndex = headers.findIndex((h) => /cambio|rate|valor|venta/.test(h) && !/fecha|date/.test(h));
+      rateIndex = headers.findIndex((h) => /cambio|rate|valor|compra/.test(h) && !/fecha|date/.test(h));
     }
     map = {
       date: headers.findIndex((h) => /fecha|date|dia/.test(h)),
@@ -284,9 +284,9 @@ export function parseRateText(text) {
       rateValue = cells[map.rate];
       currencyValue = map.currency >= 0 ? cells[map.currency] : '';
     } else if (cells.length >= 3 && /^\d+(\.\d+)?$/.test(cells[1].replace(',', '.')) && /^\d+(\.\d+)?$/.test(cells[2].replace(',', '.'))) {
-      // Formato típico SUNAT: Día / Compra / Venta
+      // Formato típico SUNAT: Día / Compra / Venta -> Venta para solarización
       dateValue = cells[0];
-      rateValue = cells[1]; // Compra para Compras
+      rateValue = cells[2]; // Venta oficial para solarización
       currencyValue = cells[3] || 'USD';
     } else if (cells.length >= 2) {
       dateValue = cells[0];
@@ -296,7 +296,7 @@ export function parseRateText(text) {
       const parts = cells[0].trim().split(/\s+/);
       if (parts.length >= 3 && /^\d+(\.\d+)?$/.test(parts[1].replace(',', '.')) && /^\d+(\.\d+)?$/.test(parts[2].replace(',', '.'))) {
         dateValue = parts[0];
-        rateValue = parts[1]; // Compra
+        rateValue = parts[2]; // Venta oficial para solarización
         currencyValue = parts[3] || 'USD';
       } else if (parts.length >= 2) {
         dateValue = parts[0];
@@ -371,7 +371,7 @@ function bcrpIsoDate(label) {
  * a filas listas para `importRows()`.
  *
  * Aplica la regla SUNAT:
- *   - En compras rige la tasa COMPRA de la SBS.
+ *   - Para solarización de comprobantes (compras o ventas) rige la tasa VENTA de la SBS.
  *   - Fines de semana y feriados arrastran el último tipo de cambio hábil anterior.
  *   - Todos los días calendario del mes quedan cubiertos.
  */
@@ -428,8 +428,8 @@ export function parseBcrpPayload(payload, targetPrefix = '') {
       // es la cotización de cierre del último día hábil anterior (last).
       if (last) {
         if (!targetPrefix || iso.startsWith(targetPrefix)) {
-          // Para Compras SUNAT rige el tipo de cambio COMPRA
-          const rate = last.compra > 0 ? last.compra : last.venta;
+          // Para solarización de comprobantes rige el tipo de cambio VENTA oficial
+          const rate = last.venta > 0 ? last.venta : last.compra;
           rows.push({
             rate_date: iso,
             currency: 'USD',
@@ -461,8 +461,8 @@ export function parseBcrpPayload(payload, targetPrefix = '') {
         compra = Number(value || 0);
         venta = compra;
       }
-      // En Compras rige el TC Compra
-      const rate = compra > 0 ? compra : venta;
+      // Rige el tipo de cambio VENTA para solarización
+      const rate = venta > 0 ? venta : compra;
       if (!rateDate || !(rate > 0)) continue;
       rows.push({
         rate_date: rateDate,

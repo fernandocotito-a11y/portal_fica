@@ -871,7 +871,7 @@ export function render(root) {
         <div class="card__header">
           <div>
             <h3 class="card__title">Tipo de cambio oficial SUNAT / SBS</h3>
-            <p class="card__subtitle">Descarga el tipo de cambio oficial del mes (SBS Compra para Compras / SBS Venta para Ventas). Cubre todos los días calendario sin huecos siguiendo la regla de SUNAT (fines de semana y feriados).</p>
+            <p class="card__subtitle">Descarga el tipo de cambio oficial del mes (SBS Venta para solarización de comprobantes). Cubre todos los días calendario sin huecos siguiendo la regla de SUNAT (fines de semana y feriados).</p>
           </div>
           <span class="badge badge--muted">SBS Oficial · SUNAT</span>
         </div>

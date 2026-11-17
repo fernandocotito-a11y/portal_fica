@@ -4,10 +4,9 @@
    pública del BCRP y genera `data/tc-bcrp.json`.
 
    Normativa tributaria SUNAT (Perú):
-     - Para Compras (Crédito Fiscal): rige el tipo de cambio promedio COMPRA
-       publicado por la SBS al cierre del día hábil anterior.
-     - Para Ventas (Débito Fiscal): rige el tipo de cambio promedio VENTA
-       publicado por la SBS al cierre del día hábil anterior.
+     - Para la solarización de comprobantes (tanto Compras como Ventas):
+       rige el tipo de cambio promedio VENTA publicado por la SBS al cierre
+       del día hábil anterior.
      - Para días no laborables (sábados, domingos y feriados): rige el tipo
        de cambio del último día hábil anterior (forward-fill).
      - La tabla oficial de SUNAT tiene valores para TODOS los días del calendario.
