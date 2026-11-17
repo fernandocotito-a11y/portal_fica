@@ -5,7 +5,7 @@
     "venta": "PD04640PD"
   },
   "rule": "Días no laborables (fines de semana y feriados) toman el último día hábil anterior según normativa SUNAT.",
-  "updatedAt": "2026-11-17T01:09:31.680Z",
+  "updatedAt": "2026-11-17T19:56:52.961Z",
   "firstDate": "2023-01-01",
   "lastDate": "2026-11-17",
   "totalCalendarDays": 1417,
@@ -5663,20 +5663,20 @@
       "venta": 3.407
     },
     "2026-11-14": {
-      "compra": 3.401,
-      "venta": 3.407
+      "compra": 3.398,
+      "venta": 3.404
     },
     "2026-11-15": {
-      "compra": 3.401,
-      "venta": 3.407
+      "compra": 3.398,
+      "venta": 3.404
     },
     "2026-11-16": {
-      "compra": 3.401,
-      "venta": 3.407
+      "compra": 3.398,
+      "venta": 3.404
     },
     "2026-11-17": {
-      "compra": 3.401,
-      "venta": 3.407
+      "compra": 3.408,
+      "venta": 3.419
     }
   }
 }
