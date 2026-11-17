@@ -792,6 +792,23 @@ export function render(root) {
       </div>`;
   }
 
+  function rateLegacyBanner() {
+    if (exchangeRateService.mode !== 'remote' || !exchangeRateService.legacySchema) return '';
+    return `
+      <div class="card" style="border-color:var(--color-gold);margin-bottom:var(--space-4);">
+        <div class="card__body" style="display:flex;gap:var(--space-3);align-items:flex-start;">
+          <span style="color:var(--color-gold);flex-shrink:0;">${ICONS.info}</span>
+          <div>
+            <strong>Los tipos de cambio todavía se guardan por empresa.</strong>
+            Ejecuta la migración <code>supabase/compras_exchange_rates_schema.sql</code> en el SQL Editor de Supabase para tener una sola tabla compartida. Los registros actuales se consolidan automáticamente y una sola actualización cubrirá a todas las empresas.
+            <div style="margin-top:var(--space-3);">
+              <a class="btn" href="./supabase/compras_exchange_rates_schema.sql" target="_blank" rel="noopener">${ICONS.arrowRight} Abrir migración SQL</a>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
   function rateRowsHtml(rows) {
     if (!rows.length) {
       return `<tr><td colspan="6">
@@ -918,6 +935,7 @@ export function render(root) {
     return `
       ${rateError ? `<div class="card" style="border-color:var(--color-danger);margin-bottom:var(--space-4);"><div class="card__body"><strong>No se pudieron cargar los tipos de cambio.</strong><p class="text-muted" style="margin-top:var(--space-2);">${escapeHtml(rateError)}</p></div></div>` : ''}
       ${rateLocalBanner()}
+      ${rateLegacyBanner()}
       <div class="stats">
         <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${all.length}</div><div class="stat-card__label">Fechas de tipo de cambio</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${latest ? Number(latest.rate).toFixed(4) : '—'}</div><div class="stat-card__label">${latest ? `Último TC · ${displayDate(latest.rate_date)} · ${escapeHtml(latest.currency)}` : 'Sin tipos de cambio'}</div></div></div>

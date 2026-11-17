@@ -19,6 +19,7 @@ let rates = [];
 let mode = 'unknown';
 let checked = false;
 let lastError = '';
+let legacySchema = false;
 
 function cid() {
   const company = authService.activeCompany();
@@ -175,6 +176,14 @@ async function detectMode() {
       throw new Error(error.message);
     } else {
       mode = 'remote';
+      // Detecta si la tabla todavía guarda los TC por empresa (esquema antiguo).
+      // En ese caso el portal avisa que falta ejecutar la migración global.
+      const legacy = await supabase
+        .from('tax_exchange_rates')
+        .select('id')
+        .not('company_id', 'is', null)
+        .limit(1);
+      legacySchema = !legacy.error && Array.isArray(legacy.data) && legacy.data.length > 0;
     }
   } catch (err) {
     if (isMissingTable(err)) {
@@ -611,6 +620,7 @@ export async function fetchBcrpRates({ year, month } = {}) {
 export const exchangeRateService = {
   get mode() { return mode; },
   get lastError() { return lastError; },
+  get legacySchema() { return legacySchema; },
 
   async refresh() {
     await detectMode();
@@ -720,6 +730,7 @@ export const exchangeRateService = {
     };
     let { data, error } = await supabase.from('tax_exchange_rates').insert(payload).select().single();
     if (error && (error.code === '23502' || /not-null|company_id/i.test(error.message))) {
+      legacySchema = true;
       payload.company_id = companyId;
       const retry = await supabase.from('tax_exchange_rates').insert(payload).select().single();
       if (retry.error) throw new Error(retry.error.message);
@@ -925,6 +936,7 @@ export const exchangeRateService = {
 
         let { error } = await supabase.from('tax_exchange_rates').insert(globalChunk);
         if (error && (error.code === '23502' || /not-null|company_id/i.test(error.message))) {
+          legacySchema = true;
           const fallbackChunk = toInsert.map((rec) => ({
             company_id: companyId,
             rate_date: rec.rate_date,
