@@ -114,14 +114,13 @@ create table if not exists public.tax_suppliers (
 -- 4) Tipos de cambio SUNAT por fecha ------------------------------------------
 create table if not exists public.tax_exchange_rates (
   id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies(id) on delete cascade,
+  company_id uuid references public.companies(id) on delete set null,
   rate_date date not null,
   currency text not null default 'USD',
   rate numeric(14, 4) not null check (rate > 0),
   source text not null default 'sunat',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (company_id, rate_date, currency)
+  updated_at timestamptz not null default now()
 );
 
 -- 5) RLS ---------------------------------------------------------------------
@@ -163,8 +162,8 @@ create policy "tax_suppliers_all" on public.tax_suppliers
 
 drop policy if exists "tax_exchange_rates_all" on public.tax_exchange_rates;
 create policy "tax_exchange_rates_all" on public.tax_exchange_rates
-  for all using (public.can_access_company(company_id))
-  with check (public.can_access_company(company_id));
+  for all using (auth.role() = 'authenticated')
+  with check (auth.role() = 'authenticated');
 
 -- 6) Índices ------------------------------------------------------------------
 create index if not exists idx_tax_records_company on public.tax_records(company_id);
@@ -173,7 +172,8 @@ create index if not exists idx_tax_records_doc on public.tax_records(company_id,
 create index if not exists idx_tax_records_dedupe on public.tax_records(company_id, dedupe_key);
 create index if not exists idx_tax_batches_company on public.tax_import_batches(company_id, created_at desc);
 create index if not exists idx_tax_suppliers_company on public.tax_suppliers(company_id, name);
-create index if not exists idx_tax_exchange_rates_company_date on public.tax_exchange_rates(company_id, rate_date desc, currency);
+create unique index if not exists idx_tax_exchange_rates_date_curr_unique on public.tax_exchange_rates(rate_date, currency);
+create index if not exists idx_tax_exchange_rates_date on public.tax_exchange_rates(rate_date desc, currency);
 
 -- 7) Trigger updated_at -------------------------------------------------------
 create or replace function public.touch_tax_record()

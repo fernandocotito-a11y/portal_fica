@@ -1,9 +1,10 @@
 /* ============================================================================
-   exchangeRateService.js — Tipos de cambio SUNAT por fecha
+   exchangeRateService.js — Tipos de cambio SUNAT por fecha (Global / Multiempresa)
    ----------------------------------------------------------------------------
-   Guarda los tipos de cambio en Supabase (tax_exchange_rates) y, si la tabla
-   todavía no existe, en localStorage. Permite carga masiva por CSV/TXT, pegado
-   desde Excel, CRUD y búsqueda del tipo de cambio por fecha/moneda.
+   Guarda los tipos de cambio en Supabase (tax_exchange_rates) de forma global
+   (compartida para todas las empresas) y, si la tabla no existe, en localStorage.
+   Permite consulta automática vía BCRP, carga masiva, CRUD y asignación a
+   comprobantes en moneda extranjera.
    ========================================================================== */
 
 import { supabase, SUPABASE_URL } from '../../js/supabase.js';
@@ -12,6 +13,7 @@ import { isSolarized } from './comprasConfig.js';
 
 const MODEL_HEADERS = ['Fecha', 'Tipo de Cambio', 'Moneda'];
 const VALID_CURRENCIES = new Set(['USD', 'EUR', 'PEN']);
+const LOCAL_STORAGE_KEY = 'fica.exchange_rates.global';
 
 let rates = [];
 let mode = 'unknown';
@@ -21,10 +23,6 @@ let lastError = '';
 function cid() {
   const company = authService.activeCompany();
   return company ? company.id : null;
-}
-
-function localKey(companyId) {
-  return `fica.exchange_rates.${companyId}`;
 }
 
 function uid() {
@@ -93,18 +91,67 @@ function cleanRate(input) {
   };
 }
 
-function loadLocal(companyId) {
+function deduplicateRates(list) {
+  const byKey = new Map();
+  for (const item of list) {
+    const key = `${normalizeDate(item.rate_date)}|${normalizeCurrency(item.currency)}`;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, item);
+      continue;
+    }
+    if (existing.source === 'manual' && item.source !== 'manual') continue;
+    if (item.source === 'manual' && existing.source !== 'manual') {
+      byKey.set(key, item);
+      continue;
+    }
+    if (String(item.updated_at || '') > String(existing.updated_at || '')) {
+      byKey.set(key, item);
+    }
+  }
+  return sortRates([...byKey.values()]);
+}
+
+function loadLocal() {
   try {
-    const data = JSON.parse(localStorage.getItem(localKey(companyId)) || '{}');
-    rates = Array.isArray(data.rates) ? data.rates : [];
+    let raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (!raw) {
+      const merged = new Map();
+      const legacyKeys = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('fica.exchange_rates.')) {
+          legacyKeys.push(key);
+          try {
+            const data = JSON.parse(localStorage.getItem(key) || '{}');
+            if (Array.isArray(data.rates)) {
+              data.rates.forEach((r) => {
+                const c = cleanRate(r);
+                if (c.rate_date && c.rate > 0) {
+                  merged.set(`${c.rate_date}|${c.currency}`, { ...r, ...c });
+                }
+              });
+            }
+          } catch {}
+        }
+      }
+      if (merged.size) {
+        rates = deduplicateRates([...merged.values()]);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ rates }));
+        legacyKeys.forEach((k) => { try { localStorage.removeItem(k); } catch {} });
+        return;
+      }
+    }
+    const data = JSON.parse(raw || '{}');
+    rates = Array.isArray(data.rates) ? deduplicateRates(data.rates.map(rowToRate)) : [];
   } catch {
     rates = [];
   }
 }
 
-function saveLocal(companyId) {
+function saveLocal() {
   try {
-    localStorage.setItem(localKey(companyId), JSON.stringify({ rates }));
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ rates }));
   } catch {
     throw new Error('El almacenamiento local del navegador está lleno. Ejecuta supabase/compras_exchange_rates_schema.sql para guardar los tipos de cambio en Supabase.');
   }
@@ -158,7 +205,7 @@ function sortRates(list) {
   });
 }
 
-async function fetchAllRemote(companyId) {
+async function fetchAllRemote() {
   const pageSize = 1000;
   const out = [];
   let from = 0;
@@ -166,17 +213,16 @@ async function fetchAllRemote(companyId) {
     const { data, error } = await supabase
       .from('tax_exchange_rates')
       .select('*')
-      .eq('company_id', companyId)
       .order('rate_date', { ascending: false })
       .order('currency', { ascending: true })
       .range(from, from + pageSize - 1);
     if (error) throw new Error(error.message);
     const chunk = data || [];
     out.push(...chunk.map(rowToRate));
-    if (!chunk.length) break;
+    if (!chunk.length || chunk.length < pageSize) break;
     from += chunk.length;
   }
-  return out;
+  return deduplicateRates(out);
 }
 
 /* ---------------------------------------------------------------------------
@@ -567,23 +613,22 @@ export const exchangeRateService = {
   get lastError() { return lastError; },
 
   async refresh() {
-    const companyId = cid();
-    if (!companyId) { rates = []; return; }
     await detectMode();
     if (mode === 'local') {
-      loadLocal(companyId);
+      loadLocal();
       return;
     }
-    rates = await fetchAllRemote(companyId);
-    // Migra automáticamente los tipos de cambio creados en modo local.
+    rates = await fetchAllRemote();
+
+    // Migra automáticamente los tipos de cambio creados en modo local si existen
     let raw = null;
-    try { raw = localStorage.getItem(localKey(companyId)); } catch { raw = null; }
+    try { raw = localStorage.getItem(LOCAL_STORAGE_KEY); } catch { raw = null; }
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
         const localRows = Array.isArray(parsed.rates) ? parsed.rates : [];
         if (localRows.length) await exchangeRateService.importRows(localRows, { source: 'local' });
-        localStorage.removeItem(localKey(companyId));
+        localStorage.removeItem(LOCAL_STORAGE_KEY);
       } catch (err) {
         lastError = `No se pudieron migrar los tipos de cambio locales: ${err.message || err}`;
       }
@@ -649,8 +694,6 @@ export const exchangeRateService = {
   },
 
   async create(input) {
-    const companyId = cid();
-    if (!companyId) throw new Error('No hay empresa activa.');
     await detectMode();
     const rec = cleanRate(input);
     if (!rec.rate_date) throw new Error('Ingresa una fecha válida.');
@@ -660,32 +703,36 @@ export const exchangeRateService = {
       throw new Error('Ya existe un tipo de cambio para esa fecha y moneda.');
     }
     if (mode === 'local') {
-      const row = { ...rec, id: uid(), company_id: companyId, created_at: nowIso(), updated_at: nowIso() };
+      const row = { ...rec, id: uid(), created_at: nowIso(), updated_at: nowIso() };
       const prev = rates;
-      rates = [...rates, row];
-      try { saveLocal(companyId); } catch (err) { rates = prev; throw err; }
+      rates = deduplicateRates([...rates, row]);
+      try { saveLocal(); } catch (err) { rates = prev; throw err; }
       return row;
     }
-    const { data, error } = await supabase
-      .from('tax_exchange_rates')
-      .insert({
-        company_id: companyId,
-        rate_date: rec.rate_date,
-        currency: rec.currency,
-        rate: rec.rate,
-        source: rec.source || 'sunat',
-      })
-      .select()
-      .single();
-    if (error) throw new Error(error.message);
+
+    const companyId = cid();
+    let payload = {
+      company_id: null,
+      rate_date: rec.rate_date,
+      currency: rec.currency,
+      rate: rec.rate,
+      source: rec.source || 'manual',
+    };
+    let { data, error } = await supabase.from('tax_exchange_rates').insert(payload).select().single();
+    if (error && (error.code === '23502' || /not-null|company_id/i.test(error.message))) {
+      payload.company_id = companyId;
+      const retry = await supabase.from('tax_exchange_rates').insert(payload).select().single();
+      if (retry.error) throw new Error(retry.error.message);
+      data = retry.data;
+    } else if (error) {
+      throw new Error(error.message);
+    }
     const row = rowToRate(data);
-    rates.push(row);
+    rates = deduplicateRates([row, ...rates]);
     return row;
   },
 
   async update(id, patch) {
-    const companyId = cid();
-    if (!companyId) throw new Error('No hay empresa activa.');
     await detectMode();
     const current = rates.find((r) => r.id === id);
     if (!current) throw new Error('Tipo de cambio no encontrado.');
@@ -701,7 +748,7 @@ export const exchangeRateService = {
       const prev = rates[i];
       const row = { ...current, ...merged, updated_at: nowIso() };
       rates[i] = row;
-      try { saveLocal(companyId); } catch (err) { rates[i] = prev; throw err; }
+      try { saveLocal(); } catch (err) { rates[i] = prev; throw err; }
       return row;
     }
     const { data, error } = await supabase
@@ -710,7 +757,7 @@ export const exchangeRateService = {
         rate_date: merged.rate_date,
         currency: merged.currency,
         rate: merged.rate,
-        source: merged.source || 'sunat',
+        source: merged.source || 'manual',
         updated_at: nowIso(),
       })
       .eq('id', id)
@@ -724,18 +771,27 @@ export const exchangeRateService = {
   },
 
   async remove(id) {
-    const companyId = cid();
-    if (!companyId) throw new Error('No hay empresa activa.');
     await detectMode();
+    const current = rates.find((r) => r.id === id);
     if (mode === 'local') {
       const prev = rates;
       rates = rates.filter((r) => r.id !== id);
-      try { saveLocal(companyId); } catch (err) { rates = prev; throw err; }
+      try { saveLocal(); } catch (err) { rates = prev; throw err; }
       return;
     }
-    const { error } = await supabase.from('tax_exchange_rates').delete().eq('id', id);
-    if (error) throw new Error(error.message);
-    rates = rates.filter((r) => r.id !== id);
+    if (current?.rate_date && current?.currency) {
+      const { error } = await supabase
+        .from('tax_exchange_rates')
+        .delete()
+        .eq('rate_date', current.rate_date)
+        .eq('currency', current.currency);
+      if (error) throw new Error(error.message);
+      rates = rates.filter((r) => !(r.rate_date === current.rate_date && r.currency === current.currency));
+    } else {
+      const { error } = await supabase.from('tax_exchange_rates').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+      rates = rates.filter((r) => r.id !== id);
+    }
   },
 
   /**
@@ -745,8 +801,6 @@ export const exchangeRateService = {
    * @returns {Promise<{count: number, startDate: string, endDate: string}>}
    */
   async removeRange(startDate, endDate) {
-    const companyId = cid();
-    if (!companyId) throw new Error('No hay empresa activa.');
     const start = normalizeDate(startDate);
     const end = normalizeDate(endDate);
     if (!start || !end) throw new Error('Ingresa un rango de fechas válido (Desde y Hasta).');
@@ -760,14 +814,13 @@ export const exchangeRateService = {
     if (mode === 'local') {
       const prev = rates;
       rates = rates.filter((r) => !(r.rate_date >= start && r.rate_date <= end));
-      try { saveLocal(companyId); } catch (err) { rates = prev; throw err; }
+      try { saveLocal(); } catch (err) { rates = prev; throw err; }
       return { count, startDate: start, endDate: end };
     }
 
     const { error } = await supabase
       .from('tax_exchange_rates')
       .delete()
-      .eq('company_id', companyId)
       .gte('rate_date', start)
       .lte('rate_date', end);
 
@@ -795,8 +848,6 @@ export const exchangeRateService = {
   },
 
   async importRows(rows, options = {}) {
-    const companyId = cid();
-    if (!companyId) throw new Error('No hay empresa activa.');
     const source = String(options.source || 'import');
     const preparedMap = new Map();
     let skipped = 0;
@@ -819,6 +870,7 @@ export const exchangeRateService = {
         return {
           ...existing,
           ...rec,
+          id: existing.id,
           source: existing.source === 'manual' ? 'manual' : (rec.source || existing.source),
         };
       }
@@ -832,27 +884,64 @@ export const exchangeRateService = {
       normalized.forEach((rec) => {
         const i = next.findIndex((r) => r.rate_date === rec.rate_date && r.currency === rec.currency);
         if (i >= 0) next[i] = { ...next[i], ...rec, updated_at: nowIso() };
-        else next.push({ ...rec, id: uid(), company_id: companyId, created_at: nowIso(), updated_at: nowIso() });
+        else next.push({ ...rec, id: uid(), created_at: nowIso(), updated_at: nowIso() });
       });
-      rates = next;
-      try { saveLocal(companyId); } catch (err) { rates = prev; throw err; }
+      rates = deduplicateRates(next);
+      try { saveLocal(); } catch (err) { rates = prev; throw err; }
       return { created, updated, skipped, total: normalized.length };
     }
 
-    for (let i = 0; i < normalized.length; i += 300) {
-      const chunk = normalized.slice(i, i + 300).map((rec) => ({
-        company_id: companyId,
-        rate_date: rec.rate_date,
-        currency: rec.currency,
-        rate: rec.rate,
-        source: rec.source || 'sunat',
-      }));
-      const { error } = await supabase
-        .from('tax_exchange_rates')
-        .upsert(chunk, { onConflict: 'company_id,rate_date,currency' });
-      if (error) throw new Error(error.message);
+    const companyId = cid();
+    for (let i = 0; i < normalized.length; i += 100) {
+      const slice = normalized.slice(i, i + 100);
+
+      const toUpdate = slice.filter((rec) => rec.id);
+      const toInsert = slice.filter((rec) => !rec.id);
+
+      if (toUpdate.length) {
+        const updateTasks = toUpdate.map((rec) =>
+          supabase
+            .from('tax_exchange_rates')
+            .update({
+              rate: rec.rate,
+              source: rec.source || 'sunat',
+              updated_at: nowIso(),
+            })
+            .eq('id', rec.id)
+        );
+        const results = await Promise.all(updateTasks);
+        const err = results.find((r) => r.error)?.error;
+        if (err) throw new Error(err.message);
+      }
+
+      if (toInsert.length) {
+        const globalChunk = toInsert.map((rec) => ({
+          company_id: null,
+          rate_date: rec.rate_date,
+          currency: rec.currency,
+          rate: rec.rate,
+          source: rec.source || 'sunat',
+        }));
+
+        let { error } = await supabase.from('tax_exchange_rates').insert(globalChunk);
+        if (error && (error.code === '23502' || /not-null|company_id/i.test(error.message))) {
+          const fallbackChunk = toInsert.map((rec) => ({
+            company_id: companyId,
+            rate_date: rec.rate_date,
+            currency: rec.currency,
+            rate: rec.rate,
+            source: rec.source || 'sunat',
+          }));
+          const retry = await supabase
+            .from('tax_exchange_rates')
+            .upsert(fallbackChunk, { onConflict: 'company_id,rate_date,currency' });
+          if (retry.error) throw new Error(retry.error.message);
+        } else if (error) {
+          throw new Error(error.message);
+        }
+      }
     }
-    rates = await fetchAllRemote(companyId);
+    rates = await fetchAllRemote();
     return { created, updated, skipped, total: normalized.length };
   },
 

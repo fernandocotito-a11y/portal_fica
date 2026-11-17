@@ -300,6 +300,7 @@ export const declaracionesService = {
     await detectMode();
     await taxService.refresh();
     await retencionService.refresh();
+    await exchangeRateService.refresh();
 
     const balances = await loadBalances(companyId, year);
     const overrides = await loadOverrides(companyId, year);

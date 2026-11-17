@@ -223,8 +223,10 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   directorio con los proveedores de compras.
 - Incluye una pestaña **Tipo de Cambio** para cargar los tipos de cambio SUNAT
   por fecha (CSV/TXT, pegado desde Excel, alta manual y CRUD), para cualquier año.
-  Al registrar un comprobante en moneda extranjera o importar el SIRE, el tipo de
-  cambio se asigna automáticamente por fecha; si no hay tasa exacta se usa la
+  Los tipos de cambio son **globales**: se cargan una sola vez y se comparten entre
+  todas las empresas del portal (el BCRP publica una única tasa oficial, no una por
+  empresa). Al registrar un comprobante en moneda extranjera o importar el SIRE, el
+  tipo de cambio se asigna automáticamente por fecha; si no hay tasa exacta se usa la
   última publicada antes de esa fecha. También permite aplicar el TC a
   comprobantes ya guardados que estén sin tipo de cambio.
 - La pestaña incluye **actualización automática oficial SUNAT / SBS**: se elige año y

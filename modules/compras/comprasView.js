@@ -782,8 +782,8 @@ export function render(root) {
           <span style="color:var(--color-gold);flex-shrink:0;">${ICONS.info}</span>
           <div>
             <strong>Tipos de cambio en modo local.</strong>
-            La tabla <code>tax_exchange_rates</code> todavía no existe en Supabase. Los tipos de cambio se guardan solo en este navegador.
-            Ejecuta <code>supabase/compras_exchange_rates_schema.sql</code> en el SQL Editor y recarga el portal para activar el modo multiusuario.
+            La tabla <code>tax_exchange_rates</code> todavía no existe en Supabase. Los tipos de cambio se guardan de forma global en este navegador y se comparten entre todas tus empresas locales.
+            Ejecuta <code>supabase/compras_exchange_rates_schema.sql</code> en el SQL Editor y recarga el portal para activar el almacenamiento global multiusuario.
             <div style="margin-top:var(--space-3);">
               <a class="btn" href="./supabase/compras_exchange_rates_schema.sql" target="_blank" rel="noopener">${ICONS.arrowRight} Abrir SQL de tipos de cambio</a>
             </div>
@@ -870,8 +870,11 @@ export function render(root) {
       <div class="card" style="margin-bottom:var(--space-4);">
         <div class="card__header">
           <div>
-            <h3 class="card__title">Tipo de cambio oficial SUNAT / SBS</h3>
-            <p class="card__subtitle">Descarga el tipo de cambio oficial del mes (SBS Venta para solarización de comprobantes). Cubre todos los días calendario sin huecos siguiendo la regla de SUNAT (fines de semana y feriados).</p>
+            <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:4px;flex-wrap:wrap;">
+              <h3 class="card__title" style="margin:0;">Tipo de cambio oficial SUNAT / SBS</h3>
+              <span class="badge badge--success" style="font-size:0.75rem;">Global · Todas las empresas</span>
+            </div>
+            <p class="card__subtitle">Descarga el tipo de cambio oficial del mes (SBS Venta para solarización de comprobantes). Se comparte automáticamente entre todas las empresas del portal, cubriendo todos los días calendario según normativa SUNAT.</p>
           </div>
           <span class="badge badge--muted">SBS Oficial · SUNAT</span>
         </div>
