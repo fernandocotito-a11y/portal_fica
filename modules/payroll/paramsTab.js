@@ -19,8 +19,11 @@ export function renderParamsTab(root) {
     <div class="card">
       <div class="card__header">
         <div>
-          <h3 class="card__title">Parámetros UIT / RMV</h3>
-          <p class="card__subtitle">Valores nacionales por año. Configúralos aquí y se aplican a toda la planilla.</p>
+          <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:4px;flex-wrap:wrap;">
+            <h3 class="card__title" style="margin:0;">Parámetros UIT / RMV</h3>
+            <span class="badge badge--success" style="font-size:0.75rem;">Global · Todas las empresas</span>
+          </div>
+          <p class="card__subtitle">Valores nacionales por año. Se configuran una sola vez y se aplican a la planilla de todas las empresas.</p>
         </div>
       </div>
       <div class="card__body">

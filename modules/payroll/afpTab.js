@@ -23,8 +23,11 @@ export function renderAfpTab(root) {
     <div class="card">
       <div class="card__header">
         <div>
-          <h3 class="card__title">Parámetros AFP</h3>
-          <p class="card__subtitle">Comisiones, prima y Remuneración Máxima Asegurable publicadas por la SBS.</p>
+          <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:4px;flex-wrap:wrap;">
+            <h3 class="card__title" style="margin:0;">Parámetros AFP</h3>
+            <span class="badge badge--success" style="font-size:0.75rem;">Global · Todas las empresas</span>
+          </div>
+          <p class="card__subtitle">Comisiones, prima y Remuneración Máxima Asegurable publicadas por la SBS. Se comparten entre todas las empresas del portal.</p>
         </div>
         <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">
           <select class="form-input" data-year style="max-width:110px;">${YEARS.map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
