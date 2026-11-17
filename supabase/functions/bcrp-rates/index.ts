@@ -5,8 +5,8 @@
 // así que el navegador no puede llamarla directamente) y devuelve las tasas
 // del mes pedido.
 //
-// Serie PD04640PD = "Tipo de cambio - TC Sistema bancario SBS (S/ por US$)
-// - Venta", la que se usa para convertir operaciones en moneda extranjera.
+// Serie PD04639PD = "SBS Compra" y PD04640PD = "SBS Venta", las oficiales
+// usadas por SUNAT para Compras y Ventas.
 //
 // Uso:
 //   GET /functions/v1/bcrp-rates?year=2026&month=11
@@ -17,7 +17,7 @@
 // ============================================================================
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-const SERIES = "PD04640PD";
+const SERIES = "PD04639PD-PD04640PD";
 const BCRP_BASE = "https://estadisticas.bcrp.gob.pe/estadisticas/series/api";
 
 const CORS_HEADERS = {
@@ -34,8 +34,12 @@ function json(body: unknown, status = 200) {
 function monthRange(year: number, month: number) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const mm = String(month).padStart(2, "0");
+  // Consultar desde 7 días antes para arrastrar el tipo de cambio oficial
+  // si el primer día del mes cae sábado, domingo o feriado (regla SUNAT).
+  const prevDate = new Date(Date.UTC(year, month - 1, 1));
+  prevDate.setUTCDate(prevDate.getUTCDate() - 7);
   return {
-    start: `${year}-${mm}-01`,
+    start: prevDate.toISOString().slice(0, 10),
     end: `${year}-${mm}-${String(lastDay).padStart(2, "0")}`,
   };
 }

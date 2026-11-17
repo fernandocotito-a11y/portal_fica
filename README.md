@@ -227,15 +227,14 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   cambio se asigna automáticamente por fecha; si no hay tasa exacta se usa la
   última publicada antes de esa fecha. También permite aplicar el TC a
   comprobantes ya guardados que estén sin tipo de cambio.
-- La pestaña incluye **actualización automática desde el BCRP**: se elige año y
-  mes y el portal descarga el tipo de cambio USD oficial (serie `PD04640PD`, TC
-  Sistema bancario SBS – Venta), lo guarda y, opcionalmente, lo aplica a los
-  comprobantes sin TC. Ya no es necesario descargar ni subir archivos. El portal
-  obtiene los datos por tres vías, en orden: Edge Function `bcrp-rates`, archivo
-  `data/tc-bcrp.json` (lo regenera a diario el flujo
-  `.github/workflows/bcrp-rates.yml`) y consulta directa al BCRP. Requiere ejecutar
-  `node scripts/build-bcrp.js` una vez para sembrar el archivo, o dejar que el
-  flujo de GitHub Actions lo haga.
+- La pestaña incluye **actualización automática oficial SUNAT / SBS**: se elige año y
+  mes y el portal descarga el tipo de cambio oficial (series `PD04639PD` SBS Compra
+  y `PD04640PD` SBS Venta), lo guarda y, opcionalmente, lo aplica a los
+  comprobantes sin TC. Cubre todos los días del calendario sin huecos siguiendo la regla
+  oficial de SUNAT (fines de semana y feriados arrastran el último hábil anterior).
+  Ya no es necesario descargar ni subir archivos. El portal obtiene los datos por tres
+  vías, en orden: Edge Function `bcrp-rates`, archivo `data/tc-bcrp.json` (lo regenera
+  a diario el flujo `.github/workflows/bcrp-rates.yml`) y consulta directa al BCRP.
 - El **Resumen** consolida compras, ventas, base gravada, base no gravada, IGV y
   saldo mensual en soles, con selector de año (incluye años anteriores y el año
   actual). Los comprobantes en moneda extranjera usan su tipo de cambio o el TC

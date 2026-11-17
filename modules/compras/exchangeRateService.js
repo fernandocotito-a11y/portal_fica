@@ -324,7 +324,7 @@ export function parseRateText(text) {
      3. Llamada directa al BCRP (solo funcionaría si algún día abren CORS).
    ------------------------------------------------------------------------- */
 
-const BCRP_SERIES = 'PD04640PD';
+const BCRP_SERIES = 'PD04639PD-PD04640PD';
 const BCRP_BASE = 'https://estadisticas.bcrp.gob.pe/estadisticas/series/api';
 
 const BCRP_MONTHS = {
@@ -355,18 +355,77 @@ function bcrpIsoDate(label) {
 /**
  * Normaliza la respuesta del BCRP (`periods`) o del JSON estático (`rates`)
  * a filas listas para `importRows()`.
+ *
+ * Aplica la regla SUNAT:
+ *   - En compras rige la tasa COMPRA de la SBS.
+ *   - Fines de semana y feriados arrastran el último tipo de cambio hábil anterior.
+ *   - Todos los días calendario del mes quedan cubiertos.
  */
-export function parseBcrpPayload(payload) {
+export function parseBcrpPayload(payload, targetPrefix = '') {
   const rows = [];
   if (!payload || typeof payload !== 'object') return rows;
 
   if (Array.isArray(payload.periods)) {
+    const business = new Map();
     for (const period of payload.periods) {
       const rateDate = bcrpIsoDate(period?.name);
-      const raw = String((period?.values || [])[0] ?? '').trim();
-      if (!rateDate || !/^\d+(\.\d+)?$/.test(raw)) continue;
-      const rate = Number(raw);
-      if (rate > 0) rows.push({ rate_date: rateDate, currency: 'USD', rate, source: 'bcrp' });
+      if (!rateDate) continue;
+      const v0 = String((period?.values || [])[0] ?? '').trim();
+      const v1 = String((period?.values || [])[1] ?? '').trim();
+
+      const c = /^\d+(\.\d+)?$/.test(v0) ? Number(v0) : 0;
+      const v = /^\d+(\.\d+)?$/.test(v1) ? Number(v1) : (c || 0);
+
+      const compra = c > 0 ? c : v;
+      const venta = v > 0 ? v : c;
+
+      if (compra > 0 || venta > 0) {
+        business.set(rateDate, { compra, venta });
+      }
+    }
+    if (!business.size) return rows;
+
+    const sorted = [...business.keys()].sort();
+    const lastHabil = sorted[sorted.length - 1];
+    const todayIso = new Date().toISOString().slice(0, 10);
+
+    let targetEnd = lastHabil;
+    if (targetPrefix) {
+      const parts = targetPrefix.split('-');
+      const y = Number(parts[0]);
+      const m = Number(parts[1]);
+      if (y && m) {
+        const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        const endOfMonthIso = `${y}-${String(m).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+        const maxDate = todayIso < endOfMonthIso ? todayIso : endOfMonthIso;
+        if (maxDate > targetEnd) targetEnd = maxDate;
+      }
+    } else if (todayIso > targetEnd) {
+      targetEnd = todayIso;
+    }
+
+    const start = new Date(`${sorted[0]}T00:00:00Z`);
+    const end = new Date(`${targetEnd}T00:00:00Z`);
+    let last = null;
+
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const iso = d.toISOString().slice(0, 10);
+      if (business.has(iso)) {
+        last = business.get(iso);
+      }
+      if (last) {
+        if (targetPrefix && !iso.startsWith(targetPrefix)) continue;
+        // Para Compras SUNAT rige el tipo de cambio COMPRA
+        const rate = last.compra > 0 ? last.compra : last.venta;
+        rows.push({
+          rate_date: iso,
+          currency: 'USD',
+          rate,
+          compra: last.compra,
+          venta: last.venta,
+          source: 'sunat',
+        });
+      }
     }
     return rows;
   }
@@ -374,9 +433,27 @@ export function parseBcrpPayload(payload) {
   if (payload.rates && typeof payload.rates === 'object') {
     for (const [date, value] of Object.entries(payload.rates)) {
       const rateDate = normalizeDate(date);
-      const rate = Number(value);
+      if (targetPrefix && !rateDate.startsWith(targetPrefix)) continue;
+      let compra = 0;
+      let venta = 0;
+      if (typeof value === 'object' && value !== null) {
+        compra = Number(value.compra || 0);
+        venta = Number(value.venta || 0);
+      } else {
+        compra = Number(value || 0);
+        venta = compra;
+      }
+      // En Compras rige el TC Compra
+      const rate = compra > 0 ? compra : venta;
       if (!rateDate || !(rate > 0)) continue;
-      rows.push({ rate_date: rateDate, currency: 'USD', rate, source: 'bcrp' });
+      rows.push({
+        rate_date: rateDate,
+        currency: 'USD',
+        rate,
+        compra: compra || rate,
+        venta: venta || rate,
+        source: 'sunat',
+      });
     }
   }
   return rows;
@@ -385,7 +462,11 @@ export function parseBcrpPayload(payload) {
 function bcrpMonthRange(year, month) {
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const mm = String(month).padStart(2, '0');
+  // Consultar desde 7 días antes para arrastrar el tipo de cambio si el día 1 cae no laborable
+  const prevDate = new Date(Date.UTC(year, month - 1, 1));
+  prevDate.setUTCDate(prevDate.getUTCDate() - 7);
   return {
+    fetchStart: prevDate.toISOString().slice(0, 10),
     start: `${year}-${mm}-01`,
     end: `${year}-${mm}-${String(lastDay).padStart(2, '0')}`,
     prefix: `${year}-${mm}`,
@@ -393,10 +474,11 @@ function bcrpMonthRange(year, month) {
 }
 
 async function bcrpFromEdge(year, month) {
+  const { prefix } = bcrpMonthRange(year, month);
   const url = `${SUPABASE_URL}/functions/v1/bcrp-rates?year=${year}&month=${month}`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const rows = parseBcrpPayload(await res.json());
+  const rows = parseBcrpPayload(await res.json(), prefix);
   if (!rows.length) throw new Error('sin tasas en la respuesta');
   return rows;
 }
@@ -408,17 +490,17 @@ async function bcrpFromStatic(year, month) {
   const res = await fetch(url.toString(), { cache: 'no-store' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = await res.json();
-  const rows = parseBcrpPayload(data).filter((row) => row.rate_date.startsWith(prefix));
+  const rows = parseBcrpPayload(data, prefix);
   if (!rows.length) throw new Error('ese mes no está en el archivo local');
   return { rows, updatedAt: String(data.updatedAt || '') };
 }
 
 async function bcrpFromDirect(year, month) {
-  const { start, end } = bcrpMonthRange(year, month);
-  const url = `${BCRP_BASE}/${BCRP_SERIES}/json/${start}/${end}/ing`;
+  const { fetchStart, end, prefix } = bcrpMonthRange(year, month);
+  const url = `${BCRP_BASE}/${BCRP_SERIES}/json/${fetchStart}/${end}/ing`;
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const rows = parseBcrpPayload(await res.json());
+  const rows = parseBcrpPayload(await res.json(), prefix);
   if (!rows.length) throw new Error('sin tasas en la respuesta');
   return rows;
 }
@@ -563,7 +645,13 @@ export const exchangeRateService = {
     }
     const { data, error } = await supabase
       .from('tax_exchange_rates')
-      .insert({ ...rec, company_id: companyId })
+      .insert({
+        company_id: companyId,
+        rate_date: rec.rate_date,
+        currency: rec.currency,
+        rate: rec.rate,
+        source: rec.source || 'sunat',
+      })
       .select()
       .single();
     if (error) throw new Error(error.message);
@@ -595,7 +683,13 @@ export const exchangeRateService = {
     }
     const { data, error } = await supabase
       .from('tax_exchange_rates')
-      .update({ ...merged, updated_at: nowIso() })
+      .update({
+        rate_date: merged.rate_date,
+        currency: merged.currency,
+        rate: merged.rate,
+        source: merged.source || 'sunat',
+        updated_at: nowIso(),
+      })
       .eq('id', id)
       .select()
       .single();
@@ -619,6 +713,62 @@ export const exchangeRateService = {
     const { error } = await supabase.from('tax_exchange_rates').delete().eq('id', id);
     if (error) throw new Error(error.message);
     rates = rates.filter((r) => r.id !== id);
+  },
+
+  /**
+   * Elimina tipos de cambio en un rango de fechas [startDate, endDate] de golpe.
+   * @param {string} startDate - 'YYYY-MM-DD'
+   * @param {string} endDate - 'YYYY-MM-DD'
+   * @returns {Promise<{count: number, startDate: string, endDate: string}>}
+   */
+  async removeRange(startDate, endDate) {
+    const companyId = cid();
+    if (!companyId) throw new Error('No hay empresa activa.');
+    const start = normalizeDate(startDate);
+    const end = normalizeDate(endDate);
+    if (!start || !end) throw new Error('Ingresa un rango de fechas válido (Desde y Hasta).');
+    if (start > end) throw new Error('La fecha inicial no puede ser mayor que la fecha final.');
+
+    await detectMode();
+    const matching = rates.filter((r) => r.rate_date >= start && r.rate_date <= end);
+    const count = matching.length;
+    if (!count) return { count: 0, startDate: start, endDate: end };
+
+    if (mode === 'local') {
+      const prev = rates;
+      rates = rates.filter((r) => !(r.rate_date >= start && r.rate_date <= end));
+      try { saveLocal(companyId); } catch (err) { rates = prev; throw err; }
+      return { count, startDate: start, endDate: end };
+    }
+
+    const { error } = await supabase
+      .from('tax_exchange_rates')
+      .delete()
+      .eq('company_id', companyId)
+      .gte('rate_date', start)
+      .lte('rate_date', end);
+
+    if (error) throw new Error(error.message);
+    rates = rates.filter((r) => !(r.rate_date >= start && r.rate_date <= end));
+    return { count, startDate: start, endDate: end };
+  },
+
+  /**
+   * Elimina todos los tipos de cambio de un mes específico (año y mes) de golpe.
+   * @param {number|string} year
+   * @param {number|string} month
+   * @returns {Promise<{count: number, prefix: string}>}
+   */
+  async removeMonth(year, month) {
+    const y = Number(year);
+    const m = Number(month);
+    if (!y || !m || m < 1 || m > 12) throw new Error('Año o mes no válido.');
+    const prefix = `${y}-${String(m).padStart(2, '0')}`;
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const startDate = `${prefix}-01`;
+    const endDate = `${prefix}-${String(lastDay).padStart(2, '0')}`;
+    const res = await this.removeRange(startDate, endDate);
+    return { ...res, prefix };
   },
 
   async importRows(rows, options = {}) {
@@ -667,13 +817,13 @@ export const exchangeRateService = {
     }
 
     for (let i = 0; i < normalized.length; i += 300) {
-      const chunk = normalized.slice(i, i + 300).map((rec) => {
-        const out = { ...rec, company_id: companyId };
-        delete out.id;
-        delete out.created_at;
-        delete out.updated_at;
-        return out;
-      });
+      const chunk = normalized.slice(i, i + 300).map((rec) => ({
+        company_id: companyId,
+        rate_date: rec.rate_date,
+        currency: rec.currency,
+        rate: rec.rate,
+        source: rec.source || 'sunat',
+      }));
       const { error } = await supabase
         .from('tax_exchange_rates')
         .upsert(chunk, { onConflict: 'company_id,rate_date,currency' });

@@ -1,8 +1,8 @@
-name: Actualizar tipo de cambio BCRP
+name: Actualizar tipo de cambio SUNAT / SBS
 
-# Descarga el tipo de cambio USD del BCRP y actualiza `data/tc-bcrp.json`.
-# El portal lee ese archivo desde el mismo dominio (GitHub Pages), así que no
-# hay problemas de CORS y la actualización funciona sin backend.
+# Descarga el tipo de cambio oficial SBS (Compra y Venta) vía API del BCRP
+# y actualiza `data/tc-bcrp.json` cubriendo todos los días del calendario según SUNAT.
+# El portal lee ese archivo desde el mismo dominio (GitHub Pages), sin problemas de CORS.
 
 on:
   schedule:
@@ -29,7 +29,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Consultar el BCRP y regenerar el archivo
+      - name: Consultar tasas oficiales SBS y regenerar el archivo
         run: node scripts/build-bcrp.js 3
 
       - name: Guardar cambios
@@ -41,5 +41,5 @@ jobs:
             echo "Sin cambios en el tipo de cambio."
             exit 0
           fi
-          git commit -m "Actualizar tipo de cambio BCRP ($(date -u +%Y-%m-%d))"
+          git commit -m "Actualizar tipo de cambio SUNAT / SBS ($(date -u +%Y-%m-%d))"
           git push

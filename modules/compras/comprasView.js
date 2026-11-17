@@ -870,10 +870,10 @@ export function render(root) {
       <div class="card" style="margin-bottom:var(--space-4);">
         <div class="card__header">
           <div>
-            <h3 class="card__title">Actualización automática desde el BCRP</h3>
-            <p class="card__subtitle">Descarga el tipo de cambio USD oficial (SBS venta) del mes elegido. Ya no hace falta subir archivos.</p>
+            <h3 class="card__title">Tipo de cambio oficial SUNAT / SBS</h3>
+            <p class="card__subtitle">Descarga el tipo de cambio oficial del mes (SBS Compra para Compras / SBS Venta para Ventas). Cubre todos los días calendario sin huecos siguiendo la regla de SUNAT (fines de semana y feriados).</p>
           </div>
-          <span class="badge badge--muted">Serie PD04640PD</span>
+          <span class="badge badge--muted">SBS Oficial · SUNAT</span>
         </div>
         <div class="card__body">
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;">
@@ -886,13 +886,16 @@ export function render(root) {
               <select class="form-input" data-bcrp-month>${monthOptions}</select>
             </div>
             <button type="button" class="btn btn--primary" data-bcrp-update ${bcrpBusy ? 'disabled' : ''}>
-              ${ICONS.arrowRight} ${bcrpBusy ? 'Consultando el BCRP…' : 'Actualizar desde BCRP'}
+              ${ICONS.arrowRight} ${bcrpBusy ? 'Consultando tasas…' : 'Actualizar tipo de cambio SUNAT'}
+            </button>
+            <button type="button" class="btn btn--danger-soft" data-rate-delete-month ${bcrpBusy ? 'disabled' : ''} title="Eliminar todos los tipos de cambio del mes seleccionado">
+              ${ICONS.trash} Borrar mes
             </button>
             <label style="display:flex;gap:8px;align-items:center;font-size:var(--font-size-sm);padding-bottom:9px;">
               <input type="checkbox" data-bcrp-apply ${state.bcrpApply ? 'checked' : ''} />
               Aplicar a comprobantes sin TC
             </label>
-            <span class="text-muted" style="font-size:var(--font-size-sm);padding-bottom:9px;">USD · TC Sistema bancario SBS venta</span>
+            <span class="text-muted" style="font-size:var(--font-size-sm);padding-bottom:9px;">USD · Todos los días cubiertos (regla SUNAT)</span>
           </div>
           ${bcrpInfo}
         </div>
@@ -928,6 +931,9 @@ export function render(root) {
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
             <button type="button" class="btn" data-rate-model>${ICONS.arrowRight} Descargar modelo</button>
             <button type="button" class="btn" data-rate-file-trigger>${ICONS.arrowRight} Importar archivo</button>
+            <button type="button" class="btn btn--danger-soft" data-rate-delete-range style="display:inline-flex;align-items:center;gap:6px;">
+              ${ICONS.trash} Eliminar por rango de fechas
+            </button>
             <button type="button" class="btn btn--primary" data-rate-add>${ICONS.plus} Nuevo tipo de cambio</button>
           </div>
         </div>
@@ -1031,6 +1037,148 @@ export function render(root) {
     if (readonly) {
       form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
     }
+    modal.showModal();
+  }
+
+  function rangePreviewHtml(count, start, end) {
+    if (!start || !end) {
+      return `<div class="text-muted" style="font-size:var(--font-size-sm);">Ingresa las fechas Desde y Hasta para calcular cuántos tipos de cambio se eliminarán.</div>`;
+    }
+    if (start > end) {
+      return `<div style="color:var(--color-danger);font-size:var(--font-size-sm);font-weight:500;">La fecha Desde no puede ser posterior a la fecha Hasta.</div>`;
+    }
+    if (count === 0) {
+      return `<div class="text-muted" style="font-size:var(--font-size-sm);">No hay tipos de cambio registrados entre el <strong>${displayDate(start)}</strong> y el <strong>${displayDate(end)}</strong>.</div>`;
+    }
+    return `<div style="font-size:var(--font-size-sm);">
+      Se encontraron <strong style="color:var(--color-danger);">${count} tipo(s) de cambio</strong> registrados entre el <strong>${displayDate(start)}</strong> y el <strong>${displayDate(end)}</strong> que se eliminarán de golpe.
+    </div>`;
+  }
+
+  function rateRangeFormHtml(start = '', end = '') {
+    const y = Number(state.bcrpYear) || new Date().getFullYear();
+    const m = Number(state.bcrpMonth) || (new Date().getMonth() + 1);
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const s = start || `${y}-${String(m).padStart(2, '0')}-01`;
+    const e = end || `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const allRates = exchangeRateService.all();
+    const matching = allRates.filter((r) => r.rate_date >= s && r.rate_date <= e);
+
+    return `
+      <form data-rate-range-form novalidate>
+        <div class="modal__header">
+          <h3 class="modal__title" style="display:flex;align-items:center;gap:var(--space-2);color:var(--color-danger);">
+            ${ICONS.trash} Eliminar tipos de cambio por rango de fechas
+          </h3>
+          <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">${ICONS.close}</button>
+        </div>
+        <div class="modal__body">
+          <p class="text-muted" style="font-size:var(--font-size-sm);margin-bottom:var(--space-4);">
+            Elimina masivamente los tipos de cambio de cualquier período o rango de días. Los comprobantes de compras y ventas ya guardados conservarán su tipo de cambio asignado.
+          </p>
+
+          <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4);flex-wrap:wrap;align-items:center;">
+            <span class="text-muted" style="font-size:var(--font-size-xs);font-weight:600;">Atajos rápidos:</span>
+            <button type="button" class="btn btn--sm" data-range-preset="selected-month">Mes seleccionado (${MONTHS[m - 1] || m} ${y})</button>
+            <button type="button" class="btn btn--sm" data-range-preset="current-month">Mes actual</button>
+            <button type="button" class="btn btn--sm" data-range-preset="prev-month">Mes anterior</button>
+            <button type="button" class="btn btn--sm" data-range-preset="year">Todo el año ${y}</button>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-4);">
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Fecha desde *</label>
+              <input class="form-input" type="date" name="range_start" value="${s}" required />
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label class="form-label">Fecha hasta *</label>
+              <input class="form-input" type="date" name="range_end" value="${e}" required />
+            </div>
+          </div>
+
+          <div data-range-info style="margin-top:var(--space-4);padding:var(--space-3);background:var(--color-bg-subtle);border-radius:var(--radius-md);border:1px solid var(--color-border);">
+            ${rangePreviewHtml(matching.length, s, e)}
+          </div>
+        </div>
+        <div class="modal__footer">
+          <button type="button" class="btn" data-cancel>Cancelar</button>
+          <button type="submit" class="btn btn--danger" data-submit-range ${matching.length ? '' : 'disabled'}>
+            ${ICONS.trash} Eliminar ${matching.length} tipo(s) de cambio
+          </button>
+        </div>
+      </form>`;
+  }
+
+  function updateRateRangePreview() {
+    const form = modal.querySelector('[data-rate-range-form]');
+    if (!form) return;
+    const start = form.querySelector('[name="range_start"]')?.value || '';
+    const end = form.querySelector('[name="range_end"]')?.value || '';
+    const info = form.querySelector('[data-range-info]');
+    const submit = form.querySelector('[data-submit-range]');
+    if (!start || !end || start > end) {
+      if (info) info.innerHTML = rangePreviewHtml(0, start, end);
+      if (submit) {
+        submit.disabled = true;
+        submit.innerHTML = `${ICONS.trash} Eliminar tipos de cambio`;
+      }
+      return;
+    }
+    const matching = exchangeRateService.all().filter((r) => r.rate_date >= start && r.rate_date <= end);
+    if (info) info.innerHTML = rangePreviewHtml(matching.length, start, end);
+    if (submit) {
+      submit.disabled = matching.length === 0;
+      submit.innerHTML = `${ICONS.trash} Eliminar ${matching.length} tipo(s) de cambio`;
+    }
+  }
+
+  function applyRangePreset(type) {
+    const today = new Date();
+    let start = '';
+    let end = '';
+    if (type === 'selected-month') {
+      const y = Number(state.bcrpYear) || today.getFullYear();
+      const m = Number(state.bcrpMonth) || (today.getMonth() + 1);
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      start = `${y}-${String(m).padStart(2, '0')}-01`;
+      end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    } else if (type === 'current-month') {
+      const y = today.getFullYear();
+      const m = today.getMonth() + 1;
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      start = `${y}-${String(m).padStart(2, '0')}-01`;
+      end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    } else if (type === 'prev-month') {
+      const d = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const y = d.getFullYear();
+      const m = d.getMonth() + 1;
+      const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      start = `${y}-${String(m).padStart(2, '0')}-01`;
+      end = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    } else if (type === 'year') {
+      const y = Number(state.bcrpYear) || today.getFullYear();
+      start = `${y}-01-01`;
+      end = `${y}-12-31`;
+    }
+    const form = modal.querySelector('[data-rate-range-form]');
+    if (form && start && end) {
+      const startEl = form.querySelector('[name="range_start"]');
+      const endEl = form.querySelector('[name="range_end"]');
+      if (startEl) startEl.value = start;
+      if (endEl) endEl.value = end;
+      updateRateRangePreview();
+    }
+  }
+
+  function openRateRangeModal(start, end) {
+    if (modal.open) modal.close();
+    modalType = 'rate-range';
+    modalRecord = null;
+    modalSupplierRecord = null;
+    modalRateRecord = null;
+    modalInitial = null;
+    modalReadonly = false;
+    modal.innerHTML = rateRangeFormHtml(start, end);
     modal.showModal();
   }
 
@@ -1744,6 +1892,12 @@ export function render(root) {
     }
 
     if (e.target.closest('[data-rate-add]')) { openRateModal(null); return; }
+    if (e.target.closest('[data-rate-delete-range]')) { openRateRangeModal(); return; }
+    const presetBtn = e.target.closest('[data-range-preset]');
+    if (presetBtn && modalType === 'rate-range') {
+      applyRangePreset(presetBtn.dataset.rangePreset);
+      return;
+    }
     if (e.target.closest('[data-bcrp-update]')) {
       const yearEl = content.querySelector('[data-bcrp-year]');
       const monthEl = content.querySelector('[data-bcrp-month]');
@@ -1752,6 +1906,41 @@ export function render(root) {
       if (monthEl?.value) state.bcrpMonth = monthEl.value;
       if (applyEl) state.bcrpApply = applyEl.checked;
       updateFromBcrp();
+      return;
+    }
+    if (e.target.closest('[data-rate-delete-month]')) {
+      const yearEl = content.querySelector('[data-bcrp-year]');
+      const monthEl = content.querySelector('[data-bcrp-month]');
+      if (yearEl?.value) state.bcrpYear = yearEl.value;
+      if (monthEl?.value) state.bcrpMonth = monthEl.value;
+      const year = Number(state.bcrpYear) || new Date().getFullYear();
+      const month = Number(state.bcrpMonth) || (new Date().getMonth() + 1);
+      const prefix = `${year}-${String(month).padStart(2, '0')}`;
+      const monthName = MONTHS[month - 1] || String(month);
+      const matching = exchangeRateService.all().filter((r) => String(r.rate_date || '').startsWith(prefix));
+
+      if (!matching.length) {
+        showToast(`No hay tipos de cambio registrados para ${monthName} ${year}.`, 'info');
+        return;
+      }
+
+      confirmDialog({
+        title: `Borrar tipos de cambio de ${monthName} ${year}`,
+        message: `¿Estás seguro de que deseas eliminar TODOS los tipos de cambio de ${monthName} ${year}? Se eliminarán ${matching.length} registro(s) de golpe. Los comprobantes ya guardados conservarán su tipo de cambio asignado.`,
+        confirmText: `Eliminar ${matching.length} registro(s)`,
+        danger: true,
+      }).then(async (ok) => {
+        if (!ok) return;
+        try {
+          const res = await exchangeRateService.removeMonth(year, month);
+          state.ratePage = 1;
+          bcrpInfo = `<div class="alert alert--info" style="margin-top:var(--space-3);">Se eliminaron <strong>${res.count}</strong> tipos de cambio de <strong>${escapeHtml(monthName)} ${year}</strong>.</div>`;
+          renderContent();
+          showToast(`Se eliminaron ${res.count} tipos de cambio de ${monthName} ${year}.`);
+        } catch (err) {
+          showToast(err.message || String(err), 'error');
+        }
+      });
       return;
     }
     if (e.target.closest('[data-rate-model]')) {
@@ -1919,7 +2108,10 @@ export function render(root) {
     if (e.target.matches('[data-filter-doc]')) { state.docType = e.target.value; state.page = 1; updateRegistry(); return; }
     if (e.target.matches('[data-filter-state]')) { state.state = e.target.value; state.page = 1; updateRegistry(); return; }
     if (e.target.matches('[data-filter-currency]')) { state.currency = e.target.value; state.page = 1; updateRegistry(); return; }
-    if (e.target.matches('[data-summary-year]')) { state.summaryYear = e.target.value; renderContent(); }
+    if (e.target.matches('[data-summary-year]')) { state.summaryYear = e.target.value; renderContent(); return; }
+    if (e.target.matches('[data-bcrp-year]')) { state.bcrpYear = e.target.value; return; }
+    if (e.target.matches('[data-bcrp-month]')) { state.bcrpMonth = e.target.value; return; }
+    if (e.target.matches('[data-bcrp-apply]')) { state.bcrpApply = e.target.checked; return; }
   });
 
   viewRoot.addEventListener('dragover', (e) => {
@@ -1945,6 +2137,12 @@ export function render(root) {
   });
 
   modal.addEventListener('input', (e) => {
+    if (modalType === 'rate-range') {
+      if (e.target.matches('[name="range_start"], [name="range_end"]')) {
+        updateRateRangePreview();
+      }
+      return;
+    }
     if (modalType !== 'record' || modalReadonly) return;
     if (e.target.matches('[data-amount], [data-base-gravada], [data-base-no-gravada], [data-igv]')) {
       recalcAmounts(e.target);
@@ -1966,6 +2164,14 @@ export function render(root) {
       }
       const typeInput = form?.querySelector('[name="doc_id_type"]');
       if (typeInput && supplier.doc_id_type) typeInput.value = supplier.doc_id_type;
+    }
+  });
+
+  modal.addEventListener('change', (e) => {
+    if (modalType === 'rate-range') {
+      if (e.target.matches('[name="range_start"], [name="range_end"]')) {
+        updateRateRangePreview();
+      }
     }
   });
 
@@ -2037,6 +2243,47 @@ export function render(root) {
       } catch (err) {
         showToast(err.message || String(err), 'error');
         if (submit) { submit.disabled = false; submit.innerHTML = `${ICONS.check} Guardar tipo de cambio`; }
+      }
+      return;
+    }
+
+    if (modalType === 'rate-range') {
+      const start = form.querySelector('[name="range_start"]')?.value || '';
+      const end = form.querySelector('[name="range_end"]')?.value || '';
+      if (!start || !end) {
+        showToast('Ingresa las fechas Desde y Hasta.', 'error');
+        return;
+      }
+      if (start > end) {
+        showToast('La fecha Desde no puede ser mayor que la fecha Hasta.', 'error');
+        return;
+      }
+      const matching = exchangeRateService.all().filter((r) => r.rate_date >= start && r.rate_date <= end);
+      if (!matching.length) {
+        showToast('No hay tipos de cambio registrados en el rango seleccionado.', 'info');
+        return;
+      }
+
+      const ok = await confirmDialog({
+        title: 'Confirmar eliminación masiva',
+        message: `¿Estás seguro de que deseas eliminar permanentemente ${matching.length} tipo(s) de cambio entre el ${displayDate(start)} y el ${displayDate(end)}? Esta acción no se puede deshacer.`,
+        confirmText: `Eliminar ${matching.length} tipo(s) de cambio`,
+        danger: true,
+      });
+      if (!ok) return;
+
+      const submit = form.querySelector('[data-submit-range]');
+      if (submit) { submit.disabled = true; submit.textContent = 'Eliminando…'; }
+      try {
+        const res = await exchangeRateService.removeRange(start, end);
+        closeModal();
+        state.ratePage = 1;
+        bcrpInfo = `<div class="alert alert--info" style="margin-top:var(--space-3);">Se eliminaron <strong>${res.count}</strong> tipos de cambio entre <strong>${displayDate(start)}</strong> y <strong>${displayDate(end)}</strong>.</div>`;
+        renderContent();
+        showToast(`Se eliminaron ${res.count} tipos de cambio.`);
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+        if (submit) { submit.disabled = false; submit.innerHTML = `${ICONS.trash} Eliminar ${matching.length} tipo(s) de cambio`; }
       }
       return;
     }
