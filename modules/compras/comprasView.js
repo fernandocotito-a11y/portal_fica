@@ -1809,6 +1809,18 @@ export function render(root) {
       showToast('No hay comprobantes extranjeros pendientes de tipo de cambio.', 'info');
       return;
     }
+    // Los comprobantes del SIRE sin TC tienen sus importes en la divisa original:
+    // se convierten a soles una sola vez. Se avisa antes de cambiar los importes.
+    const willConvert = targets.filter((r) => String(r.source || '') === 'sire'
+      && (Number(r.exchange_rate) > 1 || !!(exchangeRateService.rateFor(r.issue_date, r.currency)?.rate > 0))).length;
+    if (willConvert) {
+      const ok = await confirmDialog({
+        title: 'Convertir importes a soles',
+        message: `Se convertirán ${willConvert} comprobante(s) del SIRE que no trajeron tipo de cambio. Sus importes se multiplicarán por el TC y no se volverán a convertir. ¿Continuar?`,
+        confirmText: 'Convertir',
+      });
+      if (!ok) return;
+    }
     const result = exchangeRateService.applyMissingRates(targets);
     if (!result.assigned) {
       showToast('No hay tipos de cambio cargados para las fechas de esos comprobantes.', 'error');
