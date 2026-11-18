@@ -122,6 +122,17 @@ function totalPenOf(rec) {
   return Number(rec.total || 0) * penRate(rec);
 }
 
+/**
+ * Detalle de la moneda del total. En moneda extranjera muestra el importe
+ * original y su equivalente en soles, para que la fila cuadre con los
+ * indicadores superiores (que siempre están en soles).
+ */
+function currencyDetail(rec) {
+  const currency = String(rec.currency || 'PEN').toUpperCase();
+  if (currency === 'PEN') return 'PEN';
+  return `${currency}${rateLabel(rec)} · S/ ${num(totalPenOf(rec))}`;
+}
+
 function moneyCell(value) {
   return `<span class="cell-num">${num(value)}</span>`;
 }
@@ -343,7 +354,7 @@ export function render(root) {
         <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(igvOf(r, r.kind))}</td>
-        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${rateLabel(r)}</div></td>
+        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currencyDetail(r))}</div></td>
         <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
         <td>
           <div class="table__actions">
@@ -386,7 +397,7 @@ export function render(root) {
     const pag = content.querySelector('[data-pagination]');
     if (pag) pag.innerHTML = paginationHtml(rows.length);
     const count = content.querySelector('[data-filter-count]');
-    if (count) count.textContent = `${rows.length} registro(s)`;
+    if (count) count.textContent = `${rows.length} registro(s) · Importes de cada fila en su moneda; indicadores en soles.`;
   }
 
   function renderRegistry() {
@@ -398,7 +409,7 @@ export function render(root) {
         <div class="card__header">
           <div>
             <h3 class="card__title">Registro de ${kind === 'compra' ? 'compras' : 'ventas'}</h3>
-            <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s)</p>
+            <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s) · Importes de cada fila en su moneda; indicadores en soles.</p>
           </div>
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
             <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar CSV SUNAT</button>
@@ -598,14 +609,14 @@ export function render(root) {
     return `
       ${localBanner()}
       <div class="stats">
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.building}</span><div><div class="stat-card__value">${num(totals.compra.total)}</div><div class="stat-card__label">Compras ${year}</div></div></div>
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${num(totals.venta.total)}</div><div class="stat-card__label">Ventas ${year}</div></div></div>
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${num(totals.venta.igv)}</div><div class="stat-card__label">IGV ventas</div></div></div>
-        <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${num(saldo)}</div><div class="stat-card__label">${saldo >= 0 ? 'IGV por pagar' : 'Crédito fiscal'}</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.building}</span><div><div class="stat-card__value">${num(totals.compra.total)}</div><div class="stat-card__label">Compras ${year} (PEN)</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${num(totals.venta.total)}</div><div class="stat-card__label">Ventas ${year} (PEN)</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${num(totals.venta.igv)}</div><div class="stat-card__label">IGV ventas (PEN)</div></div></div>
+        <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${num(saldo)}</div><div class="stat-card__label">${saldo >= 0 ? 'IGV por pagar (PEN)' : 'Crédito fiscal (PEN)'}</div></div></div>
       </div>
       <div class="card">
         <div class="card__header">
-          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
+          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas, consolidados en soles.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
             <button type="button" class="btn" data-go-rates>${ICONS.arrowRight} Tipo de cambio</button>
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
@@ -1387,6 +1398,11 @@ export function render(root) {
               <label class="form-label">Total CP</label>
               <input class="form-input" type="number" step="0.01" name="total" value="${Number(r.total || 0).toFixed(2)}" data-total />
             </div>
+            ${readonly && String(r.currency || 'PEN').toUpperCase() !== 'PEN' ? `
+              <div class="form-group" style="margin:0;">
+                <label class="form-label">Total en soles</label>
+                <input class="form-input" type="text" value="S/ ${num(totalPenOf(r))}" readonly />
+              </div>` : ''}
           </div>
           <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular IGV (18%) y total automáticamente al editar importes</span></label>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
