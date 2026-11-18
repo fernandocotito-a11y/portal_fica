@@ -274,6 +274,28 @@ export function igvOf(rec, kind = rec?.kind) {
 }
 
 /**
+ * Tasa efectiva de IGV de un comprobante: IGV ÷ base gravada.
+ * Devuelve null cuando no hay base suficiente para deducirla. Sirve para
+ * conservar la tasa real del SIRE (18%, 10.5%, 10%, etc.) al editar importes
+ * y evitar que un comprobante de tasa especial se recalcule siempre al 18%.
+ */
+export function igvRateOf(rec, kind = rec?.kind) {
+  const base = baseGravadaOf(rec, kind);
+  const igv = igvOf(rec, kind);
+  if (!(Math.abs(base) > 0.004)) return null;
+  const rate = Math.abs(igv) / Math.abs(base);
+  return Number.isFinite(rate) ? Math.round(rate * 1000000) / 1000000 : null;
+}
+
+/** Formatea una tasa de IGV como porcentaje (0.105 -> "10.50%"). */
+export function formatIgvRate(rate) {
+  if (rate === null || rate === undefined || rate === '') return '—';
+  const value = Number(rate);
+  if (!Number.isFinite(value) || value < 0) return '—';
+  return `${(value * 100).toFixed(2)}%`;
+}
+
+/**
  * Importe firmado para consolidar totales. Las notas de crédito (tipo 07)
  * reducen las ventas o compras. El SIRE puede traerlas con importes negativos
  * (mismo período) o con descuentos negativos (período anterior); en ambos

@@ -17,7 +17,7 @@ import { parseSireFiles, dedupeKey, toCsvText } from './sireParser.js';
 import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
-  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized, isOmitted,
+  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, igvRateOf, formatIgvRate, totalBaseOf, isSolarized, isOmitted,
   signedTaxAmount, convertAmountsToSoles, markSolarized, originalAmounts, originalAmountOf, AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
@@ -255,6 +255,7 @@ export function render(root) {
   let modalInitial = null;
   let modalReadonly = false;
   let modalKind = 'compra';
+  let modalIgvRate = 0.18;
 
   root.innerHTML = `
     <div data-compras-root>
@@ -432,6 +433,7 @@ export function render(root) {
       const omitted = isOmitted(r);
       const currency = String(r.currency || 'PEN').toUpperCase();
       const ref = foreign ? originalRecord(r) : null;
+      const igvRate = igvRateOf(r, r.kind);
       const refLine = (value) => (foreign
         ? `<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currency)} ${num(value)}</div>`
         : '');
@@ -447,7 +449,7 @@ export function render(root) {
         <td><div class="table__name">${escapeHtml(r.counterparty_name || '—')}</div>${r.glosa ? `<div class="text-muted" style="font-size:var(--font-size-xs);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.glosa)}">${escapeHtml(r.glosa)}</div>` : ''}</td>
         <td class="cell-num">${num(baseGravadaOf(r, r.kind) * penRate(r))}${refLine(baseGravadaOf(ref, r.kind))}</td>
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind) * penRate(r))}${refLine(baseNoGravadaOf(ref, r.kind))}</td>
-        <td class="cell-num">${num(igvOf(r, r.kind) * penRate(r))}${refLine(igvOf(ref, r.kind))}</td>
+        <td class="cell-num">${num(igvOf(r, r.kind) * penRate(r))}${refLine(igvOf(ref, r.kind))}${igvRate !== null ? `<div class="text-muted" style="font-size:var(--font-size-xs);">Tasa ${formatIgvRate(igvRate)}</div>` : ''}</td>
         <td class="cell-num cell-strong">${num(solesAmountOf(r, 'total'))}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currencyDetail(r))}</div></td>
         <td>
           <span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span>
@@ -630,6 +632,9 @@ export function render(root) {
             <div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-1);">
               Propuestas SIRE de SUNAT en ZIP (con CSV dentro) o CSV directo. Puedes subir varios períodos.
             </div>
+            <div class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
+              El IGV de cada comprobante se conserva tal como viene en el SIRE (18%, 10.5% u otra tasa); no se fuerza 18%.
+            </div>
           </div>
           ${importStatus ? `<p class="text-muted" data-import-status style="margin-top:var(--space-3);">${escapeHtml(importStatus)}</p>` : ''}
           ${warnings.length ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body">${warnings.map((w) => `<div style="font-size:var(--font-size-sm);">${ICONS.info} ${escapeHtml(w)}</div>`).join('')}</div></div>` : ''}
@@ -642,6 +647,7 @@ export function render(root) {
                 <button type="button" class="btn btn--primary" data-do-import ${records.length ? '' : 'disabled'}>${ICONS.check} Importar ${records.length} registro(s)</button>
               </div>
             </div>
+            <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-update-existing checked /><span class="checkbox__box">${ICONS.check}</span><span>Actualizar importes de comprobantes existentes con el SIRE (conserva tachados y glosas)</span></label>
             <div class="table-wrap" style="margin-top:var(--space-3);">
               <table class="table" style="min-width:880px;">
                 <thead><tr><th>Archivo</th><th>Tipo</th><th>Período(s)</th><th style="text-align:right;">Filas</th><th style="text-align:right;">Duplicados</th><th>Validación</th></tr></thead>
@@ -660,7 +666,7 @@ export function render(root) {
         <div class="card__body">
           <div class="table-wrap">
             <table class="table" style="min-width:820px;">
-              <thead><tr><th>Fecha</th><th>Archivo</th><th>Tipo</th><th>Período(s)</th><th style="text-align:right;">Filas</th><th style="text-align:right;">Importados</th><th style="text-align:right;">Omitidos</th><th></th></tr></thead>
+              <thead><tr><th>Fecha</th><th>Archivo</th><th>Tipo</th><th>Período(s)</th><th style="text-align:right;">Filas</th><th style="text-align:right;">Importados / actualizados</th><th style="text-align:right;">Omitidos</th><th></th></tr></thead>
               <tbody>${(() => {
                 const batches = taxService.getBatches();
                 if (!batches.length) return `<tr><td colspan="8" class="text-muted">Aún no hay importaciones registradas.</td></tr>`;
@@ -1463,6 +1469,7 @@ export function render(root) {
     const r = rec || {};
     const s = storedRec || r;
     const isCompra = kind === 'compra';
+    const igvRate = igvRateOf(r, kind) ?? 0.18;
     return `
       <form data-form novalidate>
         <div class="modal__header">
@@ -1504,7 +1511,7 @@ export function render(root) {
             ${virtualAmountField('data-base-gravada', 'Base gravada (importe afecto)', baseGravadaOf(r, kind))}
             ${virtualAmountField('data-base-no-gravada', 'Base no gravada (incl. cargos)', baseNoGravadaOf(r, kind))}
             <input type="hidden" data-base-no-base value="${Number(nonTaxedBaseOf(r, kind)).toFixed(2)}" />
-            ${virtualAmountField('data-igv', 'IGV / IPM', igvOf(r, kind))}
+            ${virtualAmountField('data-igv', `IGV / IPM (${formatIgvRate(igvRate)})`, igvOf(r, kind))}
             ${amountField('isc', 'ISC', r.isc)}
             ${amountField('icbper', 'ICBPER', r.icbper)}
             ${amountField('other_taxes', 'Otros cargos / tributos', r.other_taxes)}
@@ -1515,9 +1522,10 @@ export function render(root) {
             </div>
           </div>
           ${readonly && isForeign(s) ? referenceBlockHtml(s, kind) : ''}
-          <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular IGV (18%) y total automáticamente al editar importes</span></label>
+          <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular IGV y total automáticamente al editar importes</span></label>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
-            La <strong>base gravada</strong> es el importe afecto al IGV. La <strong>base no gravada</strong> incluye exoneradas, inafectas, exportación, valor no gravado y otras bases no afectas,
+            <strong>Tasa IGV del comprobante: <span data-igv-rate-hint>${formatIgvRate(igvRate)}</span>.</strong>
+            El cálculo automático usa esta tasa; no fuerza 18%. La <strong>base gravada</strong> es el importe afecto al IGV. La <strong>base no gravada</strong> incluye exoneradas, inafectas, exportación, valor no gravado y otras bases no afectas,
             más ISC, ICBPER y otros cargos/tributos. Al editar las bases, el comprobante se consolida en las columnas estándar del registro.
           </p>
 
@@ -1593,10 +1601,12 @@ export function render(root) {
     modalKind = kind;
     modalReadonly = readonly;
     const formRec = modalFormRecord;
+    modalIgvRate = igvRateOf(formRec || {}, kind) ?? 0.18;
     modalInitial = {
       baseGravada: baseGravadaOf(formRec || {}, kind),
       baseNoGravada: baseNoGravadaOf(formRec || {}, kind),
       igv: igvOf(formRec || {}, kind),
+      igvRate: modalIgvRate,
     };
     modal.innerHTML = modalFormHtml(formRec, kind, readonly, modalRecord);
     const form = modal.querySelector('[data-form]');
@@ -1675,6 +1685,11 @@ export function render(root) {
     }
   }
 
+  function updateIgvRateHint(form, rate) {
+    const hint = form.querySelector('[data-igv-rate-hint]');
+    if (hint) hint.textContent = formatIgvRate(rate);
+  }
+
   function recalcAmounts(target) {
     const form = modal.querySelector('[data-form]');
     if (!form || modalReadonly) return;
@@ -1693,11 +1708,26 @@ export function render(root) {
       baseNoInput.value = (Number(baseNoBaseInput?.value || 0) + taxCharges).toFixed(2);
     }
 
+    // Si el usuario corrige el IGV a mano, la nueva tasa pasa a ser la tasa
+    // efectiva del comprobante para los siguientes recálculos de la base.
+    if (target?.matches('[data-igv]')) {
+      const base = byData('data-base-gravada');
+      const igv = byData('data-igv');
+      if (Math.abs(base) > 0.004) {
+        modalIgvRate = Math.abs(igv / base);
+        updateIgvRateHint(form, modalIgvRate);
+      }
+    }
+
     const auto = form.querySelector('[data-auto-total]');
     if (!auto || !auto.checked) return;
     if (target?.matches('[data-base-gravada]')) {
       const igvInput = form.querySelector('[data-igv]');
-      if (igvInput) igvInput.value = (byData('data-base-gravada') * 0.18).toFixed(2);
+      if (igvInput) {
+        const rate = Number.isFinite(Number(modalIgvRate)) ? Number(modalIgvRate) : 0.18;
+        igvInput.value = (byData('data-base-gravada') * rate).toFixed(2);
+        updateIgvRateHint(form, rate);
+      }
     }
     const total = byData('data-base-gravada')
       + byData('data-base-no-gravada')
@@ -1754,10 +1784,11 @@ export function render(root) {
     importBusy = true;
     const currentParsed = parsed;
     const rateResult = exchangeRateService.applyMissingRates(currentParsed.records);
+    const updateExisting = !!content.querySelector('[data-update-existing]')?.checked;
     const btn = content.querySelector('[data-do-import]');
     if (btn) { btn.disabled = true; btn.textContent = 'Importando…'; }
     try {
-      const res = await taxService.importParsed(currentParsed.files);
+      const res = await taxService.importParsed(currentParsed.files, { updateExisting });
       await taxService.refresh();
       let supplierResult = null;
       try {
@@ -1783,7 +1814,8 @@ export function render(root) {
       if (periods.length) state.period = periods[periods.length - 1];
       state.tab = kinds.length === 1 ? kinds[0] : 'compra';
       updateModeBadge();
-      showToast(`Importación completada: ${res.imported} registro(s) nuevo(s), ${res.skipped} omitido(s).`);
+      const updatedText = res.updated ? `, ${res.updated} actualizado(s)` : '';
+      showToast(`Importación completada: ${res.imported} registro(s) nuevo(s)${updatedText}, ${res.skipped} sin cambios / omitido(s).`);
       if (supplierResult?.total) {
         showToast(`Directorio de proveedores: ${supplierResult.created} nuevo(s), ${supplierResult.updated} actualizado(s).`, 'info');
       }

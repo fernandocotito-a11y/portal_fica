@@ -87,7 +87,10 @@ export const sireService = {
         `${rateResult.missing} comprobante(s) en moneda extranjera no tienen tipo de cambio para su fecha.`
       );
     }
-    const result = await taxService.importParsed(parsed.files);
+    // En una sincronización con SUNAT, los comprobantes ya existentes se
+    // actualizan con los importes reales del SIRE (incluido su IGV 10.5%,
+    // 18%, etc.), conservando tachados y glosas locales.
+    const result = await taxService.importParsed(parsed.files, { updateExisting: true });
     return { ...result, fileName: res.fileName, kind, period };
   },
 };

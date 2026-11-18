@@ -10,7 +10,7 @@
      4. Saldos            Arrastre de crédito fiscal, percepciones y retenciones
                           no aplicadas, mes a mes.
    El IGV de ventas/compras es clicable para ver su composición por tasa
-   (18% / 10% / otras) según cada comprobante.
+   (18% / 10.5% / 10% / otras) según cada comprobante.
    ========================================================================== */
 
 import { declaracionesService } from './declaracionesService.js';

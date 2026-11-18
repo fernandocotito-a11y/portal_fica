@@ -67,7 +67,7 @@ function penRate(rec) {
   return Number(exchangeRateService.rateFor(rec.issue_date, rec.currency)?.rate || 0) || 1;
 }
 
-/** Clasifica la tasa de IGV de un comprobante (18%, 10% u otra). */
+/** Clasifica la tasa de IGV de un comprobante (18%, 10.5%, 10% u otra). */
 function rateBucket(rate) {
   if (!(rate > 0)) return '0%';
   if (Math.abs(rate - 0.18) < 0.005) return '18%';
@@ -361,7 +361,7 @@ export const declaracionesService = {
   },
 
   /**
-   * Desglose del IGV de un periodo por tasa (18% / 10% / otras).
+   * Desglose del IGV de un periodo por tasa (18% / 10.5% / 10% / otras).
    * Sirve para verificar cómo se compone el IGV de compras o ventas.
    */
   igvDetail(kind, period) {

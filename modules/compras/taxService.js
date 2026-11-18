@@ -145,6 +145,65 @@ function cleanRecord(rec) {
   return out;
 }
 
+/** Campos fiscales que una re-sincronización SIRE puede actualizar. */
+const SIRE_UPDATE_FIELDS = [
+  'currency', 'exchange_rate', 'total', 'taxed_base', 'igv',
+  'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng', 'acq_value_ng',
+  'isc', 'icbper', 'other_taxes', 'discount_base', 'discount_igv',
+  'exonerated', 'unaffected', 'ivap_base', 'ivap', 'export_value',
+];
+
+function sameAmount(a, b) {
+  return Math.abs(Number(a || 0) - Number(b || 0)) <= 0.004;
+}
+
+/**
+ * Conserva las marcas locales del comprobante (tachado, conversión y copia en
+ * moneda original) al actualizar sus importes desde el SIRE.
+ */
+function mergeSireRaw(existing, incoming) {
+  const merged = { ...(incoming.raw && typeof incoming.raw === 'object' ? incoming.raw : {}) };
+  const current = existing.raw && typeof existing.raw === 'object' ? existing.raw : {};
+  if (current.__omitted) merged.__omitted = current.__omitted;
+  if (!merged.__solarized && current.__solarized) merged.__solarized = current.__solarized;
+  if (!merged.__original && current.__original) merged.__original = current.__original;
+  return merged;
+}
+
+/**
+ * Devuelve el parche para actualizar un comprobante SIRE existente con los
+ * importes del archivo actual. Devuelve null si no hay cambios o si no se debe
+ * tocar (registro manual, o SIRE nuevo sin TC frente a un registro ya en soles).
+ */
+function buildSireUpdate(existing, incoming) {
+  if (!existing || String(existing.source || '') !== 'sire') return null;
+  // `isSolarized` necesita saber que el registro entrante viene del SIRE.
+  const next = incoming.source === 'sire' ? incoming : { ...incoming, source: 'sire' };
+  if (isSolarized(existing) && !isSolarized(next)) return null;
+  const patch = {};
+  let changed = false;
+  for (const field of SIRE_UPDATE_FIELDS) {
+    if (next[field] === undefined || next[field] === null) continue;
+    if (field === 'currency') {
+      const value = String(next[field] || 'PEN').toUpperCase();
+      const prev = String(existing[field] || 'PEN').toUpperCase();
+      if (value !== prev) {
+        patch[field] = value;
+        changed = true;
+      }
+    } else if (!sameAmount(next[field], existing[field])) {
+      patch[field] = Number(next[field] || 0);
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+  patch.raw = mergeSireRaw(existing, next);
+  if (next.source_file && next.source_file !== existing.source_file) {
+    patch.source_file = next.source_file;
+  }
+  return patch;
+}
+
 function rowToRecord(row) {
   return {
     ...row,
@@ -431,15 +490,21 @@ export const taxService = {
 
   /**
    * Importa los resultados de parseSireFiles. Crea un lote por archivo y
-   * descarta duplicados ya existentes.
+   * descarta duplicados ya existentes. Con `options.updateExisting` actualiza
+   * los importes fiscales de los comprobantes SIRE existentes, conservando sus
+   * tachados, glosas y marcas de conversión.
    */
-  async importParsed(parsedFiles) {
+  async importParsed(parsedFiles, options = {}) {
     const companyId = cid();
     if (!companyId) throw new Error('No hay empresa activa.');
     await detectMode();
     const meta = companyMeta();
-    const result = { batches: 0, imported: 0, skipped: 0, warnings: [] };
-    const existing = new Set(records.map((r) => r.dedupe_key));
+    const updateExisting = options.updateExisting === true;
+    const result = { batches: 0, imported: 0, updated: 0, skipped: 0, warnings: [] };
+    const existingByKey = new Map();
+    records.forEach((r) => {
+      if (r.dedupe_key) existingByKey.set(r.dedupe_key, r);
+    });
 
     for (const file of parsedFiles) {
       if (!file.records?.length) {
@@ -447,6 +512,7 @@ export const taxService = {
         continue;
       }
       const fresh = [];
+      const updates = [];
       let skipped = Number(file.duplicates || 0);
       let invalidRows = 0;
       for (const rec of file.records) {
@@ -457,8 +523,22 @@ export const taxService = {
           continue;
         }
         const key = rec.dedupe_key || dedupeKey(rec);
-        if (existing.has(key)) { skipped += 1; continue; }
-        existing.add(key);
+        const current = existingByKey.get(key);
+        if (current) {
+          if (updateExisting) {
+            const patch = buildSireUpdate(current, rec);
+            if (patch) {
+              const updated = { ...current, ...patch, updated_at: nowIso() };
+              existingByKey.set(key, updated);
+              updates.push({ current, patch });
+              continue;
+            }
+          }
+          skipped += 1;
+          continue;
+        }
+        // null marca la clave como vista en esta importación para no duplicarla.
+        existingByKey.set(key, null);
         fresh.push(cleanRecord({ ...rec, dedupe_key: key, source: 'sire', source_file: file.fileName }));
       }
       if (invalidRows) {
@@ -475,9 +555,12 @@ export const taxService = {
         kind,
         periods,
         total_rows: file.records.length,
-        imported_rows: fresh.length,
+        imported_rows: fresh.length + updates.length,
         skipped_rows: skipped,
-        warnings: [...(file.warnings || [])],
+        warnings: [
+          ...(file.warnings || []),
+          ...(updates.length ? [`${updates.length} registro(s) existente(s) actualizados con los importes del SIRE.`] : []),
+        ],
         created_at: nowIso(),
       };
 
@@ -492,8 +575,13 @@ export const taxService = {
           created_at: nowIso(),
           updated_at: nowIso(),
         }));
+        const nextRecords = [...records, ...newRows];
+        updates.forEach(({ current, patch }) => {
+          const idx = nextRecords.findIndex((r) => r.id === current.id);
+          if (idx >= 0) nextRecords[idx] = { ...nextRecords[idx], ...patch, updated_at: nowIso() };
+        });
         batches = [...batches, batch];
-        records = [...records, ...newRows];
+        records = nextRecords;
         try {
           saveLocal(companyId);
         } catch (err) {
@@ -517,6 +605,27 @@ export const taxService = {
               (data || []).forEach((row) => records.push(rowToRecord(row)));
             }
           }
+          if (updates.length) {
+            const rows = updates.map(({ current, patch }) => ({
+              ...cleanRecord({ ...current, ...patch }),
+              company_id: companyId,
+              updated_at: nowIso(),
+            }));
+            for (let i = 0; i < rows.length; i += 300) {
+              const chunk = rows.slice(i, i + 300);
+              const { data, error } = await supabase
+                .from('tax_records')
+                .upsert(chunk, { onConflict: 'company_id,dedupe_key', ignoreDuplicates: false })
+                .select();
+              if (error) throw new Error(error.message);
+              (data || []).forEach((row) => {
+                const rec = rowToRecord(row);
+                const idx = records.findIndex((r) => r.id === rec.id);
+                if (idx >= 0) records[idx] = rec;
+                else records.push(rec);
+              });
+            }
+          }
         } catch (err) {
           // Si falla la carga, se elimina el lote y sus registros parciales.
           await supabase.from('tax_import_batches').delete().eq('id', batchId);
@@ -527,6 +636,7 @@ export const taxService = {
       }
       result.batches += 1;
       result.imported += fresh.length;
+      result.updated += updates.length;
       result.skipped += skipped;
       result.warnings.push(...(file.warnings || []).map((w) => `${file.fileName}: ${w}`));
       if (meta.ruc && file.records[0]?.ruc_empresa && file.records[0].ruc_empresa !== meta.ruc) {

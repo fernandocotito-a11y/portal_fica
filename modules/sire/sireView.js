@@ -83,7 +83,7 @@ export function render(root) {
     const result = state.result
       ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body">
           <strong>Sincronización completa.</strong>
-          <div style="margin-top:var(--space-2);">${state.result.imported} comprobante(s) nuevo(s) · ${state.result.skipped} omitido(s) (ya existían).</div>
+          <div style="margin-top:var(--space-2);">${state.result.imported} comprobante(s) nuevo(s) · ${state.result.updated || 0} actualizado(s) · ${state.result.skipped} sin cambios / omitido(s).</div>
           ${state.result.warnings?.length ? `<div class="text-muted" style="margin-top:var(--space-2);font-size:var(--font-size-sm);">${state.result.warnings.map((w) => escapeHtml(w)).join('<br>')}</div>` : ''}
         </div></div>`
       : '';
@@ -93,7 +93,7 @@ export function render(root) {
         <div class="card__header">
           <div>
             <h3 class="card__title">Actualizar desde SUNAT</h3>
-            <p class="card__subtitle">Descarga la propuesta SIRE del período y agrega solo los comprobantes nuevos al registro.</p>
+            <p class="card__subtitle">Descarga la propuesta SIRE del período, agrega los comprobantes nuevos y actualiza los importes de los existentes.</p>
           </div>
         </div>
         <div class="card__body">
@@ -130,7 +130,8 @@ export function render(root) {
           ${statusMsg}
           ${result}
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
-            Al actualizar, SUNAT entrega la propuesta del período y el módulo omite los comprobantes que ya existen.
+            Al actualizar, SUNAT entrega la propuesta del período y el módulo conserva el IGV real de cada comprobante
+            (18%, 10.5% u otra tasa). Los comprobantes existentes se actualizan sin perder tachados ni glosas.
             SUNAT solo tiene propuestas desde que la empresa empezó a llevar SIRE (RCE desde oct-2022; RVIE según su obligación),
             así que un período anterior puede devolver “sin propuesta”. También puedes usar la importación manual de ZIP/CSV como respaldo.
           </p>
@@ -347,7 +348,7 @@ export function render(root) {
       });
       state.status = '';
       state.result = result;
-      showToast(`Listo: ${result.imported} nuevo(s), ${result.skipped} omitido(s).`);
+      showToast(`Listo: ${result.imported} nuevo(s), ${result.updated || 0} actualizado(s), ${result.skipped} sin cambios / omitido(s).`);
     } catch (err) {
       state.status = '';
       showToast(err.message || String(err), 'error');
