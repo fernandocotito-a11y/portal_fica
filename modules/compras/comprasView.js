@@ -1400,7 +1400,7 @@ export function render(root) {
             </div>
             ${readonly && String(r.currency || 'PEN').toUpperCase() !== 'PEN' ? `
               <div class="form-group" style="margin:0;">
-                <label class="form-label">Total en soles</label>
+                <label class="form-label">Total en soles${hasMissingRate(r) ? ' (sin TC)' : ''}</label>
                 <input class="form-input" type="text" value="S/ ${num(totalPenOf(r))}" readonly />
               </div>` : ''}
           </div>
