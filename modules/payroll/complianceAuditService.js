@@ -22,7 +22,7 @@ export const complianceAuditService = {
    * @param {Object} period { year, month }
    */
   audit(rows, period, { today = new Date() } = {}) {
-    const rmv = getRmv(period.year);
+    const rmv = getRmv(period.year, period.month);
     const rules = laborRules(activeCompany() && activeCompany().regimen_laboral);
     const alerts = [];
 

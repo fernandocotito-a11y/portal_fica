@@ -59,6 +59,12 @@ const routes = [
     loader: () => import('../modules/companies/companies.js'),
   },
   {
+    pattern: /^\/parametros\/?$/,
+    guard: 'auth',
+    adminOnly: true,
+    loader: () => import('../modules/parametros/parametros.js'),
+  },
+  {
     pattern: /^\/payroll\/?$/,
     guard: 'auth',
     company: true,

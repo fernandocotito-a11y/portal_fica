@@ -15,6 +15,7 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import { isSolarized } from '../compras/comprasConfig.js';
 import { exchangeRateService } from '../compras/exchangeRateService.js';
+import { legalParamsService } from '../../services/legalParamsService.js';
 import { buildCompanyReport } from './reportesEngine.js';
 
 const PAGE_SIZE = 1000;
@@ -160,6 +161,9 @@ export const reportesService = {
       const found = exchangeRateService.rateFor(r.issue_date, r.currency);
       return found && found.rate > 0 ? { ...r, exchange_rate: Number(found.rate) } : r;
     });
+
+    // UIT/RMV globales para la parte de Declaraciones del reporte.
+    try { await legalParamsService.refresh(); } catch { /* se usan los valores de respaldo */ }
 
     return buildReport(companies, {
       taxRows: taxRowsWithRate, retentionRows, employees, periods, balances, declRows,

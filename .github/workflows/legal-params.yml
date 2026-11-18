@@ -1,0 +1,41 @@
+name: Actualizar UIT y RMV oficiales
+
+# Consulta la UIT en SUNAT y la RMV en el BCRP, y actualiza
+# `data/parametros-legales.json`. El portal lee ese archivo desde el mismo
+# dominio (GitHub Pages), sin CORS, y sincroniza Supabase desde Administración.
+
+on:
+  schedule:
+    # 11:45 UTC = 06:45 en Lima (UTC-5), todos los lunes
+    - cron: '45 11 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: legal-params
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Consultar UIT / RMV y regenerar el archivo
+        run: node scripts/build-legal-params.js
+
+      - name: Guardar cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/parametros-legales.json
+          git diff --cached --quiet || git commit -m "chore(params): actualizar UIT y RMV oficiales"
+          git push

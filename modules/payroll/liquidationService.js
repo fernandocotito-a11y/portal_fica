@@ -172,7 +172,7 @@ export const liquidationService = {
     const year = cese.y;
 
     /* ------------------------------- Remuneración ------------------------------ */
-    const asig = emp.asignacionFamiliar ? round2(getRmv(year) * TASAS.asignacionFamiliar) : 0;
+    const asig = emp.asignacionFamiliar ? round2(getRmv(year, cese.m) * TASAS.asignacionFamiliar) : 0;
     const basico = round2(num(emp.baseSalary));
     const base = round2(basico + asig);
     const daily = round2(base / 30);

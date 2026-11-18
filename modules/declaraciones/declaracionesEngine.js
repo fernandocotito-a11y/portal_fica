@@ -20,13 +20,15 @@
    Se puede reemplazar por un importe manual (interesManual = true).
    ========================================================================== */
 
+import { UIT, getUit } from '../../js/legalParams.js';
+
 export const LIMIT_UIT = 300;
 export const TASA_1 = 0.01;   // hasta 300 UIT
 export const TASA_2 = 0.015;  // por encima de 300 UIT
 export const TIM_DIARIO = 0.0004; // 0.04% de interés moratorio diario
 
-/** UIT por ejercicio (S/). */
-export const UIT_DEFAULTS = { 2024: 5150, 2025: 5350, 2026: 5400, 2027: 5650 };
+/** UIT por ejercicio (S/). Se comparte con Planillas y Administración → Parámetros. */
+export const UIT_DEFAULTS = UIT;
 
 /** Redondeo tributario a 2 decimales. */
 export function round2(value) {
@@ -36,7 +38,7 @@ export function round2(value) {
 }
 
 export function uitFor(year) {
-  return UIT_DEFAULTS[Number(year)] || 5400;
+  return getUit(year);
 }
 
 function todayIso() {

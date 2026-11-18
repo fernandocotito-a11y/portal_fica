@@ -485,7 +485,7 @@ export function render(root) {
         <div class="card__body" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:flex-end;">
           ${yearSelector()}
           <div class="text-muted" style="font-size:var(--font-size-sm);">
-            UIT ${fmt(state.data.balances.uit)} · Renta RMT: 1.00% hasta 300 UIT, 1.50% por encima
+            UIT ${fmt(state.data.uit ?? state.data.balances.uit)} · Renta RMT: 1.00% hasta 300 UIT, 1.50% por encima
           </div>
           <div style="margin-left:auto;display:flex;gap:var(--space-2);">
             <button type="button" class="btn" data-saldos>${ICONS.edit} Saldos iniciales</button>
@@ -899,8 +899,11 @@ export function render(root) {
           <input class="form-input" type="number" step="0.01" name="percepciones_ant" value="${Number(b.percepciones_ant || 0).toFixed(2)}"></div>
         <div class="form-group"><label class="form-label">Retenciones no aplicadas ejercicio anterior</label>
           <input class="form-input" type="number" step="0.01" name="retenciones_ant" value="${Number(b.retenciones_ant || 0).toFixed(2)}"></div>
-        <div class="form-group"><label class="form-label">UIT del ejercicio</label>
-          <input class="form-input" type="number" step="0.01" name="uit" value="${Number(b.uit || 0).toFixed(2)}"></div>
+        <div class="form-group">
+          <label class="form-label">UIT del ejercicio (valor nacional)</label>
+          <div class="form-input" style="display:flex;align-items:center;background:var(--color-surface-2);">S/ ${fmt(b.uit)}</div>
+          <p class="form-hint">La UIT y la RMV se administran una sola vez en <strong>Administración → Parámetros</strong> y se comparten con Planillas y Declaraciones.</p>
+        </div>
         <div class="form-group"><label class="form-label">Coeficiente de renta (0 = automático)</label>
           <input class="form-input" type="number" step="0.0001" name="coeficiente_renta" value="${Number(b.coeficiente_renta || 0).toFixed(4)}"></div>
         <label class="permission-item" style="margin-top:var(--space-3);">
@@ -923,7 +926,6 @@ export function render(root) {
           saldo_igv_anterior: Number(fd.get('saldo_igv_anterior') || 0),
           percepciones_ant: Number(fd.get('percepciones_ant') || 0),
           retenciones_ant: Number(fd.get('retenciones_ant') || 0),
-          uit: Number(fd.get('uit') || 0),
           coeficiente_renta: Number(fd.get('coeficiente_renta') || 0),
           is_manual_initial_balance: fd.get('is_manual_initial_balance') === 'on',
         });

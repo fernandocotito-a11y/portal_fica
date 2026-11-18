@@ -33,7 +33,6 @@ import { renderAfpTab } from './afpTab.js';
 import { afpRatesService } from './afpRatesService.js';
 import { paramsService } from './paramsService.js';
 import { renderRentaSimTab } from './rentaSimTab.js';
-import { renderParamsTab } from './paramsTab.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
 
@@ -637,7 +636,6 @@ const TABS = [
   { key: 'liquidation', label: 'Liquidaciones (LBS)' },
   { key: 'export', label: 'Exportaciones y Reportes' },
   { key: 'audit', label: 'Auditoría y Cierre Contable' },
-  { key: 'params', label: 'Parámetros UIT / RMV' },
   { key: 'afp', label: 'Parámetros AFP' },
 ];
 
@@ -651,7 +649,10 @@ export default {
           <h2 class="page-heading__title">Planillas</h2>
           <p class="page-heading__subtitle">Remuneraciones, asistencias, beneficios sociales y liquidaciones.</p>
         </div>
-        <span class="badge badge--gold"><span class="badge__dot"></span>Módulo activo</span>
+        <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
+          ${authService.isSuperAdmin() ? '<a class="btn" href="#/parametros">Parámetros UIT / RMV</a>' : ''}
+          <span class="badge badge--gold"><span class="badge__dot"></span>Módulo activo</span>
+        </div>
       </div>
       <div class="tabs-bar" data-tabs>
         ${TABS.map((t) => `<button type="button" class="tab-btn${t.key === 'planilla' ? ' is-active' : ''}" data-tab="${t.key}">${escapeHtml(t.label)}</button>`).join('')}
@@ -675,7 +676,6 @@ export default {
       else if (key === 'liquidation') renderLiquidationTab(content);
       else if (key === 'export') renderExportTab(content);
       else if (key === 'audit') renderAuditTab(content);
-      else if (key === 'params') renderParamsTab(content);
       else if (key === 'afp') renderAfpTab(content);
     }
 
@@ -688,6 +688,8 @@ export default {
     (async () => {
       content.innerHTML = '<p class="text-muted" style="padding:var(--space-4);">Cargando planilla…</p>';
       try {
+        // UIT/RMV primero: los cálculos de planilla dependen de ellos.
+        await paramsService.refresh();
         await Promise.all([
           payrollService.refresh(),
           scheduleService.refresh(),
@@ -700,7 +702,6 @@ export default {
           gratificacionService.refresh(),
           loanService.refresh(),
           afpRatesService.refresh(),
-          paramsService.refresh(),
         ]);
         vacationService.setEmployeeGetter((id) => payrollService.getEmployee(id));
       } catch (err) {

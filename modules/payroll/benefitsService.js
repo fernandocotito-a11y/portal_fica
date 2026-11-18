@@ -50,14 +50,14 @@ export const BENEFIT_BONOS = [
 ];
 
 export const benefitsService = {
-  /** Asignación familiar = 10% de la RMV (si aplica). */
-  asignacionFamiliar(emp, year) {
-    return emp.asignacionFamiliar ? round2(getRmv(year) * TASAS.asignacionFamiliar) : 0;
+  /** Asignación familiar = 10% de la RMV vigente (si aplica). */
+  asignacionFamiliar(emp, year, month) {
+    return emp.asignacionFamiliar ? round2(getRmv(year, month) * TASAS.asignacionFamiliar) : 0;
   },
 
   /** Base computable de gratificación = básico + asignación familiar. */
-  gratificacionBase(emp, year) {
-    return round2(num(emp.baseSalary) + this.asignacionFamiliar(emp, year));
+  gratificacionBase(emp, year, month) {
+    return round2(num(emp.baseSalary) + this.asignacionFamiliar(emp, year, month));
   },
 
   /**
@@ -77,7 +77,8 @@ export const benefitsService = {
 
   /** Gratificación de un semestre (auto: meses + bono según salud). */
   calcGratificacion(emp, { year, semestre = 'diciembre', factor = 1, salud = null } = {}) {
-    const base = this.gratificacionBase(emp, year);
+    const month = semestre === 'julio' ? 7 : 12;
+    const base = this.gratificacionBase(emp, year, month);
     const meses = clamp(this.gratificacionMeses(emp, year, semestre), 0, 6);
     const monto = round2((base / 6) * meses * num(factor, 1));
     const s = salud || emp.salud || 'ESSALUD';
@@ -146,7 +147,8 @@ export const benefitsService = {
 
   /** CTS de un período (auto: días computables según asistencias). */
   calcCts(emp, { year, periodo = 'noviembre', factor = 1, hasCts = true } = {}) {
-    const asig = this.asignacionFamiliar(emp, year);
+    const month = periodo === 'mayo' ? 5 : 11;
+    const asig = this.asignacionFamiliar(emp, year, month);
     const gratiRef = round2(num(emp.baseSalary) + asig);
     const sexto = round2(gratiRef / 6);
     const base = round2(num(emp.baseSalary) + asig + sexto);

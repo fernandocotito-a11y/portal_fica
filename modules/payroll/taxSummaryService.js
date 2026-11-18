@@ -54,7 +54,7 @@ export const taxSummaryService = {
   },
 
   buildSummary(rows, period, company) {
-    const rmv = getRmv(period.year);
+    const rmv = getRmv(period.year, period.month);
 
     const essalud = round2(rows.reduce((s, r) => s + num(r.calc.essalud), 0));
     const vidaLey = round2(rows.reduce((s, r) => s + num(r.calc.vidaLey), 0));

@@ -26,6 +26,7 @@ import {
 } from '../declaraciones/declaracionesEngine.js';
 import { vencimientoFor } from '../declaraciones/cronogramaService.js';
 import { getRmv } from '../payroll/payrollConfig.js';
+import { getUit } from '../../js/legalParams.js';
 
 const VENCIMIENTO_DIA = { 0: 15, 1: 16, 2: 17, 3: 18, 4: 19, 5: 20, 6: 21, 7: 22, 8: 23, 9: 24 };
 
@@ -162,7 +163,7 @@ function estimatePayroll(employees, periodRow, year, month, today) {
   } else {
     const currentYm = today.getFullYear() * 100 + (today.getMonth() + 1);
     const isFuture = Number(year) * 100 + Number(month) > currentYm;
-    const rmv = getRmv(year);
+    const rmv = getRmv(year, month);
     // Solo se estima un período que la empresa ya abrió en Planillas. Así el
     // dashboard no inventa planillas de meses que aún no se procesaron.
     if (!isFuture && periodRow) {
@@ -221,7 +222,7 @@ export function buildCompanyReport(company, raw, year) {
     retencionesNoAplicadas: Number(balances.retenciones_ant || 0),
   };
   const config = {
-    uit: Number(balances.uit || 0),
+    uit: getUit(y),
     coeficienteRenta: Number(balances.coeficiente_renta || 0),
   };
 

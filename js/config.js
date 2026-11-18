@@ -65,6 +65,15 @@ export const MODULES = [
     group: 'admin',
   },
   {
+    key: 'parametros',
+    name: 'Parámetros',
+    description: 'UIT, RMV y valores nacionales compartidos por Planillas y Declaraciones.',
+    icon: ic('<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><circle cx="18" cy="17" r="2.5"/>'),
+    status: 'active',
+    adminOnly: true,
+    group: 'admin',
+  },
+  {
     key: 'planillas',
     name: 'Planillas',
     description: 'Control de planillas PLAME / T-Registro.',
@@ -193,6 +202,7 @@ export function moduleHash(key) {
   if (key === 'dashboard') return '#/dashboard';
   if (key === 'users') return '#/users';
   if (key === 'companies') return '#/companies';
+  if (key === 'parametros') return '#/parametros';
   if (key === 'planillas') return '#/payroll';
   if (key === 'compras') return '#/compras';
   if (key === 'retenciones') return '#/retencion';

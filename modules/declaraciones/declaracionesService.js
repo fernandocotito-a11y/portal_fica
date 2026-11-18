@@ -10,12 +10,13 @@
 
 import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
+import { legalParamsService } from '../../services/legalParamsService.js';
 import { taxService } from '../compras/taxService.js';
 import { retencionService } from '../retencion/retencionService.js';
 import { baseGravadaOf, igvOf, isSolarized, signedTaxAmount } from '../compras/comprasConfig.js';
 import { exchangeRateService } from '../compras/exchangeRateService.js';
 import {
-  round2, uitFor,
+  round2,
   recalculateAnnualTimeline, annualTotals,
 } from './declaracionesEngine.js';
 import {
@@ -225,7 +226,7 @@ function emptyBalances(year) {
     saldo_igv_anterior: 0,
     percepciones_ant: 0,
     retenciones_ant: 0,
-    uit: uitFor(year),
+    uit: legalParamsService.getUit(year),
     coeficiente_renta: 0,
     is_manual_initial_balance: false,
   };
@@ -236,7 +237,9 @@ async function loadBalances(companyId, year) {
     try {
       const raw = JSON.parse(localStorage.getItem(balancesKey(companyId)) || '{}');
       const row = raw[year] || null;
-      return row ? { ...emptyBalances(year), ...row } : emptyBalances(year);
+      const merged = row ? { ...emptyBalances(year), ...row } : emptyBalances(year);
+      merged.uit = legalParamsService.getUit(year);
+      return merged;
     } catch {
       return emptyBalances(year);
     }
@@ -247,7 +250,9 @@ async function loadBalances(companyId, year) {
     .eq('company_id', companyId)
     .eq('anio', year)
     .maybeSingle();
-  return data ? { ...emptyBalances(year), ...data } : emptyBalances(year);
+  const merged = data ? { ...emptyBalances(year), ...data } : emptyBalances(year);
+  merged.uit = legalParamsService.getUit(year);
+  return merged;
 }
 
 async function loadOverrides(companyId, year) {
@@ -303,6 +308,7 @@ export const declaracionesService = {
     if (!companyId) throw new Error('No hay empresa activa.');
     const company = authService.activeCompany() || {};
     await detectMode();
+    await legalParamsService.refresh();
     await taxService.refresh();
     await retencionService.refresh();
     await exchangeRateService.refresh();
@@ -330,14 +336,16 @@ export const declaracionesService = {
       percepcionesNoAplicadas: Number(balances.percepciones_ant || 0),
       retencionesNoAplicadas: Number(balances.retenciones_ant || 0),
     };
+    const uit = legalParamsService.getUit(year);
     const config = {
-      uit: Number(balances.uit || 0),
+      uit,
       coeficienteRenta: Number(balances.coeficiente_renta || 0),
     };
 
     const timeline = recalculateAnnualTimeline(sourceMonths, initial, config);
     cache = {
       year: Number(year),
+      uit,
       balances,
       overrides,
       timeline,
@@ -432,7 +440,9 @@ export const declaracionesService = {
       saldo_igv_anterior: round2(patch.saldo_igv_anterior || 0),
       percepciones_ant: round2(patch.percepciones_ant || 0),
       retenciones_ant: round2(patch.retenciones_ant || 0),
-      uit: Number(patch.uit || 0) || uitFor(year),
+      // La UIT es un parámetro nacional: se guarda como referencia, pero el
+      // valor efectivo siempre se toma de Administración → Parámetros.
+      uit: legalParamsService.getUit(year),
       coeficiente_renta: Number(patch.coeficiente_renta || 0),
       is_manual_initial_balance: !!patch.is_manual_initial_balance,
       updated_at: nowIso(),
@@ -446,7 +456,12 @@ export const declaracionesService = {
       const { error } = await supabase.from('declaraciones_balances').upsert(row);
       if (error) throw new Error(error.message);
     }
-    await this.refresh(year);
+    // La vista recarga el año completo después de guardar; evitar un refresh
+    // duplicado que generaba dos notificaciones/recálculos.
+    if (cache) {
+      cache.balances = { ...(cache.balances || {}), ...row };
+      cache.uit = row.uit;
+    }
     return cache;
   },
 

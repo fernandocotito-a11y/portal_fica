@@ -36,8 +36,9 @@ Abre **http://localhost:3000**.
    (las dejo en `js/supabase.js`).
 2. En **SQL Editor**, ejecuta `supabase/schema.sql` (crea tablas, RLS, trigger y
    empresa inicial), luego `supabase/payroll_schema.sql` (tablas del módulo de
-   **Planillas**, aisladas por empresa) y `supabase/compras_schema.sql` (Registro
-   de **Compras y Ventas / SIRE**, también aislado por empresa). Si ya habías
+   **Planillas**, aisladas por empresa, más la tabla global `payroll_params` de
+   UIT/RMV) y `supabase/compras_schema.sql` (Registro de **Compras y Ventas /
+   SIRE**, también aislado por empresa). Si ya habías
    ejecutado `compras_schema.sql`, ejecuta además
    `supabase/compras_suppliers_schema.sql` para crear el directorio de
    proveedores, `supabase/compras_exchange_rates_schema.sql` para los tipos de
@@ -192,12 +193,32 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
 | Módulo | Estado |
 |---|---|
 | Panel Principal, Gestión de Usuarios, Gestión de Empresas | ✅ Activo |
+| **Parámetros nacionales** (UIT y RMV globales, actualización automática SUNAT/BCRP) | ✅ Activo |
 | **Planillas** (remuneraciones, asistencias, CTS/grati, Renta 5ta, liquidaciones) | ✅ Activo |
 | **Compras y Ventas** (importación SIRE ZIP/CSV, registro SUNAT editable, resumen IGV) | ✅ Activo |
 | **Agentes de Retención** (importación de retenciones/percepciones SUNAT y reporte ordenado) | ✅ Activo |
 | **SIRE** (conexión en línea con SUNAT para actualizar compras y ventas) | ✅ Activo |
 | **Declaraciones SUNAT** (liquidación mensual IGV / Renta RMT, matriz anual y Ficha 621) | ✅ Activo |
 | **Reportes Gerenciales** (dashboard multiamercial, comparativo tributario y simulación intercompany) | ✅ Activo |
+
+### Parámetros nacionales · UIT / RMV
+
+- **Administración → Parámetros** concentra la **UIT** y la **RMV** de todos los
+  años. Son valores nacionales: no se guardan por empresa ni por usuario.
+- La tabla global es `payroll_params` (una fila por año, sin `company_id`). La
+  comparten **Planillas**, **Declaraciones SUNAT** y los reportes que consolidan
+  **Compras/Ventas**. Requiere haber ejecutado `supabase/payroll_schema.sql`.
+- `data/parametros-legales.json` se actualiza automáticamente desde internet:
+  GitHub Actions consulta la **UIT en SUNAT** y la **RMV en el BCRP/MTPE** todos
+  los lunes. El portal lee ese archivo desde el mismo dominio, sin CORS.
+- Al abrir la pestaña, el superadministrador sincroniza Supabase si pasaron más
+  de 12 horas. También existe el botón **Sincronizar ahora**.
+- Si la red falla, el portal sigue funcionando con los valores oficiales
+  incluidos como respaldo y los guardados en Supabase.
+- La **RMV** se aplica por mes: si cambia a mitad de año (por ejemplo, octubre
+  de 2026), la planilla usa el valor vigente en cada período.
+- En **Saldos iniciales** la UIT ya no se edita por empresa: se muestra como
+  valor nacional y se toma de esta pestaña.
 
 ### Compras y Ventas / SIRE
 
@@ -335,7 +356,8 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
      La descarga se hace con la Edge Function `sunat-sire` (acción `cronograma`)
      porque la página de SUNAT no permite lectura directa desde el navegador.
   4. **Saldos de créditos**: arrastre mes a mes del crédito fiscal IGV y de las
-     percepciones/retenciones no aplicadas.
+     percepciones/retenciones no aplicadas. La UIT del ejercicio se muestra como
+     valor nacional y se administra en **Administración → Parámetros**.
 - Los importes se recalculan siempre desde los módulos fuente; solo se guardan
   los datos manuales. Requiere ejecutar `supabase/declaraciones_schema.sql`
   (tablas `declaraciones_balances` y `tax_declaration_periods`, con RLS); si no

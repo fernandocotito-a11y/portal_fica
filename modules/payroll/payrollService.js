@@ -123,7 +123,7 @@ function benefitFactor() {
 /** Cálculo interno de una fila (con las acumuladas del año ya resueltas). */
 function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gratAcum = 0) {
   const uit = getUit(year);
-  const rmv = getRmv(year);
+  const rmv = getRmv(year, month);
 
   const days = clamp(num(inputs.days, 30), 0, 30);
   const basico = round2(num(emp.baseSalary) * (days / 30));
@@ -257,7 +257,7 @@ export function deriveMonthInputs(emp, year, month) {
   const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
   const gratif = gratificacionService.sumFor(emp.id, year, month);
   const basico = round2(num(emp.baseSalary) * (days / 30));
-  const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year) * TASAS.asignacionFamiliar) : 0;
+  const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year, month) * TASAS.asignacionFamiliar) : 0;
   return {
     days,
     vacation,

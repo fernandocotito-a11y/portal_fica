@@ -19,13 +19,19 @@ create table if not exists public.declaraciones_balances (
   saldo_igv_anterior numeric(14, 2) not null default 0,
   percepciones_ant numeric(14, 2) not null default 0,
   retenciones_ant numeric(14, 2) not null default 0,
-  uit numeric(14, 2) not null default 5400,
+  -- Referencia histórica. La UIT efectiva se toma de Administración → Parámetros
+  -- (tabla global payroll_params), no de este campo por empresa.
+  uit numeric(14, 2) not null default 5500,
   coeficiente_renta numeric(6, 4) not null default 0,
   is_manual_initial_balance boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (company_id, anio)
 );
+
+-- Compatibilidad con instalaciones que ya tenían el default antiguo (5400).
+alter table public.declaraciones_balances
+  alter column uit set default 5500;
 
 -- 2) Ajustes manuales por periodo --------------------------------------------
 create table if not exists public.tax_declaration_periods (
