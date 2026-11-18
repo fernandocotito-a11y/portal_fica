@@ -18,6 +18,7 @@ import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
   baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized,
+  convertAmountsToSoles, markSolarized,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -74,16 +75,31 @@ function penRate(rec) {
   return Number(rateForRecord(rec)?.rate || 0) || 1;
 }
 
-/** Moneda extranjera sin tipo de cambio propio. */
+/** Moneda extranjera pendiente de TC o de convertir sus importes a soles. */
 function needsRateAssignment(rec) {
   if (isSolarized(rec)) return false;
-  return String(rec.currency || 'PEN').toUpperCase() !== 'PEN' && !(Number(rec.exchange_rate) > 1);
+  if (String(rec.currency || 'PEN').toUpperCase() === 'PEN') return false;
+  // Un registro del SIRE sin TC (o con TC asignado pero sin convertir) debe
+  // regularizarse aunque ya tenga un TC propio.
+  if (String(rec.source || '') === 'sire') return true;
+  return !(Number(rec.exchange_rate) > 1);
 }
 
 /** Moneda extranjera sin tipo de cambio propio ni SUNAT para su fecha. */
 function hasMissingRate(rec) {
   if (!needsRateAssignment(rec)) return false;
+  if (Number(rec.exchange_rate) > 1) return false;
   return !rateForRecord(rec);
+}
+
+/** Etiqueta corta del importe: moneda original, soles o pendiente. */
+function rateLabel(rec) {
+  if (String(rec.currency || 'PEN').toUpperCase() === 'PEN') return '';
+  if (isSolarized(rec)) return ' · soles';
+  if (hasMissingRate(rec)) return ' · sin TC';
+  if (String(rec.source || '') === 'sire') return ' · por convertir';
+  if (needsRateAssignment(rec)) return ' · TC SUNAT';
+  return '';
 }
 
 function basePenOf(rec) {
@@ -327,7 +343,7 @@ export function render(root) {
         <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
         <td class="cell-num">${num(igvOf(r, r.kind))}</td>
-        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${isSolarized(r) && String(r.currency || 'PEN').toUpperCase() !== 'PEN' ? ' · soles' : (hasMissingRate(r) ? ' · sin TC' : (needsRateAssignment(r) ? ' · TC SUNAT' : ''))}</div></td>
+        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.currency || 'PEN')}${rateLabel(r)}</div></td>
         <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
         <td>
           <div class="table__actions">
@@ -428,7 +444,7 @@ export function render(root) {
           </div>
           <div data-pagination></div>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
-            Los importes del SIRE ya vienen en soles (SUNAT los solariza). Para registros manuales en moneda extranjera, la tabla muestra la moneda original y los indicadores se consolidan a soles (PEN) usando el tipo de cambio.
+            El SIRE entrega los importes en soles cuando informa el tipo de cambio; si no lo informa (TC 0.000), se convierten a soles con el TC SUNAT al asignarlo. Los registros manuales en moneda extranjera muestran la moneda original y los indicadores se consolidan a soles con el TC.
           </p>
         </div>
       </div>`;
@@ -463,7 +479,7 @@ export function render(root) {
               <td>${escapeHtml(r.doc_type)} · ${escapeHtml(r.series || '—')}-${escapeHtml(r.number || '—')}</td>
               <td>${escapeHtml(r.doc_id_number || '—')}</td>
               <td>${escapeHtml(r.counterparty_name || '—')}</td>
-              <td class="cell-num">${num(r.total)} ${escapeHtml(r.currency || '')}</td>
+              <td class="cell-num">${num(r.total)} ${escapeHtml(r.currency || '')}${isSolarized(r) && String(r.currency || 'PEN').toUpperCase() !== 'PEN' ? ' · soles' : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -495,7 +511,7 @@ export function render(root) {
           </div>
           ${importStatus ? `<p class="text-muted" data-import-status style="margin-top:var(--space-3);">${escapeHtml(importStatus)}</p>` : ''}
           ${warnings.length ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body">${warnings.map((w) => `<div style="font-size:var(--font-size-sm);">${ICONS.info} ${escapeHtml(w)}</div>`).join('')}</div></div>` : ''}
-          ${parsed?.rateStats?.assigned ? `<p class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-3);">${ICONS.check} Se asignará tipo de cambio SUNAT a ${parsed.rateStats.assigned} comprobante(s) al importar.</p>` : ''}
+          ${parsed?.rateStats?.assigned ? `<p class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-3);">${ICONS.check} Se asignará tipo de cambio SUNAT a ${parsed.rateStats.assigned} comprobante(s) al importar${parsed.rateStats.converted ? ` y se convertirán ${parsed.rateStats.converted} a soles` : ''}.</p>` : ''}
           ${files.length ? `
             <div style="display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);margin-top:var(--space-5);flex-wrap:wrap;">
               <h4 class="card__title" style="font-size:var(--font-size-lg);">Vista previa</h4>
@@ -913,7 +929,7 @@ export function render(root) {
             </button>
             <label style="display:flex;gap:8px;align-items:center;font-size:var(--font-size-sm);padding-bottom:9px;">
               <input type="checkbox" data-bcrp-apply ${state.bcrpApply ? 'checked' : ''} />
-              Aplicar a comprobantes sin TC
+              Aplicar a comprobantes pendientes
             </label>
             <span class="text-muted" style="font-size:var(--font-size-sm);padding-bottom:9px;">USD · Todos los días cubiertos (regla SUNAT)</span>
           </div>
@@ -940,7 +956,7 @@ export function render(root) {
         <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${all.length}</div><div class="stat-card__label">Fechas de tipo de cambio</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${latest ? Number(latest.rate).toFixed(4) : '—'}</div><div class="stat-card__label">${latest ? `Último TC · ${displayDate(latest.rate_date)} · ${escapeHtml(latest.currency)}` : 'Sin tipos de cambio'}</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${usdRates}</div><div class="stat-card__label">Fechas en USD</div></div></div>
-        <div class="stat-card" ${missing ? 'style="border-color:var(--color-gold);"' : ''}><span class="stat-card__icon" ${missing ? 'style="color:var(--color-gold);"' : ''}>${ICONS.info}</span><div><div class="stat-card__value">${missing}</div><div class="stat-card__label">Comprobantes extranjeros sin TC</div></div></div>
+        <div class="stat-card" ${missing ? 'style="border-color:var(--color-gold);"' : ''}><span class="stat-card__icon" ${missing ? 'style="color:var(--color-gold);"' : ''}>${ICONS.info}</span><div><div class="stat-card__value">${missing}</div><div class="stat-card__label">Comprobantes extranjeros por regularizar</div></div></div>
       </div>
       ${bcrpCardHtml()}
       <div class="card">
@@ -1000,13 +1016,13 @@ export function render(root) {
       <div class="card" style="margin-top:var(--space-4);">
         <div class="card__header">
           <div>
-            <h3 class="card__title">Asignar a comprobantes sin tipo de cambio</h3>
-            <p class="card__subtitle">Aplica el tipo de cambio SUNAT a los comprobantes en moneda extranjera que estén en blanco, en cero o con 1.00.</p>
+            <h3 class="card__title">Asignar o convertir tipo de cambio</h3>
+            <p class="card__subtitle">Aplica el tipo de cambio SUNAT a los comprobantes en moneda extranjera pendientes. Si el SIRE no trajo TC, también convierte sus importes a soles.</p>
           </div>
         </div>
         <div class="card__body" style="display:flex;justify-content:space-between;gap:var(--space-4);align-items:center;flex-wrap:wrap;">
           <div>
-            <div style="font-weight:600;">${missing} comprobante(s) sin tipo de cambio</div>
+            <div style="font-weight:600;">${missing} comprobante(s) por regularizar</div>
             <div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-1);">Si no hay tasa para la fecha exacta, se usa la última publicada antes de esa fecha.</div>
           </div>
           <button type="button" class="btn btn--primary" data-rate-apply ${missing && !rateBusy ? '' : 'disabled'}>${ICONS.check} Aplicar tipos de cambio</button>
@@ -1514,6 +1530,15 @@ export function render(root) {
     } else if (hint) {
       hint.textContent = 'No hay tipo de cambio SUNAT para esta fecha. Cárgalo en la pestaña Tipo de Cambio.';
     }
+    const willConvert = modalRecord?.id
+      && String(modalRecord.source || '') === 'sire'
+      && !isSolarized(modalRecord)
+      && Number(input.value) > 1;
+    if (hint && willConvert) {
+      hint.textContent += ' Los importes están en la moneda original: al guardar se convertirán a soles con este TC.';
+    } else if (hint && String(modalRecord?.source || 'manual') !== 'sire' && Number(input.value) > 1) {
+      hint.textContent += ' Los importes se mantienen en la moneda original; los totales se consolidan a soles con este TC.';
+    }
   }
 
   function recalcAmounts(target) {
@@ -1721,14 +1746,14 @@ export function render(root) {
       state.ratePage = 1;
 
       let applied = 0;
+      let converted = 0;
       if (state.bcrpApply) {
         const targets = taxService.all().filter(needsRateAssignment);
         const rateResult = exchangeRateService.applyMissingRates(targets);
         if (rateResult.assigned) {
-          await taxService.updateExchangeRates(
-            rateResult.changed.map((r) => ({ id: r.id, exchange_rate: r.exchange_rate }))
-          );
+          await taxService.updateExchangeRates(rateResult.changed);
           applied = rateResult.assigned;
+          converted = rateResult.converted;
         }
       }
 
@@ -1746,11 +1771,11 @@ export function render(root) {
           <strong>${escapeHtml(monthName)} ${year}: ${result.rows.length} tasa(s) obtenida(s)</strong>
           (${displayDate(dates[0])} → ${displayDate(dates[dates.length - 1])}).
           Se guardaron ${imported.created} nueva(s) y ${imported.updated} actualizada(s).
-          ${applied ? `Se aplicó el tipo de cambio a ${applied} comprobante(s).` : ''}
+          ${applied ? `Se aplicó el tipo de cambio a ${applied} comprobante(s)${converted ? ` y se convirtieron ${converted} a soles` : ''}.` : ''}
           Origen: ${escapeHtml(via)}.${escapeHtml(updatedNote)}
         </div>
       </div>`;
-      showToast(`BCRP ${monthName} ${year}: ${imported.created} nueva(s), ${imported.updated} actualizada(s)${applied ? `, ${applied} comprobante(s) actualizado(s)` : ''}.`);
+      showToast(`BCRP ${monthName} ${year}: ${imported.created} nueva(s), ${imported.updated} actualizada(s)${applied ? `, ${applied} comprobante(s) actualizado(s)` : ''}${converted ? `, ${converted} convertido(s) a soles` : ''}.`);
     } catch (err) {
       const details = (err.details || []).join(' · ');
       bcrpInfo = `<div class="alert alert--error" style="margin-top:var(--space-3);">
@@ -1792,8 +1817,8 @@ export function render(root) {
     rateBusy = true;
     renderContent();
     try {
-      await taxService.updateExchangeRates(result.changed.map((r) => ({ id: r.id, exchange_rate: r.exchange_rate })));
-      showToast(`Tipo de cambio aplicado a ${result.assigned} comprobante(s).${result.missing ? ` ${result.missing} siguen sin TC.` : ''}`);
+      await taxService.updateExchangeRates(result.changed);
+      showToast(`Tipo de cambio aplicado a ${result.assigned} comprobante(s).${result.converted ? ` ${result.converted} comprobante(s) del SIRE se convirtieron a soles.` : ''}${result.missing ? ` ${result.missing} siguen sin TC.` : ''}`);
     } catch (err) {
       showToast(err.message || String(err), 'error');
     } finally {
@@ -2389,6 +2414,16 @@ export function render(root) {
       const found = exchangeRateService.rateFor(data.issue_date, data.currency);
       if (found) data.exchange_rate = Number(found.rate);
       else rateMissing = true;
+    }
+
+    // SIRE sin TC: los importes están en la divisa original. Al asignar el TC
+    // se convierten a soles una sola vez y se marca el registro.
+    const originalSire = String(modalRecord?.source || '') === 'sire';
+    const originalSolarized = modalRecord ? isSolarized(modalRecord) : false;
+    const foreignCurrency = String(data.currency || 'PEN').toUpperCase() !== 'PEN';
+    if (modalRecord?.id && originalSire && !originalSolarized && foreignCurrency && Number(data.exchange_rate) > 1) {
+      Object.assign(data, convertAmountsToSoles(data, data.exchange_rate));
+      data.raw = markSolarized(modalRecord, data.exchange_rate);
     }
 
     const missing = [];

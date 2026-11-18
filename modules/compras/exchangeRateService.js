@@ -9,7 +9,7 @@
 
 import { supabase, SUPABASE_URL } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
-import { isSolarized } from './comprasConfig.js';
+import { isSolarized, convertAmountsToSoles, markSolarized } from './comprasConfig.js';
 
 const MODEL_HEADERS = ['Fecha', 'Tipo de Cambio', 'Moneda'];
 const VALID_CURRENCIES = new Set(['USD', 'EUR', 'PEN']);
@@ -685,22 +685,37 @@ export const exchangeRateService = {
   applyMissingRates(records) {
     let assigned = 0;
     let missing = 0;
+    let converted = 0;
     const changed = [];
     (records || []).forEach((rec) => {
-      if (isSolarized(rec)) return; // SIRE ya viene en soles
+      if (isSolarized(rec)) return; // ya está en soles
       const currency = String(rec.currency || 'PEN').toUpperCase();
       if (currency === 'PEN') return;
-      if (Number(rec.exchange_rate) > 1) return;
-      const found = this.rateFor(rec.issue_date, currency);
-      if (found && found.rate > 0) {
-        rec.exchange_rate = found.rate;
-        assigned += 1;
-        changed.push(rec);
-      } else {
-        missing += 1;
+      const isSire = String(rec.source || '') === 'sire';
+      let rate = Number(rec.exchange_rate || 0);
+      if (!(rate > 1)) {
+        const found = this.rateFor(rec.issue_date, currency);
+        if (!found || !(found.rate > 0)) {
+          missing += 1;
+          return;
+        }
+        rate = Number(found.rate);
+      } else if (!isSire) {
+        return; // manual con TC propio: no requiere regularización
       }
+      const patch = { id: rec.id, exchange_rate: rate };
+      if (isSire) {
+        // El SIRE no trajo TC: sus importes están en la divisa original.
+        // Al asignar el TC se convierten a soles una sola vez.
+        Object.assign(patch, convertAmountsToSoles(rec, rate));
+        patch.raw = markSolarized(rec, rate);
+        converted += 1;
+      }
+      Object.assign(rec, patch);
+      assigned += 1;
+      changed.push(patch);
     });
-    return { assigned, missing, changed };
+    return { assigned, missing, converted, changed };
   },
 
   async create(input) {

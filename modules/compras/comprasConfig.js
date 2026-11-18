@@ -266,12 +266,73 @@ export function periodsForYear(year) {
   return Array.from({ length: 12 }, (_, i) => `${year}${String(i + 1).padStart(2, '0')}`);
 }
 
+/** Convierte un valor numérico de texto (formato SIRE) a número. */
+function numericValue(value) {
+  if (value == null) return 0;
+  let s = String(value).trim();
+  if (!s) return 0;
+  s = s.replace(/\s/g, '').replace(/^S\/\.?/i, '');
+  if (s.includes(',') && s.includes('.')) {
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (s.includes(',')) {
+    s = s.replace(',', '.');
+  }
+  const n = Number(s.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Tipo de cambio original informado por el SIRE (null si no hay dato). */
+function rawExchangeRate(rec) {
+  const raw = rec?.raw;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  for (const [key, value] of Object.entries(raw)) {
+    const n = normHeader(key);
+    if (n === 'tipo de cambio' || n === 'tipo cambio') return numericValue(value);
+  }
+  return null;
+}
+
+/** Campos monetarios que se convierten a soles al regularizar el TC. */
+export const AMOUNT_FIELDS = [
+  'taxed_base', 'igv', 'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng',
+  'acq_value_ng', 'export_value', 'discount_base', 'discount_igv', 'exonerated',
+  'unaffected', 'ivap_base', 'ivap', 'isc', 'icbper', 'other_taxes', 'total',
+];
+
+/** Multiplica los importes por el TC y devuelve el parche redondeado a 2 decimales. */
+export function convertAmountsToSoles(rec, rate) {
+  const r = Number(rate || 0);
+  const patch = {};
+  if (!(r > 0)) return patch;
+  AMOUNT_FIELDS.forEach((field) => {
+    if (rec?.[field] === undefined || rec?.[field] === null) return;
+    patch[field] = Math.round(Number(rec[field] || 0) * r * 100) / 100;
+  });
+  return patch;
+}
+
+/** Marca el registro como convertido a soles para no reconvertirlo. */
+export function markSolarized(rec, rate) {
+  const raw = rec?.raw && typeof rec.raw === 'object' && !Array.isArray(rec.raw) ? { ...rec.raw } : {};
+  raw.__solarized = { rate: Number(rate || 0), at: new Date().toISOString() };
+  return raw;
+}
+
 /**
- * Indica si los importes de un comprobante ya vienen solarizados (en soles).
- * Los registros importados del SIRE de SUNAT ya traen base, IGV y total
- * convertidos a soles (aunque la "Moneda" indique la divisa original), por lo
- * que NO se deben volver a convertir con el tipo de cambio.
+ * Indica si los importes de un comprobante ya están en soles.
+ * - Los registros manuales se guardan en su moneda original (no solarizados).
+ * - El SIRE entrega los importes en soles cuando informa el tipo de cambio.
+ * - Si el SIRE no informó TC (0.000), los importes quedaron en la divisa
+ *   original; se consideran solarizados recién cuando se convierten y se
+ *   marca el registro con `raw.__solarized`.
  */
 export function isSolarized(rec) {
-  return String(rec?.source || '') === 'sire';
+  if (String(rec?.source || '') !== 'sire') return false;
+  const raw = rec?.raw;
+  if (raw && typeof raw === 'object' && raw.__solarized) return true;
+  if (String(rec?.currency || 'PEN').toUpperCase() === 'PEN') return true;
+  const original = rawExchangeRate(rec);
+  if (original !== null) return original > 1;
+  return Number(rec?.exchange_rate || 0) > 1;
 }

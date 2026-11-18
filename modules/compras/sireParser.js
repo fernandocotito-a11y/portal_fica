@@ -298,7 +298,7 @@ function validateRecord(rec, expectedRuc) {
   if (!rec.issue_date) warnings.push('Falta fecha de emisión.');
   if (!rec.total) warnings.push('Total en cero.');
   if (!isSolarized(rec) && rec.currency && rec.currency !== 'PEN' && !(Number(rec.exchange_rate) > 1)) {
-    warnings.push(`Moneda ${rec.currency} sin tipo de cambio; completa el TC para consolidar en soles.`);
+    warnings.push(`Moneda ${rec.currency} sin TC en el SIRE; se usará el TC SUNAT de la fecha (o se completará manualmente).`);
   }
   if (expectedRuc && rec.ruc_empresa && rec.ruc_empresa !== expectedRuc) {
     warnings.push(`El archivo pertenece al RUC ${rec.ruc_empresa}, distinto al de la empresa activa (${expectedRuc}).`);

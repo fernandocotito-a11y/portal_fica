@@ -13,6 +13,8 @@
 
 import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
+import { isSolarized } from '../compras/comprasConfig.js';
+import { exchangeRateService } from '../compras/exchangeRateService.js';
 import { buildCompanyReport } from './reportesEngine.js';
 
 const PAGE_SIZE = 1000;
@@ -116,7 +118,7 @@ export const reportesService = {
     const [taxRows, retentionRows, employees, periods, balances, declRows] = await Promise.all([
       safeFetch('Compras y ventas', () => fetchAll(
         'tax_records',
-        'id,company_id,kind,period,issue_date,doc_type,series,number,counterparty_name,doc_id_number,total,taxed_base,discount_base,igv,discount_igv,taxed_base_ng,igv_ng,taxed_base_dng,igv_dng,acq_value_ng,exonerated,unaffected,isc,icbper,other_taxes,currency,exchange_rate,source',
+        'id,company_id,kind,period,issue_date,doc_type,series,number,counterparty_name,doc_id_number,total,taxed_base,discount_base,igv,discount_igv,taxed_base_ng,igv_ng,taxed_base_dng,igv_dng,acq_value_ng,exonerated,unaffected,isc,icbper,other_taxes,currency,exchange_rate,source,raw',
         yearTax,
       ), warnings),
       safeFetch('Retenciones y percepciones', () => fetchAll(
@@ -146,8 +148,21 @@ export const reportesService = {
       ), warnings),
     ]);
 
+    // Completa el TC SUNAT de los comprobantes extranjeros que aún no lo
+    // tienen, para consolidar con la misma regla que Compras/Ventas.
+    try {
+      await exchangeRateService.refresh();
+    } catch { /* si falla, se usa el TC propio o 1 */ }
+    const taxRowsWithRate = taxRows.map((r) => {
+      if (isSolarized(r)) return r;
+      if (String(r.currency || 'PEN').toUpperCase() === 'PEN') return r;
+      if (Number(r.exchange_rate) > 1) return r;
+      const found = exchangeRateService.rateFor(r.issue_date, r.currency);
+      return found && found.rate > 0 ? { ...r, exchange_rate: Number(found.rate) } : r;
+    });
+
     return buildReport(companies, {
-      taxRows, retentionRows, employees, periods, balances, declRows,
+      taxRows: taxRowsWithRate, retentionRows, employees, periods, balances, declRows,
     }, y, warnings);
   },
 };

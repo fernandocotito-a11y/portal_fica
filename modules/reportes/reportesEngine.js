@@ -19,7 +19,7 @@
    ========================================================================== */
 
 import {
-  baseGravadaOf, baseNoGravadaOf, igvOf,
+  baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
 } from '../compras/comprasConfig.js';
 import {
   round2, recalculateAnnualTimeline, annualTotals,
@@ -43,9 +43,12 @@ function defaultVencimiento(year, month, ruc) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Factor para llevar un comprobante a soles. El SIRE ya viene solarizado. */
+/**
+ * Factor para llevar un comprobante a soles. El SIRE viene solarizado cuando
+ * informó el TC; si no lo informó, se usa el TC propio ya asignado.
+ */
 function penFactor(rec) {
-  if (String(rec?.source || '') === 'sire') return 1;
+  if (isSolarized(rec)) return 1;
   if (String(rec?.currency || 'PEN').toUpperCase() === 'PEN') return 1;
   const own = Number(rec?.exchange_rate || 0);
   return own > 1 ? own : 1;

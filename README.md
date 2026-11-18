@@ -241,11 +241,12 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   saldo mensual en soles, con selector de año (incluye años anteriores y el año
   actual). Los comprobantes en moneda extranjera usan su tipo de cambio o el TC
   SUNAT cargado; si no existe, la interfaz lo advierte para completarlo.
-- Los importes que vienen del **SIRE ya están solarizados** (SUNAT los convierte
-  a soles, aunque la columna "Moneda" indique la divisa original). El portal los
-  respeta y **no** los vuelve a convertir: la moneda se muestra solo como
-  referencia. La conversión con tipo de cambio aplica únicamente a los registros
-  creados manualmente en moneda extranjera.
+- El **SIRE** entrega los importes ya convertidos a soles cuando informa el
+  tipo de cambio. Si el SIRE no informa el TC (`0.000`), los importes quedan en
+  la divisa original: al asignar el TC SUNAT (manual, **Aplicar TC** o al
+  importar), el portal los convierte a soles automáticamente y deja de
+  reconvertirlos. Los registros manuales en moneda extranjera muestran la
+  moneda original y los indicadores se consolidan a soles con el TC.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
   **modo local** con `localStorage` y muestra un aviso. El directorio de
   proveedores y los tipos de cambio tienen su propio aviso si faltan

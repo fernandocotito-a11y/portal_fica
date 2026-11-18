@@ -10,6 +10,7 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import {
   HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
+  AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
 import { exchangeRateService } from './exchangeRateService.js';
@@ -296,18 +297,35 @@ export const taxService = {
     return row;
   },
 
-  /** Actualiza masivamente el tipo de cambio de comprobantes ya guardados. */
+  /**
+   * Actualiza masivamente el tipo de cambio de comprobantes ya guardados.
+   * También persiste los importes convertidos a soles (SIRE sin TC) y la marca
+   * `raw.__solarized` para no reconvertirlos.
+   */
   async updateExchangeRates(items) {
     const companyId = cid();
     if (!companyId) throw new Error('No hay empresa activa.');
-    const clean = (items || []).filter((item) => item?.id && Number(item.exchange_rate) > 0);
+    const clean = (items || [])
+      .filter((item) => item?.id && Number(item.exchange_rate) > 0)
+      .map((item) => {
+        const patch = { exchange_rate: Number(item.exchange_rate) };
+        AMOUNT_FIELDS.forEach((field) => {
+          if (item[field] !== undefined && item[field] !== null) {
+            patch[field] = Number(item[field]) || 0;
+          }
+        });
+        if (item.raw && typeof item.raw === 'object') patch.raw = item.raw;
+        return { id: item.id, ...patch };
+      });
     if (!clean.length) return 0;
     await detectMode();
     if (mode === 'local') {
       const prev = records;
       records = records.map((r) => {
         const item = clean.find((x) => x.id === r.id);
-        return item ? { ...r, exchange_rate: Number(item.exchange_rate), updated_at: nowIso() } : r;
+        if (!item) return r;
+        const { id, ...patch } = item;
+        return { ...r, ...patch, updated_at: nowIso() };
       });
       try {
         saveLocal(companyId);
@@ -320,16 +338,17 @@ export const taxService = {
     for (let i = 0; i < clean.length; i += 8) {
       const chunk = clean.slice(i, i + 8);
       await Promise.all(chunk.map(async (item) => {
+        const { id, ...patch } = item;
         const { data, error } = await supabase
           .from('tax_records')
-          .update({ exchange_rate: Number(item.exchange_rate), updated_at: nowIso() })
-          .eq('id', item.id)
+          .update({ ...patch, updated_at: nowIso() })
+          .eq('id', id)
           .eq('company_id', companyId)
           .select()
           .single();
         if (error) throw new Error(error.message);
         const row = rowToRecord(data);
-        const index = records.findIndex((r) => r.id === item.id);
+        const index = records.findIndex((r) => r.id === id);
         if (index >= 0) records[index] = row;
       }));
     }
