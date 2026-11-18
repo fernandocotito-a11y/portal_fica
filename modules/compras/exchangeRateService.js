@@ -9,7 +9,7 @@
 
 import { supabase, SUPABASE_URL } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
-import { isSolarized, convertAmountsToSoles, markSolarized } from './comprasConfig.js';
+import { isSolarized, convertAmountsToSoles, markSolarized, originalAmounts } from './comprasConfig.js';
 
 const MODEL_HEADERS = ['Fecha', 'Tipo de Cambio', 'Moneda'];
 const VALID_CURRENCIES = new Set(['USD', 'EUR', 'PEN']);
@@ -701,14 +701,15 @@ export const exchangeRateService = {
         }
         rate = Number(found.rate);
       } else if (!isSire) {
-        return; // manual con TC propio: no requiere regularización
+        return; // manual con TC propio: se convierte al editarlo y guardarlo
       }
       const patch = { id: rec.id, exchange_rate: rate };
-      if (isSire) {
-        // El SIRE no trajo TC: sus importes están en la divisa original.
-        // Al asignar el TC se convierten a soles una sola vez.
+      if (isSire || !(Number(rec.exchange_rate) > 1)) {
+        // SIRE o manual sin TC: sus importes están en la divisa original.
+        // Al asignar el TC se convierten a soles una sola vez y se conserva
+        // una copia en la moneda original como referencia.
         Object.assign(patch, convertAmountsToSoles(rec, rate));
-        patch.raw = markSolarized(rec, rate);
+        patch.raw = markSolarized(rec, rate, { currency, amounts: originalAmounts(rec) });
         converted += 1;
       }
       Object.assign(rec, patch);

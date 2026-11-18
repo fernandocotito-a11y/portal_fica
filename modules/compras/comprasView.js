@@ -18,7 +18,7 @@ import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
   baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized,
-  convertAmountsToSoles, markSolarized,
+  convertAmountsToSoles, markSolarized, originalAmounts, originalAmountOf, AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -122,15 +122,79 @@ function totalPenOf(rec) {
   return Number(rec.total || 0) * penRate(rec);
 }
 
+function isForeign(rec) {
+  return String(rec.currency || 'PEN').toUpperCase() !== 'PEN';
+}
+
+/** Importe principal en soles (convertido con el TC cuando corresponde). */
+function solesAmountOf(rec, field) {
+  return Number(rec[field] || 0) * penRate(rec);
+}
+
+/** Copia del comprobante con sus importes originales (moneda del comprobante). */
+function originalRecord(rec) {
+  if (!rec || !isForeign(rec)) return rec;
+  const out = { ...rec };
+  AMOUNT_FIELDS.forEach((field) => {
+    if (rec[field] !== undefined && rec[field] !== null) out[field] = originalAmountOf(rec, field);
+  });
+  return out;
+}
+
+/** Copia del comprobante con todos sus importes principales en soles. */
+function solesRecordOf(rec) {
+  if (!rec || !isForeign(rec)) return rec;
+  const out = { ...rec };
+  const rate = penRate(rec);
+  AMOUNT_FIELDS.forEach((field) => {
+    if (rec[field] !== undefined && rec[field] !== null) {
+      out[field] = Math.round(Number(rec[field] || 0) * rate * 100) / 100;
+    }
+  });
+  return out;
+}
+
 /**
- * Detalle de la moneda del total. En moneda extranjera muestra el importe
- * original y su equivalente en soles, para que la fila cuadre con los
- * indicadores superiores (que siempre están en soles).
+ * Registro que se muestra en el formulario de edición. Si el comprobante ya
+ * fue convertido a soles, se edita en su moneda original; los comprobantes del
+ * SIRE se editan con los importes almacenados.
+ */
+function formRecordOf(rec) {
+  if (!rec || String(rec.source || '') === 'sire') return rec;
+  const amounts = rec.raw?.__original?.amounts;
+  if (!amounts) return rec;
+  const out = { ...rec };
+  AMOUNT_FIELDS.forEach((field) => {
+    if (rec[field] !== undefined && rec[field] !== null) out[field] = originalAmountOf(rec, field);
+  });
+  return out;
+}
+
+/** Bloque de referencia en la moneda original para el detalle de solo lectura. */
+function referenceBlockHtml(rec, kind) {
+  const currency = String(rec.currency || 'PEN').toUpperCase();
+  const ref = originalRecord(rec);
+  const note = hasMissingRate(rec) ? ' <span class="text-muted">(sin TC: consolidado a la par)</span>' : '';
+  return `<div class="alert alert--info" style="margin-top:var(--space-3);font-size:var(--font-size-sm);">
+    <strong>Referencia en ${escapeHtml(currency)}:</strong>${note}
+    Base gravada ${num(baseGravadaOf(ref, kind))} ·
+    Base no gravada ${num(baseNoGravadaOf(ref, kind))} ·
+    IGV ${num(igvOf(ref, kind))} ·
+    Total ${num(originalAmountOf(rec, 'total'))}
+  </div>`;
+}
+
+/**
+ * Detalle de la moneda del total. El importe principal de la fila ya está en
+ * soles; esta línea muestra la referencia en la moneda original y el estado
+ * del tipo de cambio.
  */
 function currencyDetail(rec) {
   const currency = String(rec.currency || 'PEN').toUpperCase();
   if (currency === 'PEN') return 'PEN';
-  return `${currency}${rateLabel(rec)} · S/ ${num(totalPenOf(rec))}`;
+  const own = Number(rec.exchange_rate || 0);
+  const label = rateLabel(rec) || (own > 1 ? ` · TC ${own.toFixed(3)}` : '');
+  return `${currency} ${num(originalAmountOf(rec, 'total'))}${label}`;
 }
 
 function moneyCell(value) {
@@ -174,6 +238,7 @@ export function render(root) {
   let parseBusy = false;
   let modalType = 'record';
   let modalRecord = null;
+  let modalFormRecord = null;
   let modalSupplierRecord = null;
   let modalRateRecord = null;
   let modalInitial = null;
@@ -341,7 +406,14 @@ export function render(root) {
         </div>
       </td></tr>`;
     }
-    return rows.map((r) => `
+    return rows.map((r) => {
+      const foreign = isForeign(r);
+      const currency = String(r.currency || 'PEN').toUpperCase();
+      const ref = foreign ? originalRecord(r) : null;
+      const refLine = (value) => (foreign
+        ? `<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currency)} ${num(value)}</div>`
+        : '');
+      return `
       <tr>
         <td style="white-space:nowrap;">${displayDate(r.issue_date)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.period || '')}</div></td>
         <td>
@@ -351,10 +423,10 @@ export function render(root) {
         <td>${escapeHtml(r.series || '—')}-${escapeHtml(r.number || '—')}${r.number_final ? `<div class="text-muted" style="font-size:var(--font-size-xs);">hasta ${escapeHtml(r.number_final)}</div>` : ''}</td>
         <td>${escapeHtml(r.doc_id_number || '—')}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.doc_id_type ? `Tipo ${r.doc_id_type}` : '')}</div></td>
         <td><div class="table__name">${escapeHtml(r.counterparty_name || '—')}</div>${r.glosa ? `<div class="text-muted" style="font-size:var(--font-size-xs);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(r.glosa)}">${escapeHtml(r.glosa)}</div>` : ''}</td>
-        <td class="cell-num">${num(baseGravadaOf(r, r.kind))}</td>
-        <td class="cell-num">${num(baseNoGravadaOf(r, r.kind))}</td>
-        <td class="cell-num">${num(igvOf(r, r.kind))}</td>
-        <td class="cell-num cell-strong">${num(r.total)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currencyDetail(r))}</div></td>
+        <td class="cell-num">${num(baseGravadaOf(r, r.kind) * penRate(r))}${refLine(baseGravadaOf(ref, r.kind))}</td>
+        <td class="cell-num">${num(baseNoGravadaOf(r, r.kind) * penRate(r))}${refLine(baseNoGravadaOf(ref, r.kind))}</td>
+        <td class="cell-num">${num(igvOf(r, r.kind) * penRate(r))}${refLine(igvOf(ref, r.kind))}</td>
+        <td class="cell-num cell-strong">${num(solesAmountOf(r, 'total'))}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currencyDetail(r))}</div></td>
         <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
         <td>
           <div class="table__actions">
@@ -363,7 +435,8 @@ export function render(root) {
             <button type="button" class="icon-btn icon-btn--danger" data-del="${escapeHtml(r.id)}" title="Eliminar">${ICONS.trash}</button>
           </div>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   }
 
   function paginationHtml(total) {
@@ -397,7 +470,7 @@ export function render(root) {
     const pag = content.querySelector('[data-pagination]');
     if (pag) pag.innerHTML = paginationHtml(rows.length);
     const count = content.querySelector('[data-filter-count]');
-    if (count) count.textContent = `${rows.length} registro(s) · Importes de cada fila en su moneda; indicadores en soles.`;
+    if (count) count.textContent = `${rows.length} registro(s) · Importes principales en soles; debajo, la referencia en la moneda original.`;
   }
 
   function renderRegistry() {
@@ -409,7 +482,7 @@ export function render(root) {
         <div class="card__header">
           <div>
             <h3 class="card__title">Registro de ${kind === 'compra' ? 'compras' : 'ventas'}</h3>
-            <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s) · Importes de cada fila en su moneda; indicadores en soles.</p>
+            <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s) · Importes principales en soles; debajo, la referencia en la moneda original.</p>
           </div>
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
             <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar CSV SUNAT</button>
@@ -445,9 +518,9 @@ export function render(root) {
               <thead>
                 <tr>
                   <th>Fecha</th><th>Tipo</th><th>Serie / Número</th><th>Doc. contraparte</th>
-                  <th>Razón social</th><th style="text-align:right;">Base gravada</th>
-                  <th style="text-align:right;">Base no gravada</th><th style="text-align:right;">IGV</th>
-                  <th style="text-align:right;">Total</th><th>Estado</th><th></th>
+                  <th>Razón social</th><th style="text-align:right;">Base gravada (PEN)</th>
+                  <th style="text-align:right;">Base no gravada (PEN)</th><th style="text-align:right;">IGV (PEN)</th>
+                  <th style="text-align:right;">Total (PEN)</th><th>Estado</th><th></th>
                 </tr>
               </thead>
               <tbody data-table-body></tbody>
@@ -455,7 +528,7 @@ export function render(root) {
           </div>
           <div data-pagination></div>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
-            El SIRE entrega los importes en soles cuando informa el tipo de cambio; si no lo informa (TC 0.000), se convierten a soles con el TC SUNAT al asignarlo. Los registros manuales en moneda extranjera muestran la moneda original y los indicadores se consolidan a soles con el TC.
+            Los importes principales de la tabla están en soles. En comprobantes en moneda extranjera, debajo de cada importe se muestra la referencia en su moneda original. El SIRE ya viene en soles cuando informa el tipo de cambio; si no lo informa (TC 0.000), se convierte con el TC SUNAT al asignarlo. Los registros manuales con TC también se convierten a soles al guardarlos y no se vuelven a convertir.
           </p>
         </div>
       </div>`;
@@ -1076,6 +1149,7 @@ export function render(root) {
     if (modal.open) modal.close();
     modalType = 'rate';
     modalRecord = null;
+    modalFormRecord = null;
     modalSupplierRecord = null;
     modalRateRecord = rec ? { ...rec } : null;
     modalInitial = null;
@@ -1222,6 +1296,7 @@ export function render(root) {
     if (modal.open) modal.close();
     modalType = 'rate-range';
     modalRecord = null;
+    modalFormRecord = null;
     modalSupplierRecord = null;
     modalRateRecord = null;
     modalInitial = null;
@@ -1345,8 +1420,9 @@ export function render(root) {
     </div>`;
   }
 
-  function modalFormHtml(rec, kind, readonly) {
+  function modalFormHtml(rec, kind, readonly, storedRec = rec) {
     const r = rec || {};
+    const s = storedRec || r;
     const isCompra = kind === 'compra';
     return `
       <form data-form novalidate>
@@ -1398,12 +1474,8 @@ export function render(root) {
               <label class="form-label">Total CP</label>
               <input class="form-input" type="number" step="0.01" name="total" value="${Number(r.total || 0).toFixed(2)}" data-total />
             </div>
-            ${readonly && String(r.currency || 'PEN').toUpperCase() !== 'PEN' ? `
-              <div class="form-group" style="margin:0;">
-                <label class="form-label">Total en soles${hasMissingRate(r) ? ' (sin TC)' : ''}</label>
-                <input class="form-input" type="text" value="S/ ${num(totalPenOf(r))}" readonly />
-              </div>` : ''}
           </div>
+          ${readonly && isForeign(s) ? referenceBlockHtml(s, kind) : ''}
           <label class="checkbox" style="margin-top:var(--space-3);"><input type="checkbox" data-auto-total checked /><span class="checkbox__box">${ICONS.check}</span><span>Calcular IGV (18%) y total automáticamente al editar importes</span></label>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
             La <strong>base gravada</strong> es el importe afecto al IGV. La <strong>base no gravada</strong> incluye exoneradas, inafectas, exportación, valor no gravado y otras bases no afectas,
@@ -1475,16 +1547,18 @@ export function render(root) {
     if (modal.open) modal.close();
     modalType = 'record';
     modalRecord = rec ? { ...rec } : null;
+    modalFormRecord = rec ? (readonly ? solesRecordOf(rec) : formRecordOf(rec)) : null;
     modalSupplierRecord = null;
     modalRateRecord = null;
     modalKind = kind;
     modalReadonly = readonly;
+    const formRec = modalFormRecord;
     modalInitial = {
-      baseGravada: baseGravadaOf(rec || {}, kind),
-      baseNoGravada: baseNoGravadaOf(rec || {}, kind),
-      igv: igvOf(rec || {}, kind),
+      baseGravada: baseGravadaOf(formRec || {}, kind),
+      baseNoGravada: baseNoGravadaOf(formRec || {}, kind),
+      igv: igvOf(formRec || {}, kind),
     };
-    modal.innerHTML = modalFormHtml(modalRecord, kind, readonly);
+    modal.innerHTML = modalFormHtml(formRec, kind, readonly, modalRecord);
     const form = modal.querySelector('[data-form]');
     if (readonly) {
       form.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
@@ -1497,6 +1571,7 @@ export function render(root) {
     if (modal.open) modal.close();
     modalType = 'supplier';
     modalRecord = null;
+    modalFormRecord = null;
     modalSupplierRecord = rec ? { ...rec } : null;
     modalRateRecord = null;
     modalInitial = null;
@@ -1514,6 +1589,7 @@ export function render(root) {
     modal.innerHTML = '';
     modalType = 'record';
     modalRecord = null;
+    modalFormRecord = null;
     modalSupplierRecord = null;
     modalRateRecord = null;
     modalInitial = null;
@@ -1546,14 +1622,16 @@ export function render(root) {
     } else if (hint) {
       hint.textContent = 'No hay tipo de cambio SUNAT para esta fecha. Cárgalo en la pestaña Tipo de Cambio.';
     }
-    const willConvert = modalRecord?.id
-      && String(modalRecord.source || '') === 'sire'
-      && !isSolarized(modalRecord)
-      && Number(input.value) > 1;
-    if (hint && willConvert) {
-      hint.textContent += ' Los importes están en la moneda original: al guardar se convertirán a soles con este TC.';
-    } else if (hint && String(modalRecord?.source || 'manual') !== 'sire' && Number(input.value) > 1) {
-      hint.textContent += ' Los importes se mantienen en la moneda original; los totales se consolidan a soles con este TC.';
+    const isSire = String(modalRecord?.source || '') === 'sire';
+    const solarized = modalRecord ? isSolarized(modalRecord) : false;
+    if (hint && Number(input.value) > 1) {
+      if (isSire && solarized) {
+        hint.textContent += ' El comprobante ya está en soles.';
+      } else if (isSire) {
+        hint.textContent += ' Los importes están en la moneda original: al guardar se convertirán a soles con este TC.';
+      } else {
+        hint.textContent += ' Al guardar, los importes se convertirán a soles con este TC y se conservará la referencia en la moneda original.';
+      }
     }
   }
 
@@ -1825,14 +1903,15 @@ export function render(root) {
       showToast('No hay comprobantes extranjeros pendientes de tipo de cambio.', 'info');
       return;
     }
-    // Los comprobantes del SIRE sin TC tienen sus importes en la divisa original:
-    // se convierten a soles una sola vez. Se avisa antes de cambiar los importes.
-    const willConvert = targets.filter((r) => String(r.source || '') === 'sire'
-      && (Number(r.exchange_rate) > 1 || !!(exchangeRateService.rateFor(r.issue_date, r.currency)?.rate > 0))).length;
+    // Los comprobantes en moneda extranjera sin TC tienen sus importes en la
+    // divisa original: se convierten a soles una sola vez. Se avisa antes de
+    // cambiar los importes.
+    const willConvert = targets.filter((r) => Number(r.exchange_rate) > 1
+      || Number(exchangeRateService.rateFor(r.issue_date, r.currency)?.rate || 0) > 0).length;
     if (willConvert) {
       const ok = await confirmDialog({
         title: 'Convertir importes a soles',
-        message: `Se convertirán ${willConvert} comprobante(s) del SIRE que no trajeron tipo de cambio. Sus importes se multiplicarán por el TC y no se volverán a convertir. ¿Continuar?`,
+        message: `Se convertirán ${willConvert} comprobante(s) en moneda extranjera que no tienen tipo de cambio. Sus importes se multiplicarán por el TC y se conservará la referencia en la moneda original. No se volverán a convertir. ¿Continuar?`,
         confirmText: 'Convertir',
       });
       if (!ok) return;
@@ -1846,7 +1925,7 @@ export function render(root) {
     renderContent();
     try {
       await taxService.updateExchangeRates(result.changed);
-      showToast(`Tipo de cambio aplicado a ${result.assigned} comprobante(s).${result.converted ? ` ${result.converted} comprobante(s) del SIRE se convirtieron a soles.` : ''}${result.missing ? ` ${result.missing} siguen sin TC.` : ''}`);
+      showToast(`Tipo de cambio aplicado a ${result.assigned} comprobante(s).${result.converted ? ` ${result.converted} comprobante(s) se convirtieron a soles.` : ''}${result.missing ? ` ${result.missing} siguen sin TC.` : ''}`);
     } catch (err) {
       showToast(err.message || String(err), 'error');
     } finally {
@@ -2368,7 +2447,7 @@ export function render(root) {
     data.period = inputToPeriod(data.period);
     data.exchange_rate = Number(data.exchange_rate || 0);
 
-    const baseRec = modalRecord || {};
+    const baseRec = modalFormRecord || modalRecord || {};
     [
       'taxed_base', 'igv', 'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng',
       'acq_value_ng', 'export_value', 'discount_base', 'discount_igv', 'exonerated',
@@ -2393,7 +2472,7 @@ export function render(root) {
     const igvChanged = changed(igv, modalInitial?.igv);
     const taxCharges = Number(data.isc || 0) + Number(data.icbper || 0) + Number(data.other_taxes || 0);
     const baseNoPure = baseNoGravada - taxCharges;
-    const initialBaseNoPure = nonTaxedBaseOf(modalRecord || {}, modalKind);
+    const initialBaseNoPure = nonTaxedBaseOf(baseRec || {}, modalKind);
     const baseNoPureChanged = changed(baseNoPure, initialBaseNoPure);
     if (baseNoGravada >= 0 && baseNoPure < -0.004) {
       showToast('La base no gravada debe incluir ISC, ICBPER y otros cargos. Revisa esos importes.', 'error');
@@ -2434,7 +2513,7 @@ export function render(root) {
     data.series = String(data.series || '').toUpperCase().trim();
     data.number = String(data.number || '').toUpperCase().replace(/\s/g, '');
     data.source = modalRecord?.source || 'manual';
-    data.raw = modalRecord?.raw || {};
+    data.raw = { ...(modalRecord?.raw || {}) };
     data.dedupe_key = dedupeKey(data);
 
     let rateMissing = false;
@@ -2444,14 +2523,35 @@ export function render(root) {
       else rateMissing = true;
     }
 
-    // SIRE sin TC: los importes están en la divisa original. Al asignar el TC
-    // se convierten a soles una sola vez y se marca el registro.
+    // Al guardar, los comprobantes en moneda extranjera con TC se convierten a
+    // soles una sola vez. Se guarda una copia de los importes originales en
+    // `raw.__original` para mostrarlos como referencia y para editar el
+    // comprobante en su moneda.
     const originalSire = String(modalRecord?.source || '') === 'sire';
     const originalSolarized = modalRecord ? isSolarized(modalRecord) : false;
     const foreignCurrency = String(data.currency || 'PEN').toUpperCase() !== 'PEN';
-    if (modalRecord?.id && originalSire && !originalSolarized && foreignCurrency && Number(data.exchange_rate) > 1) {
+    if (foreignCurrency && Number(data.exchange_rate) > 1 && (!originalSire || !originalSolarized)) {
+      const original = { currency: data.currency, amounts: originalAmounts(data) };
       Object.assign(data, convertAmountsToSoles(data, data.exchange_rate));
-      data.raw = markSolarized(modalRecord, data.exchange_rate);
+      data.raw = markSolarized(modalRecord || {}, data.exchange_rate, original);
+    } else if (!foreignCurrency) {
+      // Si el comprobante pasa a soles, se quitan las marcas de conversión y
+      // se conservan los importes que ya estaban en soles.
+      const raw = { ...(modalRecord?.raw || {}) };
+      const originalRate = Number(raw.__original?.rate || 0);
+      if (raw.__original && originalRate > 1) {
+        Object.assign(data, convertAmountsToSoles(data, originalRate));
+      }
+      delete raw.__solarized;
+      delete raw.__original;
+      data.raw = raw;
+    } else if (foreignCurrency && !originalSire) {
+      // Manual sin TC: se guarda en su moneda original y se quitan las marcas
+      // de una conversión anterior (el usuario borró el TC).
+      const raw = { ...(modalRecord?.raw || {}) };
+      delete raw.__solarized;
+      delete raw.__original;
+      data.raw = raw;
     }
 
     const missing = [];

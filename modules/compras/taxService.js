@@ -101,6 +101,16 @@ function uid() {
   return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+/** Factor para llevar los importes de un comprobante a soles. */
+function taxPenFactor(rec) {
+  if (isSolarized(rec)) return 1;
+  if (String(rec?.currency || 'PEN').toUpperCase() === 'PEN') return 1;
+  const own = Number(rec?.exchange_rate || 0);
+  if (own > 1) return own;
+  const sunat = exchangeRateService.rateFor(rec?.issue_date, rec?.currency);
+  return Number(sunat?.rate || 0) || 1;
+}
+
 function cleanRecord(rec) {
   const out = { ...rec };
   delete out.id;
@@ -564,8 +574,22 @@ export const taxService = {
   exportCsv(kind, rows) {
     // Se conservan los encabezados SIRE exactos y se añade una columna "Glosa"
     // al final. En una reimportación esa columna se ignora (no es un campo SIRE).
+    // El registro oficial se exporta en soles: los comprobantes en moneda
+    // extranjera se convierten con su TC (o con el TC SUNAT de la fecha).
     const headers = [...HEADERS[kind], 'Glosa'];
-    const data = rows.map((r) => [...recordToSunatRow(kind, r), r.glosa ?? '']);
+    const data = rows.map((r) => {
+      const rate = taxPenFactor(r);
+      const soles = rate === 1 ? r : { ...r };
+      if (rate !== 1) {
+        soles.exchange_rate = rate;
+        AMOUNT_FIELDS.forEach((field) => {
+          if (r[field] !== undefined && r[field] !== null) {
+            soles[field] = Math.round(Number(r[field] || 0) * rate * 100) / 100;
+          }
+        });
+      }
+      return [...recordToSunatRow(kind, soles), r.glosa ?? ''];
+    });
     return { fileName: `REGISTRO_${kind === 'compra' ? 'COMPRAS' : 'VENTAS'}_${rows[0]?.period || 'SIN_PERIODO'}.csv`, text: toCsvText(headers, data) };
   },
 

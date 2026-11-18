@@ -414,7 +414,8 @@ export function recordToSunatRow(kind, rec) {
       return Number(rec[field] || 0).toFixed(2);
     }
     if (field === 'exchange_rate') {
-      // Si la fuente traía el TC en blanco, se conserva en blanco al exportar.
+      // Se prioriza el TC asignado (por ejemplo, al convertir un SIRE que vino
+      // con TC 0.000). Si no hay TC propio, se usa el que traía la fuente.
       // El encabezado real puede variar entre compras y ventas.
       let rawValue;
       if (rec.raw) {
@@ -423,10 +424,13 @@ export function recordToSunatRow(kind, rec) {
           : Object.keys(rec.raw).find((k) => findField(kind, k) === 'exchange_rate');
         if (key) rawValue = rec.raw[key];
       }
-      if (rawValue != null && String(rawValue).trim() === '') {
-        return Number(rec[field]) > 0 ? Number(rec[field]).toFixed(4) : '';
-      }
-      return Number(rec[field] || 0).toFixed(4);
+      const own = Number(rec[field] || 0);
+      const rawRate = Number(rawValue);
+      if (own > 1) return own.toFixed(4);
+      if (Number.isFinite(rawRate) && rawRate > 1) return rawRate.toFixed(4);
+      if (rawValue != null && String(rawValue).trim() === '') return own > 0 ? own.toFixed(4) : '';
+      if (own > 0) return own.toFixed(4);
+      return rawValue != null ? String(rawValue) : '0.0000';
     }
     return rec[field] ?? '';
   });

@@ -245,11 +245,18 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   tipo de cambio. Si el SIRE no informa el TC (`0.000`), los importes quedan en
   la divisa original: al asignar el TC SUNAT (manual, **Aplicar TC** o al
   importar), el portal los convierte a soles automáticamente y deja de
-  reconvertirlos. Los registros manuales en moneda extranjera muestran la
-  moneda original y los indicadores se consolidan a soles con el TC. En el
-  detalle, debajo del total de cada fila se muestra el equivalente en soles
-  (y si falta el TC se advierte «sin TC»), de modo que la fila cuadre con los
-  indicadores y el resumen mensual, que siempre están en soles.
+  reconvertirlos.
+- Los **registros manuales** en moneda extranjera también se convierten a soles
+  al guardarlos con tipo de cambio. El portal conserva una copia de los
+  importes originales en `raw.__original` (moneda, TC e importes) para poder
+  editar el comprobante en su moneda y mostrar la referencia. Una segunda
+  edición o el botón **Aplicar TC** no vuelven a multiplicar los importes.
+- En el detalle de Compras/Ventas los importes principales (base gravada, base
+  no gravada, IGV y total) se muestran **en soles** y, debajo de cada uno, la
+  referencia en la moneda original para los comprobantes extranjeros. Si falta
+  el TC se advierte «sin TC». El resumen mensual y los indicadores también están
+  en soles, y la exportación CSV del registro se genera en soles con el TC
+  aplicado.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
   **modo local** con `localStorage` y muestra un aviso. El directorio de
   proveedores y los tipos de cambio tienen su propio aviso si faltan

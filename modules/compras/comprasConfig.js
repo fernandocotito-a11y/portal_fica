@@ -312,27 +312,65 @@ export function convertAmountsToSoles(rec, rate) {
   return patch;
 }
 
-/** Marca el registro como convertido a soles para no reconvertirlo. */
-export function markSolarized(rec, rate) {
+/** Copia de los importes actuales (en la moneda original) antes de convertir. */
+export function originalAmounts(rec) {
+  const out = {};
+  AMOUNT_FIELDS.forEach((field) => {
+    if (rec?.[field] !== undefined && rec?.[field] !== null) out[field] = Number(rec[field] || 0);
+  });
+  return out;
+}
+
+/**
+ * Marca el registro como convertido a soles para no reconvertirlo. Si se
+ * entregan los importes originales, se guardan en `raw.__original` para
+ * mostrarlos como referencia y para editar el comprobante en su moneda.
+ */
+export function markSolarized(rec, rate, original = null) {
   const raw = rec?.raw && typeof rec.raw === 'object' && !Array.isArray(rec.raw) ? { ...rec.raw } : {};
   raw.__solarized = { rate: Number(rate || 0), at: new Date().toISOString() };
+  if (original && typeof original === 'object' && original.amounts) {
+    raw.__original = {
+      currency: String(original.currency || rec?.currency || 'USD').toUpperCase(),
+      rate: Number(rate || 0),
+      amounts: { ...original.amounts },
+      at: new Date().toISOString(),
+    };
+  }
   return raw;
 }
 
 /**
  * Indica si los importes de un comprobante ya están en soles.
- * - Los registros manuales se guardan en su moneda original (no solarizados).
+ * - Los comprobantes manuales se convierten a soles al guardarlos con TC y se
+ *   marcan con `raw.__solarized`.
  * - El SIRE entrega los importes en soles cuando informa el tipo de cambio.
  * - Si el SIRE no informó TC (0.000), los importes quedaron en la divisa
  *   original; se consideran solarizados recién cuando se convierten y se
  *   marca el registro con `raw.__solarized`.
  */
 export function isSolarized(rec) {
-  if (String(rec?.source || '') !== 'sire') return false;
   const raw = rec?.raw;
   if (raw && typeof raw === 'object' && raw.__solarized) return true;
+  if (String(rec?.source || '') !== 'sire') return false;
   if (String(rec?.currency || 'PEN').toUpperCase() === 'PEN') return true;
   const original = rawExchangeRate(rec);
   if (original !== null) return original > 1;
   return Number(rec?.exchange_rate || 0) > 1;
+}
+
+/**
+ * Importe original en la moneda del comprobante. Para registros convertidos se
+ * usa la copia guardada en `raw.__original`; si no existe, se deriva dividiendo
+ * el importe en soles entre el TC.
+ */
+export function originalAmountOf(rec, field) {
+  const original = rec?.raw?.__original?.amounts;
+  if (original && typeof original === 'object' && original[field] !== undefined && original[field] !== null) {
+    return Number(original[field] || 0);
+  }
+  const stored = Number(rec?.[field] || 0);
+  const rate = Number(rec?.exchange_rate || 0);
+  if (isSolarized(rec) && rate > 1) return Math.round((stored / rate) * 100) / 100;
+  return stored;
 }
