@@ -43,9 +43,39 @@ export function hashPassword(input) {
   return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
 }
 
+/**
+ * Decodifica las entidades HTML más comunes que pueden venir dentro de los
+ * datos importados (por ejemplo, "FUKUHARA &amp; COMERCIAL"). Se usa antes de
+ * mostrar o exportar textos para que el usuario vea el carácter real.
+ */
+const HTML_ENTITIES = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: '\u00a0',
+};
+
+export function decodeHtmlEntities(value) {
+  const s = String(value ?? '');
+  if (!s.includes('&')) return s;
+  return s.replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]+);/gi, (match, code) => {
+    if (code[0] === '#') {
+      const hex = code[1].toLowerCase() === 'x';
+      const number = parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10);
+      if (Number.isFinite(number) && number >= 0 && number <= 0x10ffff) {
+        try { return String.fromCodePoint(number); } catch { return match; }
+      }
+      return match;
+    }
+    return HTML_ENTITIES[code.toLowerCase()] ?? match;
+  });
+}
+
 /** Escapa caracteres especiales para evitar inyección de HTML (XSS). */
 export function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+  return decodeHtmlEntities(value).replace(/[&<>"']/g, (ch) => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',

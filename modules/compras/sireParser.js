@@ -8,6 +8,7 @@
    ========================================================================== */
 
 import { FIELDS, HEADERS, normHeader, isSolarized } from './comprasConfig.js';
+import { decodeHtmlEntities } from '../../js/utils.js';
 
 const utf8 = new TextDecoder('utf-8');
 const win1252 = new TextDecoder('windows-1252');
@@ -446,7 +447,10 @@ export function toDdMmYyyy(iso) {
 /** CSV con BOM y comillas dobles, listo para Excel. */
 export function toCsvText(headers, rows) {
   const esc = (v) => {
-    const s = String(v ?? '');
+    // Los datos importados pueden traer entidades HTML (por ejemplo
+    // "FUKUHARA &amp; COMERCIAL"). Se decodifican antes de exportar para que
+    // Excel muestre el nombre real y no el código de la entidad.
+    const s = decodeHtmlEntities(String(v ?? ''));
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return `\uFEFF${[headers, ...rows].map((r) => r.map(esc).join(',')).join('\r\n')}`;

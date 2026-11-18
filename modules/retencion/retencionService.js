@@ -12,6 +12,7 @@ import { EXPORT_HEADERS, recordToReportRow } from './retencionConfig.js';
 import { dedupeKey } from './retencionParser.js';
 import { toCsvText } from '../compras/sireParser.js';
 import { periodLabel } from '../compras/comprasConfig.js';
+import { downloadXlsx as downloadWorkbook } from '../../js/exportUtils.js';
 
 let records = [];
 let mode = 'unknown'; // 'remote' | 'local'
@@ -268,6 +269,72 @@ export const retencionService = {
 
   periods() {
     return [...new Set(records.map((r) => r.period).filter(Boolean))].sort().reverse();
+  },
+
+  exportXlsx(kind, rows) {
+    const data = rows.map((r) => [
+      r.period || '',
+      `${r.comprobante_serie || ''}-${r.comprobante_numero || ''}`,
+      r.comprobante_fecha || '',
+      r.estado || '',
+      Number(r.tasa || 0),
+      r.agente_ruc || '',
+      r.agente_nombre || '',
+      r.receptor_ruc || '',
+      r.receptor_nombre || '',
+      r.doc_tipo || '',
+      r.doc_serie || '',
+      r.doc_numero || '',
+      r.doc_fecha || '',
+      Number(r.total_comprobante || 0),
+      r.nro_pago || '',
+      Number(r.importe_pagado || 0),
+      Number(r.monto_retenido || 0),
+      Number(r.monto_neto || 0),
+    ]);
+    const period = rows[0]?.period || 'SIN_PERIODO';
+    return {
+      fileName: `REPORTE_${kind === 'percepcion' ? 'PERCEPCIONES' : 'RETENCIONES'}_${period}.xlsx`,
+      sheets: [{
+        name: kind === 'percepcion' ? 'Percepciones' : 'Retenciones',
+        headers: EXPORT_HEADERS,
+        rows: data,
+        widths: [10, 14, 14, 10, 8, 14, 30, 14, 30, 10, 8, 10, 12, 14, 10, 14, 14, 14],
+        numberFormat: '#,##0.00',
+      }],
+    };
+  },
+
+  async downloadXlsx(kind, rows) {
+    const { fileName, sheets } = this.exportXlsx(kind, rows);
+    await downloadWorkbook(fileName, sheets);
+  },
+
+  exportSummaryXlsx(year, rows) {
+    const headers = ['Periodo', 'Mes', 'Ret. base', 'Ret. retenido', 'Per. base', 'Per. percibido'];
+    const data = rows.map((r) => [
+      r.period,
+      r.label,
+      r.retencion.base,
+      r.retencion.retenido,
+      r.percepcion.base,
+      r.percepcion.retenido,
+    ]);
+    return {
+      fileName: `RESUMEN_RETENCIONES_${year}.xlsx`,
+      sheets: [{
+        name: `Resumen ${year}`,
+        headers,
+        rows: data,
+        widths: [10, 16, 16, 16, 16, 16],
+        numberFormat: '#,##0.00',
+      }],
+    };
+  },
+
+  async downloadSummaryXlsx(year, rows) {
+    const { fileName, sheets } = this.exportSummaryXlsx(year, rows);
+    await downloadWorkbook(fileName, sheets);
   },
 
   exportCsv(kind, rows) {

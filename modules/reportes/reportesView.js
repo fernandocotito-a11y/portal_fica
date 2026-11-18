@@ -12,6 +12,8 @@
 import { MONTHS } from '../compras/comprasConfig.js';
 import { round2 } from '../declaraciones/declaracionesEngine.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
+import { downloadXlsx } from '../../js/exportUtils.js';
+import { toCsvText } from '../compras/sireParser.js';
 import { reportesService } from './reportesService.js';
 import {
   companyPosition, sumPositions, simulateInvoice,
@@ -294,6 +296,7 @@ export function render(root) {
         <span>${escapeHtml(scopeLabel())}</span>
         <span class="mgmt-toolbar__sep">·</span>
         <span>${state.report.companies.length ? `${state.report.companies.length} empresa(s) en alcance` : 'Sin empresas'}</span>
+        <button type="button" class="btn btn--sm" data-export-excel>${ICONS.arrowRight} Excel</button>
       </div>
     </div>`;
   }
@@ -811,9 +814,8 @@ export function render(root) {
     rows.push(['Consolidado', '', group.baseVentas, group.baseCompras, group.igvVentas, group.igvCompras,
       group.saldoAnterior, group.percepciones, group.retenciones, group.creditAvailable,
       group.igvPorPagar, group.renta, group.total, '']);
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const csv = [headers, ...rows].map((r) => r.map(esc).join(',')).join('\r\n');
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const csv = toCsvText(headers, rows);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -822,6 +824,114 @@ export function render(root) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function exportDashboardXlsx() {
+    const list = companies();
+    const annual = sumAnnual(list);
+    const monthly = monthlySeries(list);
+    const positions = list.map((c) => ({
+      company: c,
+      month: companyPosition(c, state.month, 'month'),
+      ytd: companyPosition(c, state.month, 'ytd'),
+    }));
+    const groupYtd = sumPositions(positions.map((p) => p.ytd));
+    const monthLabel = `${MONTHS[state.month - 1]} ${state.year}`;
+
+    const summaryHeaders = ['Indicador', 'Valor'];
+    const summaryRows = [
+      ['Ejercicio', state.year],
+      ['Mes de análisis', monthLabel],
+      ['Ventas base del ejercicio', annual.ventasBase],
+      ['Compras base del ejercicio', annual.comprasBase],
+      ['IGV neto del ejercicio', annual.igvNeto],
+      ['Planilla del ejercicio', annual.payrollCost],
+      ['Retenciones del ejercicio', annual.retenciones],
+      ['Percepciones del ejercicio', annual.percepciones],
+      ['IGV por pagar acumulado', groupYtd.igvPorPagar],
+      ['Renta RMT acumulada', groupYtd.renta],
+      ['Total a regularizar acumulado', groupYtd.total],
+    ];
+
+    const monthlyHeaders = [
+      'Mes', 'Ventas base', 'Compras base', 'IGV ventas', 'IGV compras',
+      'Retenciones', 'Percepciones', 'Planilla', 'Trabajadores',
+    ];
+    const monthlyRows = monthly.map((m) => [
+      MONTHS[m.mes - 1], m.ventasBase, m.comprasBase, m.igvVentas, m.igvCompras,
+      m.retenciones, m.percepciones, m.payrollCost, m.headcount,
+    ]);
+
+    const companyHeaders = [
+      'Empresa', 'RUC', 'Ventas base', 'Compras base', 'IGV neto',
+      'Retenciones + percepciones', 'Planilla', 'Trabajadores',
+      'IGV por pagar', 'Renta', 'Total a regularizar',
+    ];
+    const companyRows = positions.map(({ company, ytd }) => [
+      company.name, company.ruc, ytd.baseVentas, ytd.baseCompras, ytd.igvNeto,
+      ytd.retenciones + ytd.percepciones, ytd.payroll?.cost || 0, ytd.payroll?.headcount || 0,
+      ytd.igvPorPagar, ytd.renta, ytd.total,
+    ]);
+
+    await downloadXlsx(
+      `DASHBOARD_GERENCIAL_${state.year}_${String(state.month).padStart(2, '0')}.xlsx`,
+      [
+        {
+          name: 'Resumen',
+          headers: summaryHeaders,
+          rows: summaryRows,
+          widths: [38, 20],
+          numberFormat: '#,##0.00',
+        },
+        {
+          name: 'Evolución mensual',
+          headers: monthlyHeaders,
+          rows: monthlyRows,
+          widths: [14, 16, 16, 14, 14, 14, 14, 14, 12],
+          numberFormat: '#,##0.00',
+        },
+        {
+          name: 'Empresas',
+          headers: companyHeaders,
+          rows: companyRows,
+          widths: [34, 14, 16, 16, 14, 20, 14, 12, 14, 14, 18],
+          numberFormat: '#,##0.00',
+        },
+      ],
+    );
+  }
+
+  async function exportComparativeXlsx() {
+    const positions = comparativePositions();
+    const headers = [
+      'Empresa', 'RUC', 'Ventas base', 'Compras base', 'IGV ventas', 'IGV compras',
+      'Saldo anterior', 'Percepciones', 'Retenciones', 'Credito disponible',
+      'IGV por pagar', 'Renta', 'Total a regularizar', 'Estado',
+    ];
+    const rows = positions.map(({ company, p }) => [
+      company.name, company.ruc, p.baseVentas, p.baseCompras, p.igvVentas, p.igvCompras,
+      p.saldoAnterior, p.percepciones, p.retenciones, p.creditAvailable,
+      p.igvPorPagar, p.renta, p.total, p.estado,
+    ]);
+    const group = sumPositions(positions.map((x) => x.p));
+    rows.push(['Consolidado', '', group.baseVentas, group.baseCompras, group.igvVentas, group.igvCompras,
+      group.saldoAnterior, group.percepciones, group.retenciones, group.creditAvailable,
+      group.igvPorPagar, group.renta, group.total, '']);
+    await downloadXlsx(
+      `COMPARATIVO_TRIBUTARIO_${state.year}_${String(state.month).padStart(2, '0')}.xlsx`,
+      [{
+        name: 'Comparativo',
+        headers,
+        rows,
+        widths: [34, 14, 16, 16, 14, 14, 14, 14, 14, 16, 14, 14, 18, 14],
+        numberFormat: '#,##0.00',
+      }],
+    );
+  }
+
+  async function exportXlsx() {
+    if (state.tab === 'dashboard') return exportDashboardXlsx();
+    return exportComparativeXlsx();
   }
 
   function printReport() {
@@ -886,12 +996,20 @@ export function render(root) {
 
   /* ------------------------------- Eventos ------------------------------- */
 
-  viewRoot.addEventListener('click', (e) => {
+  viewRoot.addEventListener('click', async (e) => {
     const tab = e.target.closest('[data-tab]');
     if (tab) { setTab(tab.dataset.tab); return; }
 
     if (e.target.closest('[data-refresh]')) { load(); return; }
     if (e.target.closest('[data-print]')) { printReport(); return; }
+    if (e.target.closest('[data-export-excel]')) {
+      try {
+        await exportXlsx();
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
     if (e.target.closest('[data-export-csv]')) { exportCsv(); return; }
 
     const mode = e.target.closest('[data-compare-mode]');

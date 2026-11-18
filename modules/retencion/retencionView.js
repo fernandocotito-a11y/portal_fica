@@ -199,6 +199,7 @@ export function render(root) {
             <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s)</p>
           </div>
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+            <button type="button" class="btn" data-export-excel>${ICONS.arrowRight} Exportar Excel</button>
             <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar CSV</button>
           </div>
         </div>
@@ -371,7 +372,8 @@ export function render(root) {
           <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base y monto retenido/percibido por mes.</p></div>
           <div style="display:flex;gap:var(--space-2);align-items:center;">
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
-            <button type="button" class="btn" data-export-summary>${ICONS.arrowRight} Exportar resumen</button>
+            <button type="button" class="btn" data-export-summary-excel>${ICONS.arrowRight} Exportar Excel</button>
+            <button type="button" class="btn" data-export-summary>${ICONS.arrowRight} Exportar CSV</button>
           </div>
         </div>
         <div class="card__body">
@@ -568,6 +570,17 @@ export function render(root) {
     if (e.target.closest('[data-do-import]')) { doImport(); return; }
     if (e.target.closest('[data-reset-import]')) { state.parsed = null; state.importStatus = ''; renderContent(); return; }
 
+    if (e.target.closest('[data-export-excel]')) {
+      const rows = filteredRows(state.tab);
+      if (!rows.length) { showToast('No hay registros para exportar con los filtros actuales.', 'error'); return; }
+      try {
+        await retencionService.downloadXlsx(state.tab, rows);
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
+
     if (e.target.closest('[data-export]')) {
       const rows = filteredRows(state.tab);
       if (!rows.length) { showToast('No hay registros para exportar con los filtros actuales.', 'error'); return; }
@@ -575,10 +588,20 @@ export function render(root) {
       return;
     }
 
+    if (e.target.closest('[data-export-summary-excel]')) {
+      const rows = retencionService.monthly(state.summaryYear);
+      try {
+        await retencionService.downloadSummaryXlsx(state.summaryYear, rows);
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
+
     if (e.target.closest('[data-export-summary]')) {
       const rows = retencionService.monthly(state.summaryYear);
-      const headers = ['Periodo', 'Ret. base', 'Ret. retenido', 'Per. base', 'Per. percibido'];
-      const data = rows.map((r) => [r.period, r.retencion.base.toFixed(2), r.retencion.retenido.toFixed(2), r.percepcion.base.toFixed(2), r.percepcion.retenido.toFixed(2)]);
+      const headers = ['Periodo', 'Mes', 'Ret. base', 'Ret. retenido', 'Per. base', 'Per. percibido'];
+      const data = rows.map((r) => [r.period, r.label, r.retencion.base, r.retencion.retenido, r.percepcion.base, r.percepcion.retenido]);
       const text = `\uFEFF${[headers, ...data].map((r) => r.map((v) => String(v ?? '')).join(',')).join('\r\n')}`;
       const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);

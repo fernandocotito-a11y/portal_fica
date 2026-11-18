@@ -520,7 +520,8 @@ export function render(root) {
             <p class="card__subtitle" data-filter-count>${registryCountText()}</p>
           </div>
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
-            <button type="button" class="btn" data-export title="Exporta los comprobantes incluidos. Los tachados no suman ni se incluyen, salvo que uses el filtro Tachados.">${ICONS.arrowRight} Exportar CSV SUNAT</button>
+            <button type="button" class="btn" data-export-excel title="Exporta un Excel ya tabulado por columnas, con importes en soles y referencia original para comprobantes en moneda extranjera.">${ICONS.arrowRight} Exportar Excel</button>
+            <button type="button" class="btn" data-export title="Exporta los comprobantes incluidos en el formato CSV oficial. Los tachados no suman ni se incluyen, salvo que uses el filtro Tachados.">${ICONS.arrowRight} Exportar CSV SUNAT</button>
             <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Agregar registro</button>
           </div>
         </div>
@@ -738,7 +739,8 @@ export function render(root) {
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
             <button type="button" class="btn" data-go-rates>${ICONS.arrowRight} Tipo de cambio</button>
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
-            <button type="button" class="btn" data-export-summary>${ICONS.arrowRight} Exportar resumen</button>
+            <button type="button" class="btn" data-export-summary-excel>${ICONS.arrowRight} Exportar Excel</button>
+            <button type="button" class="btn" data-export-summary>${ICONS.arrowRight} Exportar CSV</button>
           </div>
         </div>
         <div class="card__body">
@@ -2266,6 +2268,22 @@ export function render(root) {
     if (e.target.closest('[data-edit-modal]')) { openModal(modalRecord, modalKind, false); return; }
     if (e.target.closest('[data-close-modal]') || e.target.closest('[data-cancel]')) { closeModal(); return; }
 
+    if (e.target.closest('[data-export-excel]')) {
+      const rows = filteredRows(state.tab, { review: state.review === 'omitted' ? 'omitted' : 'active' });
+      if (!rows.length) {
+        showToast(state.review === 'omitted'
+          ? 'No hay comprobantes tachados para exportar con los filtros actuales.'
+          : 'No hay comprobantes incluidos para exportar con los filtros actuales.', 'error');
+        return;
+      }
+      try {
+        await taxService.downloadXlsx(state.tab, rows);
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
+
     if (e.target.closest('[data-export]')) {
       // El CSV oficial excluye los tachados. Si el usuario está revisando el
       // filtro "Tachados", se exportan esos registros para su revisión.
@@ -2280,14 +2298,24 @@ export function render(root) {
       return;
     }
 
+    if (e.target.closest('[data-export-summary-excel]')) {
+      const rows = monthlyFor(state.summaryYear);
+      try {
+        await taxService.downloadSummaryXlsx(state.summaryYear, rows);
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
+
     if (e.target.closest('[data-export-summary]')) {
       const rows = monthlyFor(state.summaryYear);
-      const headers = ['Periodo', 'Compras base gravada', 'Compras base no gravada', 'Compras IGV', 'Compras total', 'Ventas base gravada', 'Ventas base no gravada', 'Ventas IGV', 'Ventas total', 'Saldo IGV'];
+      const headers = ['Periodo', 'Mes', 'Compras base gravada', 'Compras base no gravada', 'Compras IGV', 'Compras total', 'Ventas base gravada', 'Ventas base no gravada', 'Ventas IGV', 'Ventas total', 'Saldo IGV'];
       const data = rows.map((r) => [
-        r.period,
-        r.compra.baseGravada.toFixed(2), r.compra.baseNoGravada.toFixed(2), r.compra.igv.toFixed(2), r.compra.total.toFixed(2),
-        r.venta.baseGravada.toFixed(2), r.venta.baseNoGravada.toFixed(2), r.venta.igv.toFixed(2), r.venta.total.toFixed(2),
-        (r.venta.igv - r.compra.igv).toFixed(2),
+        r.period, r.label,
+        r.compra.baseGravada, r.compra.baseNoGravada, r.compra.igv, r.compra.total,
+        r.venta.baseGravada, r.venta.baseNoGravada, r.venta.igv, r.venta.total,
+        r.venta.igv - r.compra.igv,
       ]);
       downloadText(`RESUMEN_COMPRAS_VENTAS_${state.summaryYear}.csv`, toCsvText(headers, data));
       return;

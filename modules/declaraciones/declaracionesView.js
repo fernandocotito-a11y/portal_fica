@@ -16,7 +16,9 @@
 import { declaracionesService } from './declaracionesService.js';
 import { authService } from '../../services/authService.js';
 import { MONTHS, docTypeLabel } from '../compras/comprasConfig.js';
+import { toCsvText } from '../compras/sireParser.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
+import { downloadXlsx } from '../../js/exportUtils.js';
 
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
@@ -489,7 +491,8 @@ export function render(root) {
           </div>
           <div style="margin-left:auto;display:flex;gap:var(--space-2);">
             <button type="button" class="btn" data-saldos>${ICONS.edit} Saldos iniciales</button>
-            <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar</button>
+            <button type="button" class="btn" data-export-excel>${ICONS.arrowRight} Exportar Excel</button>
+            <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar CSV</button>
           </div>
         </div>
       </div>`;
@@ -1016,17 +1019,24 @@ export function render(root) {
     });
   }
 
-  function exportCsv() {
+  function matrixExportRows() {
     const months = state.data.timeline.months;
-    const headers = ['Concepto', ...MONTHS, 'Total'];
-    const rows = MATRIX_ROWS.filter((r) => r.key).map((row) => {
-      const vals = months.map((m) => Number(row.get(m) || 0).toFixed(2));
-      const total = vals.reduce((a, v) => a + Number(v), 0).toFixed(2);
-      return [row.label, ...vals, total];
+    return MATRIX_ROWS.filter((r) => r.key).map((row) => {
+      const values = months.map((m) => {
+        const value = Number(row.get(m) || 0);
+        if (row.pct) return pct(value);
+        return row.minus ? -Math.abs(value) : value;
+      });
+      const totalValue = totalForRow(row);
+      const total = row.pct ? pct(totalValue) : (row.minus ? -Math.abs(totalValue) : totalValue);
+      return [row.label, ...values, total];
     });
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const csv = [headers, ...rows].map((r) => r.map(esc).join(',')).join('\r\n');
-    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  }
+
+  function exportCsv() {
+    const headers = ['Concepto', ...MONTHS, 'Total'];
+    const csv = toCsvText(headers, matrixExportRows());
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1035,6 +1045,17 @@ export function render(root) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function exportXlsx() {
+    const headers = ['Concepto', ...MONTHS, 'Total'];
+    await downloadXlsx(`LIQUIDACION_${state.year}.xlsx`, [{
+      name: `Liquidacion ${state.year}`,
+      headers,
+      rows: matrixExportRows(),
+      widths: [46, ...Array(12).fill(14), 16],
+      numberFormat: '#,##0.00;(#,##0.00)',
+    }]);
   }
 
   async function syncCronograma(btn) {
@@ -1058,7 +1079,7 @@ export function render(root) {
 
   /* ---------------------------- Eventos ---------------------------- */
 
-  viewRoot.addEventListener('click', (e) => {
+  viewRoot.addEventListener('click', async (e) => {
     const tab = e.target.closest('[data-tab]');
     if (tab) { setTab(tab.dataset.tab); return; }
 
@@ -1072,6 +1093,14 @@ export function render(root) {
     if (periodo) { openPeriodo(Number(periodo.dataset.periodo)); return; }
 
     if (e.target.closest('[data-saldos]')) { openSaldos(); return; }
+    if (e.target.closest('[data-export-excel]')) {
+      try {
+        await exportXlsx();
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
     if (e.target.closest('[data-export]')) { exportCsv(); return; }
 
     const syncCrono = e.target.closest('[data-sync-crono]');

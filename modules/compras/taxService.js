@@ -9,11 +9,13 @@
 import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import {
-  HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
-  isOmitted, signedTaxAmount, creditNoteExportRecord, AMOUNT_FIELDS,
+  HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf, igvRateOf, formatIgvRate,
+  isSolarized, isOmitted, signedTaxAmount, creditNoteExportRecord, AMOUNT_FIELDS,
+  originalAmountOf, docTypeLabel, stateLabel,
 } from './comprasConfig.js';
-import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
+import { recordToSunatRow, toCsvText, toDdMmYyyy, dedupeKey } from './sireParser.js';
 import { exchangeRateService } from './exchangeRateService.js';
+import { downloadXlsx as downloadWorkbook } from '../../js/exportUtils.js';
 
 let records = [];
 let batches = [];
@@ -109,6 +111,48 @@ function taxPenFactor(rec) {
   if (own > 1) return own;
   const sunat = exchangeRateService.rateFor(rec?.issue_date, rec?.currency);
   return Number(sunat?.rate || 0) || 1;
+}
+
+/** Tipo de cambio efectivo que se muestra en la exportación. */
+function effectiveExchangeRate(rec) {
+  if (String(rec?.currency || 'PEN').toUpperCase() === 'PEN') return '';
+  const own = Number(rec?.exchange_rate || 0);
+  if (own > 1) return own;
+  const factor = taxPenFactor(rec);
+  return factor > 1 ? factor : '';
+}
+
+/** Base gravada en la moneda original, antes de convertir a soles. */
+function originalBaseGravadaOf(rec, kind) {
+  if (kind === 'compra') {
+    return originalAmountOf(rec, 'taxed_base')
+      + originalAmountOf(rec, 'taxed_base_ng')
+      + originalAmountOf(rec, 'taxed_base_dng');
+  }
+  return originalAmountOf(rec, 'taxed_base') - originalAmountOf(rec, 'discount_base');
+}
+
+/** Base no gravada en la moneda original, antes de convertir a soles. */
+function originalBaseNoGravadaOf(rec, kind) {
+  const charges = originalAmountOf(rec, 'isc')
+    + originalAmountOf(rec, 'icbper')
+    + originalAmountOf(rec, 'other_taxes');
+  if (kind === 'compra') return originalAmountOf(rec, 'acq_value_ng') + charges;
+  return originalAmountOf(rec, 'export_value')
+    + originalAmountOf(rec, 'exonerated')
+    + originalAmountOf(rec, 'unaffected')
+    + originalAmountOf(rec, 'ivap_base')
+    + charges;
+}
+
+/** IGV en la moneda original, antes de convertir a soles. */
+function originalIgvOf(rec, kind) {
+  if (kind === 'compra') {
+    return originalAmountOf(rec, 'igv')
+      + originalAmountOf(rec, 'igv_ng')
+      + originalAmountOf(rec, 'igv_dng');
+  }
+  return originalAmountOf(rec, 'igv') - originalAmountOf(rec, 'discount_igv');
 }
 
 function cleanRecord(rec) {
@@ -699,6 +743,101 @@ export const taxService = {
       });
     }
     return out;
+  },
+
+  exportXlsx(kind, rows) {
+    // Exportación legible y ya tabulada: una fila por comprobante, importes
+    // principales en soles y columnas separadas con la referencia original
+    // para los comprobantes en moneda extranjera.
+    const headers = [
+      'Período', 'Mes', 'Fecha emisión', 'Tipo doc.', 'Tipo comprobante', 'Serie', 'Número',
+      'Doc. identidad', 'Razón social', 'Moneda', 'Tipo de cambio',
+      'Base gravada (PEN)', 'Base no gravada (PEN)', 'IGV (PEN)', 'Total (PEN)',
+      'Base gravada (original)', 'Base no gravada (original)', 'IGV (original)', 'Total (original)',
+      'Tasa IGV', 'Estado', 'Tachado', 'Origen', 'Glosa',
+    ];
+    const data = rows.map((r) => {
+      const rate = taxPenFactor(r);
+      const foreign = String(r.currency || 'PEN').toUpperCase() !== 'PEN';
+      const signed = (value) => signedTaxAmount(r, value);
+      const baseGravada = signed(baseGravadaOf(r, kind));
+      const baseNoGravada = signed(baseNoGravadaOf(r, kind));
+      const igv = signed(igvOf(r, kind));
+      const total = signed(r.total);
+      return [
+        r.period || '',
+        periodLabel(r.period),
+        toDdMmYyyy(r.issue_date),
+        r.doc_type || '',
+        docTypeLabel(r.doc_type),
+        r.series || '',
+        r.number || '',
+        r.doc_id_number || '',
+        r.counterparty_name || '',
+        String(r.currency || 'PEN').toUpperCase(),
+        effectiveExchangeRate(r),
+        baseGravada * rate,
+        baseNoGravada * rate,
+        igv * rate,
+        total * rate,
+        foreign ? signed(originalBaseGravadaOf(r, kind)) : '',
+        foreign ? signed(originalBaseNoGravadaOf(r, kind)) : '',
+        foreign ? signed(originalIgvOf(r, kind)) : '',
+        foreign ? signed(originalAmountOf(r, 'total')) : '',
+        formatIgvRate(igvRateOf(r, kind)),
+        stateLabel(r.state),
+        isOmitted(r) ? 'Sí' : 'No',
+        String(r.source || 'manual').toLowerCase() === 'sire' ? 'SIRE' : 'Manual',
+        r.glosa || '',
+      ];
+    });
+    const period = rows[0]?.period || 'SIN_PERIODO';
+    return {
+      fileName: `REGISTRO_${kind === 'compra' ? 'COMPRAS' : 'VENTAS'}_${period}.xlsx`,
+      sheets: [{
+        name: kind === 'compra' ? 'Compras' : 'Ventas',
+        headers,
+        rows: data,
+        widths: [10, 16, 12, 8, 22, 8, 10, 14, 34, 8, 8, 14, 14, 12, 14, 16, 16, 12, 14, 10, 12, 8, 10, 30],
+        numberFormat: '#,##0.00',
+      }],
+    };
+  },
+
+  async downloadXlsx(kind, rows) {
+    const { fileName, sheets } = this.exportXlsx(kind, rows);
+    await downloadWorkbook(fileName, sheets);
+  },
+
+  exportSummaryXlsx(year, rows) {
+    const headers = [
+      'Periodo', 'Mes',
+      'Compras base gravada', 'Compras base no gravada', 'Compras IGV', 'Compras total',
+      'Ventas base gravada', 'Ventas base no gravada', 'Ventas IGV', 'Ventas total',
+      'Saldo IGV',
+    ];
+    const data = rows.map((r) => [
+      r.period,
+      r.label,
+      r.compra.baseGravada, r.compra.baseNoGravada, r.compra.igv, r.compra.total,
+      r.venta.baseGravada, r.venta.baseNoGravada, r.venta.igv, r.venta.total,
+      r.venta.igv - r.compra.igv,
+    ]);
+    return {
+      fileName: `RESUMEN_COMPRAS_VENTAS_${year}.xlsx`,
+      sheets: [{
+        name: `Resumen ${year}`,
+        headers,
+        rows: data,
+        widths: [10, 16, 18, 20, 14, 16, 18, 20, 14, 16, 14],
+        numberFormat: '#,##0.00',
+      }],
+    };
+  },
+
+  async downloadSummaryXlsx(year, rows) {
+    const { fileName, sheets } = this.exportSummaryXlsx(year, rows);
+    await downloadWorkbook(fileName, sheets);
   },
 
   exportCsv(kind, rows) {
