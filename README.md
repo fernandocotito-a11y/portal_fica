@@ -246,7 +246,10 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   la divisa original: al asignar el TC SUNAT (manual, **Aplicar TC** o al
   importar), el portal los convierte a soles automáticamente y deja de
   reconvertirlos. Los registros manuales en moneda extranjera muestran la
-  moneda original y los indicadores se consolidan a soles con el TC.
+  moneda original y los indicadores se consolidan a soles con el TC. En el
+  detalle, debajo del total de cada fila se muestra el equivalente en soles
+  (y si falta el TC se advierte «sin TC»), de modo que la fila cuadre con los
+  indicadores y el resumen mensual, que siempre están en soles.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
   **modo local** con `localStorage` y muestra un aviso. El directorio de
   proveedores y los tipos de cambio tienen su propio aviso si faltan
