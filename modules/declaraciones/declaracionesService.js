@@ -119,7 +119,7 @@ function periodsKey(companyId) {
 /** Detalle de ventas para las casillas Base/Tributo del PDT 621. */
 function pdtVentasDetail(period) {
   const d = { c100: 0, c101: 0, c102: 0, c103: 0, c105: 0, c106: 0, c109: 0, c112: 0, c127: 0 };
-  for (const r of taxService.list('venta', { period })) {
+  for (const r of taxService.list('venta', { period, omitted: false })) {
     const rate = penRate(r);
     const base = Number(r.taxed_base || 0) * rate;
     const igv = Number(r.igv || 0) * rate;
@@ -154,7 +154,7 @@ function pdtComprasDetail(period) {
     c114: 0, c115: 0, c116: 0, c117: 0, c119: 0,
     c120: 0, c122: 0, c172: 0, c169: 0,
   };
-  for (const r of taxService.list('compra', { period })) {
+  for (const r of taxService.list('compra', { period, omitted: false })) {
     const rate = penRate(r);
     const signed = (value) => signedTaxAmount(r, value);
     const docType = String(r.doc_type || '').padStart(2, '0');
@@ -357,7 +357,7 @@ export const declaracionesService = {
    * Sirve para verificar cómo se compone el IGV de compras o ventas.
    */
   igvDetail(kind, period) {
-    const rows = taxService.list(kind, { period });
+    const rows = taxService.list(kind, { period, omitted: false });
     const detail = [];
     const groups = new Map();
     for (const r of rows) {

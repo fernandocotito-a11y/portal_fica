@@ -112,6 +112,10 @@
   color: var(--color-danger);
   background: var(--color-danger-soft);
 }
+.icon-btn--warning:hover {
+  color: var(--color-gold);
+  background: var(--color-gold-soft);
+}
 .icon-btn svg {
   width: 18px;
   height: 18px;
@@ -579,6 +583,19 @@ button.module-card:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+.table tbody tr.row-omitted td {
+  background: var(--color-gold-soft);
+}
+.table tbody tr.row-omitted td:not(:last-child) {
+  opacity: 0.58;
+  text-decoration: line-through;
+  text-decoration-color: var(--color-gold);
+}
+.table tbody tr.row-omitted .badge,
+.table tbody tr.row-omitted .table__actions,
+.table tbody tr.row-omitted .table__actions * {
+  text-decoration: none;
 }
 
 /* ---- Pestañas (sub-módulos de Planillas) ---- */

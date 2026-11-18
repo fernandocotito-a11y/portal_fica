@@ -261,6 +261,12 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   aunque el SIRE las informe con descuentos negativos. En la exportación CSV se
   trasladan a las columnas principales con importes negativos, de modo que la
   columna «IGV / IPM» muestra el impuesto de la nota y no queda en cero.
+- En Compras y Ventas se puede **tachar** un comprobante en lugar de eliminarlo.
+  El registro se conserva para revisión, se muestra tachado y deja de sumar en
+  las tarjetas, el resumen mensual, los reportes, las declaraciones y el CSV
+  oficial. El filtro **Revisión** permite ver solo los tachados y el botón
+  **Destachar** lo vuelve a incluir en los totales. El estado se guarda en
+  `raw.__omitted`, sin migración de esquema.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
   **modo local** con `localStorage` y muestra un aviso. El directorio de
   proveedores y los tipos de cambio tienen su propio aviso si faltan

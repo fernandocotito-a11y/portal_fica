@@ -19,7 +19,7 @@
    ========================================================================== */
 
 import {
-  baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized, signedTaxAmount,
+  baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized, isOmitted, signedTaxAmount,
 } from '../compras/comprasConfig.js';
 import {
   round2, recalculateAnnualTimeline, annualTotals,
@@ -81,6 +81,7 @@ export function summarizeTaxRows(rows, kind) {
     igv: 0, total: 0, exonerated: 0, unaffected: 0,
   };
   for (const rec of rows || []) {
+    if (isOmitted(rec)) continue;
     const rate = penFactor(rec);
     const signed = (value) => signedTaxAmount(rec, value);
     const baseGravada = signed(baseGravadaOf(rec, kind));

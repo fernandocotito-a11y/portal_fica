@@ -195,6 +195,17 @@ export function isCreditNote(rec) {
   return String(rec?.doc_type || '').trim().padStart(2, '0') === '07';
 }
 
+/**
+ * ¿El comprobante fue tachado/omitido manualmente para revisión?
+ * Se guarda en `raw.__omitted` para no alterar el formato SIRE ni requerir una
+ * columna nueva. Los comprobantes tachados se conservan, pero no suman en los
+ * totales, reportes, declaraciones ni en el CSV oficial.
+ */
+export function isOmitted(rec) {
+  const raw = rec?.raw;
+  return Boolean(raw && typeof raw === 'object' && !Array.isArray(raw) && raw.__omitted);
+}
+
 /** Etiqueta de estado. */
 export function stateLabel(value) {
   return (STATES.find((s) => s.value === String(value)) || {}).label || value || '—';

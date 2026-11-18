@@ -17,7 +17,7 @@ import { parseSireFiles, dedupeKey, toCsvText } from './sireParser.js';
 import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
-  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized,
+  baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized, isOmitted,
   signedTaxAmount, convertAmountsToSoles, markSolarized, originalAmounts, originalAmountOf, AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
@@ -55,6 +55,11 @@ function optionsHtml(list, selected, emptyLabel = '') {
   items.push(...list.map((o) => `<option value="${escapeHtml(o.value)}"${String(o.value) === String(selected) ? ' selected' : ''}>${escapeHtml(o.label)}</option>`));
   return items.join('');
 }
+
+const REVIEW_OPTIONS = [
+  { value: 'active', label: 'Incluidos (suman)' },
+  { value: 'omitted', label: 'Tachados (no suman)' },
+];
 
 function baseOf(rec) {
   return totalBaseOf(rec, rec.kind);
@@ -216,6 +221,7 @@ export function render(root) {
     docType: '',
     state: '',
     currency: '',
+    review: '',
     page: 1,
     pageSize: 25,
     summaryYear: String(new Date().getFullYear()),
@@ -338,18 +344,20 @@ export function render(root) {
     }
   }
 
-  function filteredRows(kind = state.tab) {
+  function filteredRows(kind = state.tab, options = {}) {
+    const review = options.review === undefined ? state.review : options.review;
     return taxService.list(kind, {
       period: state.period,
       search: state.search,
       docType: state.docType,
       state: state.state,
       currency: state.currency,
+      omitted: review === '' ? undefined : review === 'omitted',
     });
   }
 
   function totalsFor(kind, period) {
-    const rows = taxService.list(kind, { period });
+    const rows = taxService.list(kind, { period, omitted: false });
     return rows.reduce((acc, r) => {
       acc.count += 1;
       acc.baseGravada += baseGravadaPenOf(r);
@@ -364,8 +372,12 @@ export function render(root) {
   }
 
   function statsHtml(kind) {
-    const rows = filteredRows(kind);
-    const totals = rows.reduce((acc, r) => {
+    // Las tarjetas siempre resumen los comprobantes incluidos, sin importar si
+    // la tabla está filtrada para revisar los tachados.
+    const rows = filteredRows(kind, { review: '' });
+    const activeRows = rows.filter((r) => !isOmitted(r));
+    const omittedRows = rows.filter((r) => isOmitted(r));
+    const totals = activeRows.reduce((acc, r) => {
       acc.count += 1;
       acc.baseGravada += baseGravadaPenOf(r);
       acc.baseNoGravada += baseNoGravadaPenOf(r);
@@ -373,11 +385,11 @@ export function render(root) {
       acc.total += totalPenOf(r);
       return acc;
     }, { count: 0, baseGravada: 0, baseNoGravada: 0, igv: 0, total: 0 });
-    const missingRate = rows.filter(hasMissingRate).length;
+    const missingRate = activeRows.filter(hasMissingRate).length;
     return `
       <div class="stat-card">
         <span class="stat-card__icon">${ICONS.briefcase}</span>
-        <div><div class="stat-card__value">${totals.count}</div><div class="stat-card__label">Comprobantes del filtro</div></div>
+        <div><div class="stat-card__value">${totals.count}</div><div class="stat-card__label">Comprobantes incluidos</div></div>
       </div>
       <div class="stat-card">
         <span class="stat-card__icon">${ICONS.check}</span>
@@ -395,6 +407,10 @@ export function render(root) {
         <span class="stat-card__icon">${ICONS.arrowRight}</span>
         <div><div class="stat-card__value">${num(totals.total)}</div><div class="stat-card__label">Total PEN del período</div></div>
       </div>
+      ${omittedRows.length ? `<div class="stat-card" style="border-color:var(--color-gold);">
+        <span class="stat-card__icon" style="color:var(--color-gold);">${ICONS.close}</span>
+        <div><div class="stat-card__value">${omittedRows.length}</div><div class="stat-card__label">Tachados / omitidos (no suman)</div></div>
+      </div>` : ''}
       ${missingRate ? `<div class="stat-card" style="border-color:var(--color-gold);">
         <span class="stat-card__icon" style="color:var(--color-gold);">${ICONS.info}</span>
         <div><div class="stat-card__value">${missingRate}</div><div class="stat-card__label">Moneda extranjera sin TC (consolidado a la par)</div></div>
@@ -413,13 +429,14 @@ export function render(root) {
     }
     return rows.map((r) => {
       const foreign = isForeign(r);
+      const omitted = isOmitted(r);
       const currency = String(r.currency || 'PEN').toUpperCase();
       const ref = foreign ? originalRecord(r) : null;
       const refLine = (value) => (foreign
         ? `<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currency)} ${num(value)}</div>`
         : '');
       return `
-      <tr>
+      <tr class="${omitted ? 'row-omitted' : ''}">
         <td style="white-space:nowrap;">${displayDate(r.issue_date)}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(r.period || '')}</div></td>
         <td>
           <strong>${escapeHtml(r.doc_type || '—')}</strong>
@@ -432,11 +449,15 @@ export function render(root) {
         <td class="cell-num">${num(baseNoGravadaOf(r, r.kind) * penRate(r))}${refLine(baseNoGravadaOf(ref, r.kind))}</td>
         <td class="cell-num">${num(igvOf(r, r.kind) * penRate(r))}${refLine(igvOf(ref, r.kind))}</td>
         <td class="cell-num cell-strong">${num(solesAmountOf(r, 'total'))}<div class="text-muted" style="font-size:var(--font-size-xs);">${escapeHtml(currencyDetail(r))}</div></td>
-        <td><span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span></td>
+        <td>
+          <span class="badge ${String(r.state) === '1' ? 'badge--active' : 'badge--muted'}">${escapeHtml(stateLabel(r.state))}</span>
+          ${omitted ? '<span class="badge badge--gold" title="Tachado: se conserva, pero no suma al total">Tachado</span>' : ''}
+        </td>
         <td>
           <div class="table__actions">
             <button type="button" class="icon-btn" data-view="${escapeHtml(r.id)}" title="Ver detalle">${ICONS.eye}</button>
             <button type="button" class="icon-btn" data-edit="${escapeHtml(r.id)}" title="Editar">${ICONS.edit}</button>
+            <button type="button" class="icon-btn ${omitted ? '' : 'icon-btn--warning'}" data-toggle-omit="${escapeHtml(r.id)}" title="${omitted ? 'Destachar: volver a incluir en los totales' : 'Tachar: omitir de los totales sin eliminar'}">${omitted ? ICONS.check : ICONS.close}</button>
             <button type="button" class="icon-btn icon-btn--danger" data-del="${escapeHtml(r.id)}" title="Eliminar">${ICONS.trash}</button>
           </div>
         </td>
@@ -475,7 +496,13 @@ export function render(root) {
     const pag = content.querySelector('[data-pagination]');
     if (pag) pag.innerHTML = paginationHtml(rows.length);
     const count = content.querySelector('[data-filter-count]');
-    if (count) count.textContent = `${rows.length} registro(s) · Importes principales en soles; debajo, la referencia en la moneda original.`;
+    if (count) count.textContent = registryCountText();
+  }
+
+  function registryCountText() {
+    const rows = filteredRows(state.tab);
+    const omitted = filteredRows(state.tab, { review: '' }).filter((r) => isOmitted(r)).length;
+    return `${rows.length} registro(s) · Importes principales en soles; debajo, la referencia en la moneda original.${omitted ? ` · ${omitted} tachado(s) no suman al total.` : ''}`;
   }
 
   function renderRegistry() {
@@ -483,14 +510,15 @@ export function render(root) {
     return `
       ${localBanner()}
       <div class="stats" data-stats>${statsHtml(kind)}</div>
+      ${state.review === 'omitted' ? `<div class="alert alert--info" style="margin-bottom:var(--space-4);">Estás revisando solo los comprobantes tachados. No suman en las tarjetas ni en el resumen hasta que los destaches.</div>` : ''}
       <div class="card">
         <div class="card__header">
           <div>
             <h3 class="card__title">Registro de ${kind === 'compra' ? 'compras' : 'ventas'}</h3>
-            <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s) · Importes principales en soles; debajo, la referencia en la moneda original.</p>
+            <p class="card__subtitle" data-filter-count>${registryCountText()}</p>
           </div>
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
-            <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar CSV SUNAT</button>
+            <button type="button" class="btn" data-export title="Exporta los comprobantes incluidos. Los tachados no suman ni se incluyen, salvo que uses el filtro Tachados.">${ICONS.arrowRight} Exportar CSV SUNAT</button>
             <button type="button" class="btn btn--primary" data-add>${ICONS.plus} Agregar registro</button>
           </div>
         </div>
@@ -511,6 +539,10 @@ export function render(root) {
             <div class="form-group" style="margin:0;min-width:170px;">
               <label class="form-label">Estado</label>
               <select class="form-input" data-filter-state>${optionsHtml(STATES, state.state)}</select>
+            </div>
+            <div class="form-group" style="margin:0;min-width:190px;">
+              <label class="form-label">Revisión</label>
+              <select class="form-input" data-filter-review>${optionsHtml(REVIEW_OPTIONS, state.review)}</select>
             </div>
             <div class="form-group" style="margin:0;min-width:130px;">
               <label class="form-label">Moneda</label>
@@ -534,6 +566,7 @@ export function render(root) {
           <div data-pagination></div>
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
             Los importes principales de la tabla están en soles. En comprobantes en moneda extranjera, debajo de cada importe se muestra la referencia en su moneda original. El SIRE ya viene en soles cuando informa el tipo de cambio; si no lo informa (TC 0.000), se convierte con el TC SUNAT al asignarlo. Los registros manuales con TC también se convierten a soles al guardarlos y no se vuelven a convertir.
+            <br /><strong>Tachar</strong> conserva el comprobante para revisarlo, pero lo excluye de los totales, reportes, declaraciones y del CSV oficial. Usa <strong>Destachar</strong> para volver a incluirlo. El filtro <strong>Revisión</strong> permite ver solo los tachados.
           </p>
         </div>
       </div>`;
@@ -682,7 +715,8 @@ export function render(root) {
       venta: { baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0 },
     });
     const saldo = Math.round((totals.venta.igv - totals.compra.igv) * 100) / 100;
-    const missingRate = taxService.all().filter((r) => String(r.period || '').startsWith(year) && hasMissingRate(r)).length;
+    const missingRate = taxService.all().filter((r) => !isOmitted(r) && String(r.period || '').startsWith(year) && hasMissingRate(r)).length;
+    const omittedCount = taxService.all().filter((r) => isOmitted(r) && String(r.period || '').startsWith(year)).length;
     const rateCount = exchangeRateService.all().length;
     return `
       ${localBanner()}
@@ -694,7 +728,7 @@ export function render(root) {
       </div>
       <div class="card">
         <div class="card__header">
-          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas, consolidados en soles. Las notas de crédito (tipo 07) se restan de los totales.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
+          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas, consolidados en soles. Las notas de crédito (tipo 07) se restan de los totales.${omittedCount ? ` · ${omittedCount} comprobante(s) tachado(s) no suman.` : ''}${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
             <button type="button" class="btn" data-go-rates>${ICONS.arrowRight} Tipo de cambio</button>
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>
@@ -1432,7 +1466,7 @@ export function render(root) {
     return `
       <form data-form novalidate>
         <div class="modal__header">
-          <h3 class="modal__title">${readonly ? 'Detalle del comprobante' : (rec?.id ? 'Editar comprobante' : 'Nuevo registro')}</h3>
+          <h3 class="modal__title">${readonly ? 'Detalle del comprobante' : (rec?.id ? 'Editar comprobante' : 'Nuevo registro')}${isOmitted(s) ? ' <span class="badge badge--gold" style="margin-left:var(--space-2);vertical-align:middle;">Tachado · no suma</span>' : ''}</h3>
           <button type="button" class="modal__close" data-close-modal aria-label="Cerrar">${ICONS.close}</button>
         </div>
         <div class="modal__body">
@@ -1508,7 +1542,8 @@ export function render(root) {
         <div class="modal__footer">
           <button type="button" class="btn" data-cancel>${readonly ? 'Cerrar' : 'Cancelar'}</button>
           ${readonly
-            ? `<button type="button" class="btn btn--primary" data-edit-modal>${ICONS.edit} Editar</button>`
+            ? `<button type="button" class="btn" data-toggle-omit="${escapeHtml(s.id)}">${isOmitted(s) ? `${ICONS.check} Destachar` : `${ICONS.close} Tachar`}</button>
+               <button type="button" class="btn btn--primary" data-edit-modal>${ICONS.edit} Editar</button>`
             : `<button type="submit" class="btn btn--primary" data-submit>${ICONS.check} Guardar</button>`}
         </div>
       </form>`;
@@ -1951,6 +1986,23 @@ export function render(root) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  async function toggleOmitted(id) {
+    const rec = taxService.getById(id);
+    if (!rec) return;
+    const wasOmitted = isOmitted(rec);
+    const modalOpen = modal.open && modalRecord?.id === id;
+    try {
+      await taxService.setOmitted(id, !wasOmitted);
+      if (modalOpen) closeModal();
+      renderContent();
+      showToast(wasOmitted
+        ? 'Comprobante destachado: vuelve a sumar en los totales.'
+        : 'Comprobante tachado: se conserva, pero no suma en los totales.');
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
+    }
+  }
+
   async function removeRecord(id) {
     const rec = taxService.getById(id);
     if (!rec) return;
@@ -2174,6 +2226,8 @@ export function render(root) {
       openModal(rec, rec?.kind || state.tab, false);
       return;
     }
+    const toggleOmit = e.target.closest('[data-toggle-omit]');
+    if (toggleOmit) { toggleOmitted(toggleOmit.dataset.toggleOmit); return; }
     const del = e.target.closest('[data-del]');
     if (del) { removeRecord(del.dataset.del); return; }
 
@@ -2181,8 +2235,15 @@ export function render(root) {
     if (e.target.closest('[data-close-modal]') || e.target.closest('[data-cancel]')) { closeModal(); return; }
 
     if (e.target.closest('[data-export]')) {
-      const rows = filteredRows(state.tab);
-      if (!rows.length) { showToast('No hay registros para exportar con los filtros actuales.', 'error'); return; }
+      // El CSV oficial excluye los tachados. Si el usuario está revisando el
+      // filtro "Tachados", se exportan esos registros para su revisión.
+      const rows = filteredRows(state.tab, { review: state.review === 'omitted' ? 'omitted' : 'active' });
+      if (!rows.length) {
+        showToast(state.review === 'omitted'
+          ? 'No hay comprobantes tachados para exportar con los filtros actuales.'
+          : 'No hay comprobantes incluidos para exportar con los filtros actuales.', 'error');
+        return;
+      }
       taxService.downloadCsv(state.tab, rows);
       return;
     }
@@ -2212,6 +2273,7 @@ export function render(root) {
       state.docType = '';
       state.state = '';
       state.currency = '';
+      state.review = '';
       state.page = 1;
       renderContent();
     }
@@ -2265,6 +2327,7 @@ export function render(root) {
     }
     if (e.target.matches('[data-filter-doc]')) { state.docType = e.target.value; state.page = 1; updateRegistry(); return; }
     if (e.target.matches('[data-filter-state]')) { state.state = e.target.value; state.page = 1; updateRegistry(); return; }
+    if (e.target.matches('[data-filter-review]')) { state.review = e.target.value; state.page = 1; renderContent(); return; }
     if (e.target.matches('[data-filter-currency]')) { state.currency = e.target.value; state.page = 1; updateRegistry(); return; }
     if (e.target.matches('[data-summary-year]')) { state.summaryYear = e.target.value; renderContent(); return; }
     if (e.target.matches('[data-bcrp-year]')) { state.bcrpYear = e.target.value; return; }

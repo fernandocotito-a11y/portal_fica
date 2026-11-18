@@ -10,7 +10,7 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import {
   HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
-  signedTaxAmount, creditNoteExportRecord, AMOUNT_FIELDS,
+  isOmitted, signedTaxAmount, creditNoteExportRecord, AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
 import { exchangeRateService } from './exchangeRateService.js';
@@ -211,6 +211,10 @@ export const taxService = {
     if (filters.docType) out = out.filter((r) => r.doc_type === filters.docType);
     if (filters.state) out = out.filter((r) => String(r.state) === String(filters.state));
     if (filters.currency) out = out.filter((r) => r.currency === filters.currency);
+    // `omitted: false` = solo incluidos; `omitted: true` = solo tachados.
+    // Sin el filtro se devuelven ambos para poder revisarlos en la tabla.
+    if (filters.omitted === true) out = out.filter((r) => isOmitted(r));
+    else if (filters.omitted === false) out = out.filter((r) => !isOmitted(r));
     if (filters.search) {
       const q = String(filters.search).trim().toLowerCase();
       if (q) {
@@ -305,6 +309,21 @@ export const taxService = {
     const i = records.findIndex((r) => r.id === id);
     if (i >= 0) records[i] = row;
     return row;
+  },
+
+  /**
+   * Tacha o destacha un comprobante sin eliminarlo. El estado se guarda en
+   * `raw.__omitted`, por lo que no requiere migración de esquema.
+   */
+  async setOmitted(id, omitted = true) {
+    const current = records.find((r) => r.id === id);
+    if (!current) throw new Error('Registro no encontrado.');
+    const raw = current.raw && typeof current.raw === 'object' && !Array.isArray(current.raw)
+      ? { ...current.raw }
+      : {};
+    if (omitted) raw.__omitted = { at: nowIso() };
+    else delete raw.__omitted;
+    return this.update(id, { raw });
   },
 
   /**
@@ -519,7 +538,7 @@ export const taxService = {
   },
 
   summary(kind, period) {
-    const rows = this.list(kind, { period });
+    const rows = this.list(kind, { period, omitted: false });
     const s = {
       count: rows.length,
       base: 0,
