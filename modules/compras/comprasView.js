@@ -18,7 +18,7 @@ import {
   DOC_TYPES, DOC_ID_TYPES, CURRENCIES, STATES, NOTE_TYPES, MONTHS,
   docTypeLabel, stateLabel, periodLabel, periodToInput, inputToPeriod,
   baseGravadaOf, baseNoGravadaOf, nonTaxedBaseOf, igvOf, totalBaseOf, isSolarized,
-  convertAmountsToSoles, markSolarized, originalAmounts, originalAmountOf, AMOUNT_FIELDS,
+  signedTaxAmount, convertAmountsToSoles, markSolarized, originalAmounts, originalAmountOf, AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast, confirmDialog } from '../../js/utils.js';
@@ -102,24 +102,29 @@ function rateLabel(rec) {
   return '';
 }
 
+/** Importe firmado en soles para consolidar: las notas de crédito restan. */
+function signedPenOf(rec, value) {
+  return signedTaxAmount(rec, value) * penRate(rec);
+}
+
 function basePenOf(rec) {
-  return baseOf(rec) * penRate(rec);
+  return signedPenOf(rec, baseOf(rec));
 }
 
 function baseGravadaPenOf(rec) {
-  return baseGravadaOf(rec, rec.kind) * penRate(rec);
+  return signedPenOf(rec, baseGravadaOf(rec, rec.kind));
 }
 
 function baseNoGravadaPenOf(rec) {
-  return baseNoGravadaOf(rec, rec.kind) * penRate(rec);
+  return signedPenOf(rec, baseNoGravadaOf(rec, rec.kind));
 }
 
 function igvPenOf(rec) {
-  return igvOf(rec) * penRate(rec);
+  return signedPenOf(rec, igvOf(rec));
 }
 
 function totalPenOf(rec) {
-  return Number(rec.total || 0) * penRate(rec);
+  return signedPenOf(rec, rec.total);
 }
 
 function isForeign(rec) {
@@ -352,8 +357,8 @@ export function render(root) {
       acc.base += basePenOf(r);
       acc.igv += igvPenOf(r);
       acc.total += totalPenOf(r);
-      acc.exonerated += Number(r.exonerated || 0) * penRate(r);
-      acc.unaffected += Number(r.unaffected || 0) * penRate(r);
+      acc.exonerated += signedTaxAmount(r, r.exonerated) * penRate(r);
+      acc.unaffected += signedTaxAmount(r, r.unaffected) * penRate(r);
       return acc;
     }, { count: 0, baseGravada: 0, baseNoGravada: 0, base: 0, igv: 0, total: 0, exonerated: 0, unaffected: 0 });
   }
@@ -384,7 +389,7 @@ export function render(root) {
       </div>
       <div class="stat-card">
         <span class="stat-card__icon">${ICONS.info}</span>
-        <div><div class="stat-card__value">${num(totals.igv)}</div><div class="stat-card__label">IGV / IPM (PEN)</div></div>
+        <div><div class="stat-card__value">${num(totals.igv)}</div><div class="stat-card__label">IGV / IPM neto (PEN)</div></div>
       </div>
       <div class="stat-card">
         <span class="stat-card__icon">${ICONS.arrowRight}</span>
@@ -689,7 +694,7 @@ export function render(root) {
       </div>
       <div class="card">
         <div class="card__header">
-          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas, consolidados en soles.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
+          <div><h3 class="card__title">Resumen mensual ${year}</h3><p class="card__subtitle">Base gravada, base no gravada, IGV y total de compras y ventas, consolidados en soles. Las notas de crédito (tipo 07) se restan de los totales.${missingRate ? ` · ${missingRate} comprobante(s) en moneda extranjera sin TC (consolidados a la par).` : ''}${rateCount ? ` · ${rateCount} fecha(s) de tipo de cambio SUNAT cargadas.` : ' · Sin tipos de cambio SUNAT cargados.'}</p></div>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
             <button type="button" class="btn" data-go-rates>${ICONS.arrowRight} Tipo de cambio</button>
             <select class="form-input" data-summary-year style="max-width:130px;">${summaryYearOptions().map((y) => `<option value="${y}"${y === year ? ' selected' : ''}>${y}</option>`).join('')}</select>

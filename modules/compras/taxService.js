@@ -10,7 +10,7 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import {
   HEADERS, periodLabel, baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
-  AMOUNT_FIELDS,
+  signedTaxAmount, creditNoteExportRecord, AMOUNT_FIELDS,
 } from './comprasConfig.js';
 import { recordToSunatRow, toCsvText, dedupeKey } from './sireParser.js';
 import { exchangeRateService } from './exchangeRateService.js';
@@ -542,16 +542,17 @@ export const taxService = {
         : (String(r.currency || 'PEN').toUpperCase() === 'PEN'
           ? 1
           : (ownRate > 1 ? ownRate : (Number(sunatRate?.rate || 0) || 1)));
-      const baseGravada = baseGravadaOf(r, kind);
-      const baseNoGravada = baseNoGravadaOf(r, kind);
+      const signed = (value) => signedTaxAmount(r, value);
+      const baseGravada = signed(baseGravadaOf(r, kind));
+      const baseNoGravada = signed(baseNoGravadaOf(r, kind));
       s.baseGravada += baseGravada * rate;
       s.baseNoGravada += baseNoGravada * rate;
       s.base += (baseGravada + baseNoGravada) * rate;
-      s.igv += igvOf(r, kind) * rate;
-      s.total += Number(r.total || 0) * rate;
-      s.exonerated += Number(r.exonerated || 0) * rate;
-      s.unaffected += Number(r.unaffected || 0) * rate;
-      s.other += (Number(r.isc || 0) + Number(r.icbper || 0) + Number(r.other_taxes || 0)) * rate;
+      s.igv += signed(igvOf(r, kind)) * rate;
+      s.total += signed(r.total) * rate;
+      s.exonerated += signed(r.exonerated) * rate;
+      s.unaffected += signed(r.unaffected) * rate;
+      s.other += signed(Number(r.isc || 0) + Number(r.icbper || 0) + Number(r.other_taxes || 0)) * rate;
     });
     Object.keys(s).forEach((k) => { if (typeof s[k] === 'number') s[k] = Math.round(s[k] * 100) / 100; });
     return s;
@@ -588,7 +589,11 @@ export const taxService = {
           }
         });
       }
-      return [...recordToSunatRow(kind, soles), r.glosa ?? ''];
+      // Las notas de crédito se exportan con sus importes netos en negativo y
+      // sin descuentos, para que la columna IGV muestre el impuesto del
+      // comprobante y no quede en cero.
+      const exportRec = creditNoteExportRecord(soles, kind);
+      return [...recordToSunatRow(kind, exportRec), r.glosa ?? ''];
     });
     return { fileName: `REGISTRO_${kind === 'compra' ? 'COMPRAS' : 'VENTAS'}_${rows[0]?.period || 'SIN_PERIODO'}.csv`, text: toCsvText(headers, data) };
   },

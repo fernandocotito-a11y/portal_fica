@@ -190,6 +190,11 @@ export function docTypeLabel(value) {
   return (DOC_TYPES.find((d) => d.value === v) || {}).label || value || '—';
 }
 
+/** ¿El comprobante es una nota de crédito (tipo 07)? */
+export function isCreditNote(rec) {
+  return String(rec?.doc_type || '').trim().padStart(2, '0') === '07';
+}
+
 /** Etiqueta de estado. */
 export function stateLabel(value) {
   return (STATES.find((s) => s.value === String(value)) || {}).label || value || '—';
@@ -257,8 +262,47 @@ export function igvOf(rec, kind = rec?.kind) {
   return n(rec?.igv) - n(rec?.discount_igv);
 }
 
+/**
+ * Importe firmado para consolidar totales. Las notas de crédito (tipo 07)
+ * reducen las ventas o compras. El SIRE puede traerlas con importes negativos
+ * (mismo período) o con descuentos negativos (período anterior); en ambos
+ * casos el importe debe restar y no sumarse.
+ */
+export function signedTaxAmount(rec, value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return isCreditNote(rec) ? -Math.abs(amount) : amount;
+}
+
 export function totalBaseOf(rec, kind = rec?.kind) {
   return baseGravadaOf(rec, kind) + baseNoGravadaOf(rec, kind);
+}
+
+/**
+ * Prepara una nota de crédito para la exportación CSV. Si el SIRE guardó el
+ * crédito en las columnas de descuento (con signo negativo), se traslada a las
+ * columnas principales con signo negativo para que la columna «IGV / IPM»
+ * muestre el impuesto y no quede en cero. Los descuentos se anulan para no
+ * duplicar el importe si el CSV se vuelve a importar.
+ */
+export function creditNoteExportRecord(rec, kind = rec?.kind) {
+  if (!isCreditNote(rec)) return rec;
+  const out = { ...rec };
+  if (kind === 'venta') {
+    out.taxed_base = -Math.abs(baseGravadaOf(rec, kind));
+    out.discount_base = 0;
+    out.igv = -Math.abs(igvOf(rec, kind));
+    out.discount_igv = 0;
+    ['export_value', 'exonerated', 'unaffected', 'ivap_base', 'ivap', 'isc', 'icbper', 'other_taxes'].forEach((field) => {
+      if (rec[field] !== undefined && rec[field] !== null) out[field] = -Math.abs(Number(rec[field] || 0));
+    });
+  } else {
+    ['taxed_base', 'igv', 'taxed_base_ng', 'igv_ng', 'taxed_base_dng', 'igv_dng', 'acq_value_ng', 'isc', 'icbper', 'other_taxes'].forEach((field) => {
+      if (rec[field] !== undefined && rec[field] !== null) out[field] = -Math.abs(Number(rec[field] || 0));
+    });
+  }
+  out.total = -Math.abs(Number(rec.total || 0));
+  return out;
 }
 
 /** Lista de periodos disponibles alrededor de un año. */

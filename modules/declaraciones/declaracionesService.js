@@ -12,7 +12,7 @@ import { supabase } from '../../js/supabase.js';
 import { authService } from '../../services/authService.js';
 import { taxService } from '../compras/taxService.js';
 import { retencionService } from '../retencion/retencionService.js';
-import { baseGravadaOf, igvOf, isSolarized } from '../compras/comprasConfig.js';
+import { baseGravadaOf, igvOf, isSolarized, signedTaxAmount } from '../compras/comprasConfig.js';
 import { exchangeRateService } from '../compras/exchangeRateService.js';
 import {
   round2, uitFor,
@@ -128,8 +128,12 @@ function pdtVentasDetail(period) {
     const isCredit = String(r.doc_type || '').padStart(2, '0') === '07' || base < 0 || igv < 0;
     if (isCredit) {
       // Notas de crédito / devoluciones: van aparte en 102 (base) y 103 (IGV).
-      d.c102 += Math.abs(base) || Math.abs(discountBase);
-      d.c103 += Math.abs(igv) || Math.abs(discountIgv);
+      // Se usa el neto de las columnas normales y de descuento para no tomar
+      // dos veces el importe cuando el SIRE informa el crédito como descuento.
+      d.c102 += Math.abs(signedTaxAmount(r, baseGravadaOf(r, 'venta')) * rate);
+      d.c103 += Math.abs(signedTaxAmount(r, igvOf(r, 'venta')) * rate);
+      d.c105 -= Math.abs((Number(r.exonerated || 0) + Number(r.unaffected || 0)) * rate);
+      d.c106 -= Math.abs(Number(r.export_value || 0) * rate);
       continue;
     }
     d.c100 += base;
@@ -152,15 +156,16 @@ function pdtComprasDetail(period) {
   };
   for (const r of taxService.list('compra', { period })) {
     const rate = penRate(r);
+    const signed = (value) => signedTaxAmount(r, value);
     const docType = String(r.doc_type || '').padStart(2, '0');
     const dam = String(r.dam || '').trim();
     const imported = docType === '50' || (dam !== '' && dam !== '0');
-    const gravada = Number(r.taxed_base || 0) * rate;
-    const igvGravada = Number(r.igv || 0) * rate;
-    const gravadaNg = Number(r.taxed_base_ng || 0) * rate;
-    const igvGravadaNg = Number(r.igv_ng || 0) * rate;
-    const noGravada = Number(r.taxed_base_dng || 0) * rate;
-    const valorNg = Number(r.acq_value_ng || 0) * rate;
+    const gravada = signed(r.taxed_base) * rate;
+    const igvGravada = signed(r.igv) * rate;
+    const gravadaNg = signed(r.taxed_base_ng) * rate;
+    const igvGravadaNg = signed(r.igv_ng) * rate;
+    const noGravada = signed(r.taxed_base_dng) * rate;
+    const valorNg = signed(r.acq_value_ng) * rate;
     if (imported) {
       d.c114 += gravada;
       d.c115 += igvGravada;
@@ -357,10 +362,10 @@ export const declaracionesService = {
     const groups = new Map();
     for (const r of rows) {
       const rate = penRate(r);
-      const base = round2(baseGravadaOf(r, kind) * rate);
-      const igv = round2(igvOf(r) * rate);
+      const base = round2(signedTaxAmount(r, baseGravadaOf(r, kind)) * rate);
+      const igv = round2(signedTaxAmount(r, igvOf(r)) * rate);
       if (base === 0 && igv === 0) continue;
-      const bucket = rateBucket(base > 0 ? igv / base : 0);
+      const bucket = rateBucket(base !== 0 ? Math.abs(igv / base) : 0);
       detail.push({
         id: r.id,
         issue_date: r.issue_date,

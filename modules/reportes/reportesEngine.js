@@ -19,7 +19,7 @@
    ========================================================================== */
 
 import {
-  baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized,
+  baseGravadaOf, baseNoGravadaOf, igvOf, isSolarized, signedTaxAmount,
 } from '../compras/comprasConfig.js';
 import {
   round2, recalculateAnnualTimeline, annualTotals,
@@ -82,16 +82,17 @@ export function summarizeTaxRows(rows, kind) {
   };
   for (const rec of rows || []) {
     const rate = penFactor(rec);
-    const baseGravada = baseGravadaOf(rec, kind);
-    const baseNoGravada = baseNoGravadaOf(rec, kind);
+    const signed = (value) => signedTaxAmount(rec, value);
+    const baseGravada = signed(baseGravadaOf(rec, kind));
+    const baseNoGravada = signed(baseNoGravadaOf(rec, kind));
     s.count += 1;
     s.baseGravada += baseGravada * rate;
     s.baseNoGravada += baseNoGravada * rate;
     s.base += (baseGravada + baseNoGravada) * rate;
-    s.igv += igvOf(rec, kind) * rate;
-    s.total += Number(rec.total || 0) * rate;
-    s.exonerated += Number(rec.exonerated || 0) * rate;
-    s.unaffected += Number(rec.unaffected || 0) * rate;
+    s.igv += signed(igvOf(rec, kind)) * rate;
+    s.total += signed(rec.total) * rate;
+    s.exonerated += signed(rec.exonerated) * rate;
+    s.unaffected += signed(rec.unaffected) * rate;
   }
   Object.keys(s).forEach((k) => {
     if (typeof s[k] === 'number') s[k] = round2(s[k]);

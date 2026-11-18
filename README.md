@@ -257,6 +257,10 @@ sidebar, el dashboard y el selector de permisos. Para una vista propia, crea
   el TC se advierte «sin TC». El resumen mensual y los indicadores también están
   en soles, y la exportación CSV del registro se genera en soles con el TC
   aplicado.
+- Las **notas de crédito (tipo 07)** restan de los totales de base, IGV y total,
+  aunque el SIRE las informe con descuentos negativos. En la exportación CSV se
+  trasladan a las columnas principales con importes negativos, de modo que la
+  columna «IGV / IPM» muestra el impuesto de la nota y no queda en cero.
 - Si `supabase/compras_schema.sql` todavía no se ejecutó, el módulo funciona en
   **modo local** con `localStorage` y muestra un aviso. El directorio de
   proveedores y los tipos de cambio tienen su propio aviso si faltan
