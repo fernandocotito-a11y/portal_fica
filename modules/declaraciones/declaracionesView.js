@@ -15,6 +15,7 @@
 
 import { declaracionesService } from './declaracionesService.js';
 import { authService } from '../../services/authService.js';
+import { retencionService } from '../retencion/retencionService.js';
 import { MONTHS, docTypeLabel } from '../compras/comprasConfig.js';
 import { toCsvText } from '../compras/sireParser.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
@@ -648,6 +649,9 @@ export function render(root) {
     ensurePdtMes();
     const m = state.data.timeline.months.find((x) => x.mes === state.pdtMes) || state.data.timeline.months[0];
     const st = statusInfo(m);
+    const period = `${m.anio}${String(m.mes).padStart(2, '0')}`;
+    const retRows = retencionService.list('retencion', { period });
+    const perRows = retencionService.list('percepcion', { period });
     content.innerHTML = `
       <div class="card" style="margin-bottom:var(--space-4);">
         <div class="card__body" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:flex-end;">
@@ -667,6 +671,21 @@ export function render(root) {
             <button type="button" class="btn" data-copy-pdt="${m.mes}">${ICONS.check} Copiar datos</button>
             <button type="button" class="btn btn--primary" data-print-pdt="${m.mes}">${ICONS.arrowRight} Imprimir</button>
           </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:var(--space-4);">
+        <div class="card__header"><div>
+          <h4 class="card__title" style="font-size:var(--font-size-md);">Importar en SUNAT · FV 621</h4>
+          <p class="card__subtitle">SUNAT permite importar el detalle de las casillas 171 (percepciones) y 179 (retenciones). Descarga el TXT y súbelo en la casilla correspondiente. Las ventas, compras y renta se prellenan desde SIRE.</p>
+        </div></div>
+        <div class="card__body" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;">
+          <button type="button" class="btn" data-fv621-txt="retencion" data-fv621-mes="${m.mes}" title="Archivo plano para la casilla 179 del FV 621">${ICONS.arrowRight} TXT retenciones · casilla 179</button>
+          <button type="button" class="btn" data-fv621-txt="percepcion" data-fv621-mes="${m.mes}" title="Archivo plano para la casilla 171 del FV 621">${ICONS.arrowRight} TXT percepciones · casilla 171</button>
+          <span class="text-muted" style="font-size:var(--font-size-sm);">
+            Retenciones: ${retRows.length} registro(s) · S/ ${fmt(m.retencionesMes)} ·
+            Percepciones: ${perRows.length} registro(s) · S/ ${fmt(m.percepcionesMes)}
+          </span>
         </div>
       </div>
 
@@ -1082,6 +1101,36 @@ export function render(root) {
   viewRoot.addEventListener('click', async (e) => {
     const tab = e.target.closest('[data-tab]');
     if (tab) { setTab(tab.dataset.tab); return; }
+
+    const fv621Btn = e.target.closest('[data-fv621-txt]');
+    if (fv621Btn) {
+      const kind = fv621Btn.dataset.fv621Txt === 'percepcion' ? 'percepcion' : 'retencion';
+      const mes = Number(fv621Btn.dataset.fv621Mes || state.pdtMes);
+      const m = state.data?.timeline?.months?.find((x) => x.mes === mes);
+      if (!m) return;
+      const period = `${m.anio}${String(m.mes).padStart(2, '0')}`;
+      const rows = retencionService.list(kind, { period });
+      if (!rows.length) {
+        showToast(`No hay ${kind === 'percepcion' ? 'percepciones' : 'retenciones'} importadas para ${MONTHS[m.mes - 1]} ${m.anio}.`, 'error');
+        return;
+      }
+      try {
+        const res = retencionService.downloadFv621Txt(kind, rows, {
+          ruc: company.ruc,
+          period,
+          expectedTotal: kind === 'percepcion' ? m.percepcionesMes : m.retencionesMes,
+        });
+        const casilla = kind === 'percepcion' ? '171' : '179';
+        const extra = res.warnings.length ? ` ${res.warnings.join(' ')}` : '';
+        showToast(
+          `TXT FV 621 generado: ${res.count} registro(s), S/ ${fmt(res.total)}. Súbelo en la casilla ${casilla}.${extra}`,
+          res.warnings.length ? 'info' : 'success',
+        );
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
 
     const openMonth = e.target.closest('[data-open-month]');
     if (openMonth) { goPdt(Number(openMonth.dataset.openMonth)); return; }

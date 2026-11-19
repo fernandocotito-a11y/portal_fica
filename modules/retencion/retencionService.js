@@ -13,6 +13,7 @@ import { dedupeKey } from './retencionParser.js';
 import { toCsvText } from '../compras/sireParser.js';
 import { periodLabel } from '../compras/comprasConfig.js';
 import { downloadXlsx as downloadWorkbook } from '../../js/exportUtils.js';
+import { buildFv621Txt } from './fv621.js';
 
 let records = [];
 let mode = 'unknown'; // 'remote' | 'local'
@@ -356,5 +357,32 @@ export const retencionService = {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Archivo plano oficial para importar el detalle de la casilla 171
+   * (percepciones) o 179 (retenciones) del FV 621.
+   */
+  exportFv621Txt(kind, rows, options = {}) {
+    const company = authService.activeCompany() || {};
+    return buildFv621Txt(kind, rows, {
+      ruc: options.ruc || company.ruc,
+      period: options.period || rows?.[0]?.period,
+      expectedTotal: options.expectedTotal,
+    });
+  },
+
+  downloadFv621Txt(kind, rows, options = {}) {
+    const result = this.exportFv621Txt(kind, rows, options);
+    const blob = new Blob([result.text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return result;
   },
 };

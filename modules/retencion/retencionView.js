@@ -199,6 +199,7 @@ export function render(root) {
             <p class="card__subtitle" data-filter-count>${filteredRows(kind).length} registro(s)</p>
           </div>
           <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
+            <button type="button" class="btn" data-export-621 title="Archivo plano para importar en la casilla ${kind === 'percepcion' ? '171' : '179'} del FV 621">${ICONS.arrowRight} TXT FV 621</button>
             <button type="button" class="btn" data-export-excel>${ICONS.arrowRight} Exportar Excel</button>
             <button type="button" class="btn" data-export>${ICONS.arrowRight} Exportar CSV</button>
           </div>
@@ -569,6 +570,29 @@ export function render(root) {
 
     if (e.target.closest('[data-do-import]')) { doImport(); return; }
     if (e.target.closest('[data-reset-import]')) { state.parsed = null; state.importStatus = ''; renderContent(); return; }
+
+    if (e.target.closest('[data-export-621]')) {
+      const rows = filteredRows(state.tab);
+      if (!rows.length) { showToast('No hay registros para exportar con los filtros actuales.', 'error'); return; }
+      try {
+        const res = retencionService.downloadFv621Txt(state.tab, rows, {
+          ruc: company.ruc,
+          period: state.period,
+          expectedTotal: (!state.search && !state.estado)
+            ? retencionService.summary(state.tab, state.period).retenido
+            : undefined,
+        });
+        const casilla = state.tab === 'percepcion' ? '171' : '179';
+        const extra = res.warnings.length ? ` ${res.warnings[0]}` : '';
+        showToast(
+          `TXT FV 621 generado: ${res.count} registro(s), S/ ${num(res.total)}. Súbelo en la casilla ${casilla}.${extra}`,
+          res.warnings.length ? 'info' : 'success',
+        );
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
 
     if (e.target.closest('[data-export-excel]')) {
       const rows = filteredRows(state.tab);
