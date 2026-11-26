@@ -28,6 +28,13 @@ export const ATTENDANCE_TYPES = [
 /** Tipos que representan una ausencia que puede descontar el día. */
 export const ABSENCE_TYPES = ['falta', 'descanso_medico', 'licencia'];
 
+/**
+ * El descuento por tardanza usa siempre 8 horas como jornada diaria de
+ * referencia, aunque el horario del día sea más corto (por ejemplo, sábados
+ * de 4 h). Así un minuto de tardanza cuesta lo mismo cualquier día.
+ */
+const TARDINESS_DAILY_HOURS = 8;
+
 function map(r) {
   return {
     id: r.id,
@@ -216,17 +223,16 @@ export const attendanceService = {
 
     // Ajuste manual: se respetan los minutos ingresados, incluso si no hay
     // horario o si la fecha no es laborable. El pago de extras usa la jornada
-    // del horario (u 8 h si no hay horario).
+    // del horario; el descuento por tardanza siempre usa 8 h de referencia.
     if (r.manual) {
       const tardiness = Math.max(0, Math.round(num(r.tardinessMinutes)));
       const extra = Math.max(0, Math.round(num(r.extraMinutes)));
-      const dailyHours = scheduledMinutes > 0 ? scheduledMinutes / 60 : 8;
       return {
         ...base,
         tardinessMinutes: tardiness,
         extraMinutes: extra,
         overtimePay: this.calcOvertimePay(extra, baseSalary, scheduledMinutes),
-        tardinessDiscount: round2(this.descuentoPorMinuto(baseSalary, dailyHours) * tardiness),
+        tardinessDiscount: round2(this.descuentoPorMinuto(baseSalary, TARDINESS_DAILY_HOURS) * tardiness),
         reason: 'manual',
       };
     }
@@ -259,8 +265,7 @@ export const attendanceService = {
     }
 
     const workedMinutes = Math.max(0, exit - entry - num(s.breakMinutes));
-    const dailyHours = scheduledMinutes > 0 ? scheduledMinutes / 60 : 8;
-    const tardinessDiscount = round2(this.descuentoPorMinuto(baseSalary, dailyHours) * tardiness);
+    const tardinessDiscount = round2(this.descuentoPorMinuto(baseSalary, TARDINESS_DAILY_HOURS) * tardiness);
     const overtimePay = this.calcOvertimePay(extra, baseSalary, scheduledMinutes);
 
     return {
