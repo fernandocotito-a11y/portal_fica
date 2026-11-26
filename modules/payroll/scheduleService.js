@@ -10,13 +10,14 @@
 
 import { supabase } from '../../js/supabase.js';
 import { activeCompanyId } from './payrollScope.js';
-import { num, todayIso, addDaysIso, hhmmToMinutes, fmtDate } from './payrollUtils.js';
+import { num, todayIso, hhmmToMinutes, fmtDate, isoWeekday } from './payrollUtils.js';
 import { WORK_DAY_LABELS } from './payrollConfig.js';
 
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5];
 const ROUND_OPTIONS = [1, 5, 10, 15, 30];
 
 let cache = [];
+let exceptions = [];
 
 function map(r) {
   return {
@@ -34,6 +35,19 @@ function map(r) {
     roundMinutes: ROUND_OPTIONS.includes(num(r.round_minutes)) ? num(r.round_minutes) : 1,
     tardinessEnabled: r.tardiness_enabled !== false,
     overtimeEnabled: r.overtime_enabled !== false,
+    note: r.note || '',
+  };
+}
+
+function mapException(r) {
+  return {
+    id: r.id,
+    companyId: r.company_id,
+    date: String(r.date || '').slice(0, 10),
+    entry: String(r.entry_time || '').slice(0, 5),
+    exit: String(r.exit_time || '').slice(0, 5),
+    breakMinutes: num(r.break_minutes),
+    noImpact: r.no_impact !== false,
     note: r.note || '',
   };
 }
@@ -57,9 +71,16 @@ export function rangesOverlap(aFrom, aTo, bFrom, bTo) {
 export function scheduleForDate(schedules, date) {
   const d = String(date || '').slice(0, 10);
   if (!d) return null;
+  const day = isoWeekday(d);
   return (
     (schedules || [])
-      .filter((s) => s.effectiveFrom && s.effectiveFrom <= d && (!s.effectiveTo || s.effectiveTo >= d))
+      .filter(
+        (s) =>
+          s.effectiveFrom &&
+          s.effectiveFrom <= d &&
+          (!s.effectiveTo || s.effectiveTo >= d) &&
+          (!day || (Array.isArray(s.workDays) ? s.workDays : DEFAULT_WORK_DAYS).includes(day))
+      )
       .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0] || null
   );
 }
@@ -112,26 +133,45 @@ function payload(data) {
 
 export const scheduleService = {
   lastError: '',
+  exceptionError: '',
 
   async refresh() {
     const cid = activeCompanyId();
     if (!cid) {
       cache = [];
+      exceptions = [];
       this.lastError = '';
+      this.exceptionError = '';
       return;
     }
-    const { data, error } = await supabase
-      .from('payroll_work_schedules')
-      .select('*')
-      .eq('company_id', cid)
-      .order('effective_from');
-    if (error) {
+    const [schedulesRes, exceptionsRes] = await Promise.all([
+      supabase
+        .from('payroll_work_schedules')
+        .select('*')
+        .eq('company_id', cid)
+        .order('effective_from'),
+      supabase
+        .from('payroll_schedule_exceptions')
+        .select('*')
+        .eq('company_id', cid)
+        .order('date'),
+    ]);
+    if (schedulesRes.error) {
       cache = [];
-      this.lastError = error.message;
-      return;
+      this.lastError = schedulesRes.error.message;
+    } else {
+      this.lastError = '';
+      cache = (schedulesRes.data || []).map(map);
     }
-    this.lastError = '';
-    cache = (data || []).map(map);
+    // La tabla de días especiales puede no existir todavía: no bloqueamos los
+    // horarios por eso, solo avisamos en la interfaz.
+    if (exceptionsRes.error) {
+      exceptions = [];
+      this.exceptionError = exceptionsRes.error.message;
+    } else {
+      this.exceptionError = '';
+      exceptions = (exceptionsRes.data || []).map(mapException);
+    }
   },
 
   list() {
@@ -142,9 +182,39 @@ export const scheduleService = {
     return cache.find((s) => s.id === id) || null;
   },
 
-  /** Horario vigente para una fecha. */
+  /** Excepción configurada para una fecha concreta. */
+  exceptionFor(date) {
+    const d = String(date || '').slice(0, 10);
+    return exceptions.find((x) => x.date === d) || null;
+  },
+
+  listExceptions() {
+    return exceptions.slice().sort((a, b) => b.date.localeCompare(a.date));
+  },
+
+  /**
+   * Horario efectivo para una fecha: el horario base más la excepción del día.
+   * Con `noImpact` el día se marca como jornada completa y no afecta descuentos
+   * ni extras. Sin esa marca, la excepción puede cambiar entrada/salida.
+   */
+  effectiveFor(date) {
+    const base = scheduleForDate(cache, date);
+    const ex = this.exceptionFor(date);
+    if (!ex) return base;
+    if (ex.noImpact) return base ? { ...base, noImpact: true, exception: ex } : null;
+    if (!base) return null;
+    return {
+      ...base,
+      entry: ex.entry || base.entry,
+      exit: ex.exit || base.exit,
+      breakMinutes: ex.breakMinutes,
+      exception: ex,
+    };
+  },
+
+  /** Horario vigente para una fecha (incluye días especiales). */
   scheduleFor(date) {
-    return scheduleForDate(cache, date);
+    return this.effectiveFor(date);
   },
 
   /** Horario vigente hoy. */
@@ -174,42 +244,28 @@ export const scheduleService = {
     validate(data);
     const from = data.effectiveFrom;
     const to = data.effectiveTo || '';
+    const days = Array.from(new Set((data.workDays || []).map(Number)));
 
-    // Si el nuevo horario empieza después de un horario abierto, cerramos el
-    // anterior el día anterior para no dejar dos vigencias superpuestas.
-    const previous = cache
-      .filter((s) => !s.effectiveTo && s.effectiveFrom < from)
-      .sort((a, b) => b.effectiveFrom.localeCompare(a.effectiveFrom))[0];
-
-    let closedPrevious = null;
-    if (previous) {
-      const dayBefore = addDaysIso(from, -1);
-      if (dayBefore < previous.effectiveFrom) {
-        throw new Error('La nueva vigencia se superpone con el horario existente.');
-      }
-      await this.update(previous.id, { effectiveTo: dayBefore });
-      closedPrevious = previous;
-    }
-
-    const conflict = cache.find((s) => rangesOverlap(from, to, s.effectiveFrom, s.effectiveTo));
+    // Varios horarios pueden estar vigentes a la vez siempre que sus días no
+    // se solapen (por ejemplo, Lun–Vie y Sáb). Solo chocan rangos que además
+    // comparten algún día de la semana.
+    const conflict = cache.find(
+      (s) =>
+        rangesOverlap(from, to, s.effectiveFrom, s.effectiveTo) &&
+        days.some((d) => s.workDays.includes(d))
+    );
     if (conflict) {
-      if (closedPrevious) await this.update(closedPrevious.id, { effectiveTo: '' });
-      throw new Error(`El rango se superpone con el horario ${this.describe(conflict)}.`);
+      throw new Error(`Los días se superponen con el horario ${this.describe(conflict)}. Edita ese horario o quita esos días.`);
     }
 
-    try {
-      const { data: saved, error } = await supabase
-        .from('payroll_work_schedules')
-        .insert(payload(data))
-        .select()
-        .single();
-      if (error) throw new Error(error.message);
-      await this.refresh();
-      return map(saved);
-    } catch (err) {
-      if (closedPrevious) await this.update(closedPrevious.id, { effectiveTo: '' });
-      throw err;
-    }
+    const { data: saved, error } = await supabase
+      .from('payroll_work_schedules')
+      .insert(payload(data))
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    await this.refresh();
+    return map(saved);
   },
 
   async update(id, patch) {
@@ -218,11 +274,15 @@ export const scheduleService = {
     const merged = { ...current, ...patch };
     validate(merged);
 
+    const days = Array.from(new Set((merged.workDays || []).map(Number)));
     const conflict = cache.find(
-      (s) => s.id !== id && rangesOverlap(merged.effectiveFrom, merged.effectiveTo || '', s.effectiveFrom, s.effectiveTo)
+      (s) =>
+        s.id !== id &&
+        rangesOverlap(merged.effectiveFrom, merged.effectiveTo || '', s.effectiveFrom, s.effectiveTo) &&
+        days.some((d) => s.workDays.includes(d))
     );
     if (conflict) {
-      throw new Error(`El rango se superpone con el horario ${this.describe(conflict)}.`);
+      throw new Error(`Los días se superponen con el horario ${this.describe(conflict)}. Edita ese horario o quita esos días.`);
     }
 
     const { data: saved, error } = await supabase
@@ -238,6 +298,39 @@ export const scheduleService = {
 
   async remove(id) {
     const { error } = await supabase.from('payroll_work_schedules').delete().eq('id', id);
+    if (error) throw new Error(error.message);
+    await this.refresh();
+  },
+
+  /* ------------------------ Días especiales ------------------------ */
+
+  async saveException(data) {
+    const date = String(data.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('La fecha del día especial es obligatoria.');
+    const row = {
+      company_id: activeCompanyId(),
+      date,
+      entry_time: data.entry || null,
+      exit_time: data.exit || null,
+      break_minutes: Math.max(0, Math.round(num(data.breakMinutes))),
+      no_impact: data.noImpact !== false,
+      note: data.note || null,
+    };
+    let query = supabase.from('payroll_schedule_exceptions');
+    if (data.id) {
+      query = query.update(row).eq('id', data.id);
+    } else {
+      // Un único día especial por fecha (unique company_id + date).
+      query = query.upsert(row, { onConflict: 'company_id,date' });
+    }
+    const { data: saved, error } = await query.select().single();
+    if (error) throw new Error(error.message);
+    await this.refresh();
+    return mapException(saved);
+  },
+
+  async removeException(id) {
+    const { error } = await supabase.from('payroll_schedule_exceptions').delete().eq('id', id);
     if (error) throw new Error(error.message);
     await this.refresh();
   },

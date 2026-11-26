@@ -124,13 +124,13 @@ export function renderAttendanceTab(root) {
       <div class="modal__header">
         <div>
           <h3 class="modal__title">Horario de trabajo</h3>
-          <p class="text-muted" style="margin:0;font-size:var(--font-size-sm);">El horario se aplica por rango de fechas a todos los colaboradores de la empresa.</p>
+          <p class="text-muted" style="margin:0;font-size:var(--font-size-sm);">Puedes tener varios horarios vigentes a la vez siempre que sus días no se solapen (por ejemplo, Lun–Vie y Sáb).</p>
         </div>
         <button type="button" class="modal__close" data-sched-close aria-label="Cerrar">${ICONS.close}</button>
       </div>
       <div class="modal__body">
         <div style="display:flex;justify-content:space-between;gap:var(--space-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--space-3);">
-          <p class="text-muted" style="margin:0;font-size:var(--font-size-sm);">Puedes crear un nuevo horario cuando cambie la jornada; el anterior se cierra automáticamente el día anterior.</p>
+          <p class="text-muted" style="margin:0;font-size:var(--font-size-sm);">Crea un horario por grupo de días. Si los días se solapan con otro vigente, edita ese horario en lugar de crear otro.</p>
           <button type="button" class="btn btn--sm" data-sched-new>${ICONS.plus} Nuevo horario</button>
         </div>
         <div class="table-wrap">
@@ -179,6 +179,30 @@ export function renderAttendanceTab(root) {
             <button type="submit" class="btn btn--primary" data-sched-submit>Guardar horario</button>
           </div>
         </form>
+
+        <div style="margin-top:var(--space-5);border-top:1px solid var(--color-border);padding-top:var(--space-4);">
+          <h4 style="margin:0 0 var(--space-2);font-size:var(--font-size-md);">Días especiales (no afectan la planilla)</h4>
+          <p class="text-muted" style="margin:0 0 var(--space-3);font-size:var(--font-size-sm);">
+            Para eventos o salidas anticipadas. El día se cuenta como jornada completa: sin tardanza, sin descuento y sin horas extras.
+            La marcación real del colaborador se guarda igual.
+          </p>
+          <div class="table-wrap">
+            <table class="table" style="min-width:600px;">
+              <thead><tr><th>Fecha</th><th>Salida referencial</th><th>Motivo</th><th></th></tr></thead>
+              <tbody data-exc-list></tbody>
+            </table>
+          </div>
+          <form data-exc-form novalidate style="margin-top:var(--space-3);display:grid;gap:var(--space-3);max-width:620px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
+              <div class="form-group"><label class="form-label">Fecha <span class="req">*</span></label><input class="form-input" type="date" data-exc-date /></div>
+              <div class="form-group"><label class="form-label">Hora de salida (opcional)</label><input class="form-input" type="time" data-exc-exit /></div>
+            </div>
+            <div class="form-group"><label class="form-label">Motivo</label><input class="form-input" data-exc-note placeholder="Ej. evento institucional" /></div>
+            <div style="display:flex;justify-content:flex-end;gap:var(--space-2);flex-wrap:wrap;">
+              <button type="submit" class="btn btn--primary">Guardar día especial</button>
+            </div>
+          </form>
+        </div>
       </div>
     </dialog>
   `;
@@ -222,6 +246,12 @@ export function renderAttendanceTab(root) {
   const schedTardiness = root.querySelector('[data-sched-tardiness]');
   const schedOvertime = root.querySelector('[data-sched-overtime]');
   const schedNote = root.querySelector('[data-sched-note]');
+  const excList = root.querySelector('[data-exc-list]');
+  const excForm = root.querySelector('[data-exc-form]');
+  const excDate = root.querySelector('[data-exc-date]');
+  const excExit = root.querySelector('[data-exc-exit]');
+  const excNote = root.querySelector('[data-exc-note]');
+  let editingExceptionId = null;
 
   function employees() {
     return payrollService.listEmployees().filter((e) => e.active !== false);
@@ -305,6 +335,35 @@ export function renderAttendanceTab(root) {
       .join('');
   }
 
+  function renderExceptions() {
+    if (scheduleService.exceptionError) {
+      excList.innerHTML = `<tr><td colspan="4" class="text-muted">Falta crear la tabla <code>payroll_schedule_exceptions</code> en Supabase. Ejecuta el SQL de planilla y reintenta.</td></tr>`;
+      return;
+    }
+    const list = scheduleService.listExceptions();
+    if (!list.length) {
+      excList.innerHTML = `<tr><td colspan="4" class="text-muted">Sin días especiales registrados.</td></tr>`;
+      return;
+    }
+    excList.innerHTML = list
+      .map(
+        (x) => `<tr>
+          <td>${fmtDate(x.date)}</td>
+          <td>${escapeHtml(x.exit || '—')}</td>
+          <td>${escapeHtml(x.note || '—')}</td>
+          <td><div class="table__actions"><button type="button" class="icon-btn icon-btn--danger" data-exc-del="${escapeHtml(x.id)}" title="Eliminar">${ICONS.trash}</button></div></td>
+        </tr>`
+      )
+      .join('');
+  }
+
+  function resetExceptionForm() {
+    editingExceptionId = null;
+    excDate.value = todayIso();
+    excExit.value = '';
+    excNote.value = '';
+  }
+
   function resetScheduleForm() {
     editingScheduleId = null;
     schedFormTitle.textContent = 'Nuevo horario';
@@ -329,7 +388,9 @@ export function renderAttendanceTab(root) {
 
   function openScheduleModal() {
     renderScheduleList();
+    renderExceptions();
     resetScheduleForm();
+    resetExceptionForm();
     if (!scheduleModal.open) scheduleModal.showModal();
   }
 
@@ -355,6 +416,10 @@ export function renderAttendanceTab(root) {
   /* --------------------------- Asistencia --------------------------- */
   function updateScheduleHint() {
     const s = scheduleService.scheduleFor(dateI.value);
+    if (s && s.noImpact) {
+      scheduleHint.innerHTML = `<span class="chip chip--gold">Día especial</span> No afecta la planilla: sin tardanza, sin descuento y sin horas extras. La marcación real se guarda igual.`;
+      return;
+    }
     if (!s) {
       scheduleHint.innerHTML = '<span style="color:var(--color-warning);">Sin horario para esta fecha.</span> Configura el horario para calcular automáticamente.';
       return;
@@ -459,6 +524,7 @@ export function renderAttendanceTab(root) {
         const total = round2(c.tardinessDiscount + dayDisc);
         const sinHorario = c.reason === 'sin_horario' && r.type === 'normal' && (r.entry || r.exit);
         const manualChip = r.manual ? ' <span class="chip chip--gold">manual</span>' : '';
+        const specialChip = c.reason === 'dia_especial' ? ' <span class="chip chip--gold">día especial</span>' : '';
         tMin += c.tardinessMinutes;
         eMin += c.extraMinutes;
         otPay = round2(otPay + c.overtimePay);
@@ -472,7 +538,7 @@ export function renderAttendanceTab(root) {
             <td class="cell-num"${sinHorario ? ' title="Sin horario configurado para esta fecha"' : ''}>${c.tardinessMinutes}${sinHorario ? ' ⚠' : ''}</td>
             <td class="cell-num">${c.extraMinutes}</td>
             <td class="cell-num">${money(c.overtimePay)}</td>
-            <td>${escapeHtml(typeLabel(r.type))}${manualChip}</td>
+            <td>${escapeHtml(typeLabel(r.type))}${manualChip}${specialChip}</td>
             <td>${r.type === 'normal' || r.type === 'vacaciones' ? '—' : r.withPay ? '<span class="chip">Con goce</span>' : '<span class="chip chip--gold">Sin goce</span>'}</td>
             <td class="cell-num">${money(total)}</td>
             <td><div class="table__actions"><button class="icon-btn" data-edit="${escapeHtml(r.id)}" title="Editar">${ICONS.edit}</button><button class="icon-btn icon-btn--danger" data-del="${escapeHtml(r.id)}" title="Eliminar">${ICONS.trash}</button></div></td>
@@ -586,6 +652,8 @@ export function renderAttendanceTab(root) {
     if (e.target.closest('[data-sched-retry]')) {
       await scheduleService.refresh();
       renderScheduleBanner();
+      renderScheduleList();
+      renderExceptions();
       render();
       updateScheduleHint();
     }
@@ -705,6 +773,45 @@ export function renderAttendanceTab(root) {
     } catch (err) {
       const msg = /relation|does not exist|schema cache|column/i.test(err.message)
         ? 'Falta crear la tabla/columna de horarios en Supabase. Ejecuta el SQL indicado.'
+        : err.message;
+      showToast(msg, 'error');
+    }
+  });
+
+  excList.addEventListener('click', async (e) => {
+    const del = e.target.closest('[data-exc-del]');
+    if (!del) return;
+    const ok = await confirmDialog({ title: 'Eliminar día especial', message: '¿Quitar este día especial? La asistencia se recalculará con el horario normal.', confirmText: 'Eliminar', danger: true });
+    if (!ok) return;
+    try {
+      await scheduleService.removeException(del.dataset.excDel);
+      showToast('Día especial eliminado.');
+      renderExceptions();
+      render();
+      updateScheduleHint();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
+
+  excForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const saved = await scheduleService.saveException({
+        id: editingExceptionId || undefined,
+        date: excDate.value,
+        exit: excExit.value,
+        noImpact: true,
+        note: excNote.value.trim(),
+      });
+      showToast('Día especial guardado.');
+      renderExceptions();
+      render();
+      updateScheduleHint();
+      editingExceptionId = saved?.id || null;
+    } catch (err) {
+      const msg = /relation|does not exist|schema cache|column/i.test(err.message)
+        ? 'Falta crear la tabla payroll_schedule_exceptions en Supabase. Ejecuta el SQL de planilla.'
         : err.message;
       showToast(msg, 'error');
     }

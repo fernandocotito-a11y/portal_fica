@@ -199,6 +199,21 @@ export const attendanceService = {
 
     if (!isNormal) return { ...base, reason: 'tipo' };
 
+    // Día especial: se conserva la marcación real del colaborador, pero la
+    // planilla no se afecta (jornada completa, sin tardanza ni extras).
+    if (s && s.noImpact) {
+      return {
+        ...base,
+        isWorkDay: true,
+        workedMinutes: scheduledMinutes,
+        tardinessMinutes: 0,
+        extraMinutes: 0,
+        overtimePay: 0,
+        tardinessDiscount: 0,
+        reason: 'dia_especial',
+      };
+    }
+
     // Ajuste manual: se respetan los minutos ingresados, incluso si no hay
     // horario o si la fecha no es laborable. El pago de extras usa la jornada
     // del horario (u 8 h si no hay horario).

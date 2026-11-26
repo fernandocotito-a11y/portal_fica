@@ -363,3 +363,32 @@ create policy "payroll_work_schedules_all" on public.payroll_work_schedules
 
 create index if not exists idx_payroll_work_schedules_company
   on public.payroll_work_schedules(company_id, effective_from);
+
+-- ============================================================================
+-- DÍAS ESPECIALES: excepciones por fecha a todos los colaboradores
+-- ----------------------------------------------------------------------------
+-- Ejemplo: salida a las 13:00 por un evento. Con no_impact = true el día se
+-- considera jornada completa (sin tardanza, sin descuento y sin horas extras),
+-- aunque se guarde la marcación real del colaborador.
+-- ============================================================================
+create table if not exists public.payroll_schedule_exceptions (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  date date not null,
+  entry_time time,
+  exit_time time,
+  break_minutes int not null default 0 check (break_minutes >= 0),
+  no_impact boolean not null default true,
+  note text,
+  created_at timestamptz not null default now(),
+  constraint payroll_schedule_exceptions_company_date unique (company_id, date)
+);
+
+alter table public.payroll_schedule_exceptions enable row level security;
+
+drop policy if exists "payroll_schedule_exceptions_all" on public.payroll_schedule_exceptions;
+create policy "payroll_schedule_exceptions_all" on public.payroll_schedule_exceptions
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
+create index if not exists idx_payroll_schedule_exceptions_company_date
+  on public.payroll_schedule_exceptions(company_id, date);
