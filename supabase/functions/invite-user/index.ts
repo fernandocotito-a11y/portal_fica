@@ -4,7 +4,8 @@
 // Invita a un usuario secundario por correo y le asigna permisos/empresas.
 // auth: 'user' -> solo un usuario autenticado (el superadmin) puede llamarla.
 // ============================================================================
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+// El import de tipos de JSR (@supabase/functions-js) se omite a propósito:
+// cuando jsr.io no responde, hacía fallar el bundle de la Edge Function.
 import { withSupabase } from "jsr:@supabase/server@^1";
 
 // redirectTo a la raíz (sin hash): Supabase añade los tokens y app.js lleva a #/set-password.
