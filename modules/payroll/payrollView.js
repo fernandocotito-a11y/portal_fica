@@ -95,7 +95,7 @@ function renderPlanillaTab(root) {
               <tr class="table__group">
                 <th colspan="5">Datos del colaborador</th>
                 <th colspan="7">Ingresos</th>
-                <th colspan="5">Retenciones al trabajador</th>
+                <th colspan="8">Retenciones al trabajador</th>
                 <th colspan="3">Aportes del empleador</th>
                 <th colspan="3">Neto</th>
                 <th colspan="1"></th>
@@ -103,7 +103,7 @@ function renderPlanillaTab(root) {
               <tr>
                 <th>Código</th><th>Doc.</th><th>Apellidos y nombres</th><th>Inicio</th><th>Cargo</th>
                 <th>Días</th><th>Básico</th><th>Asig. fam.</th><th>Vacac.</th><th>Bonif.</th><th>H. extras</th><th>Total bruto</th>
-                <th>Pensión</th><th>Renta 5ta</th><th>Tard./Faltas</th><th>Prést./Adel.</th><th>Total ret.</th>
+                <th>ONP</th><th>AFP pensión</th><th>AFP seguro</th><th>AFP comisión</th><th>Renta 5ta</th><th>Tard./Faltas</th><th>Prést./Adel.</th><th>Total ret.</th>
                 <th>Essalud 9%</th><th>Vida Ley</th><th>Total aport.</th>
                 <th>Neto a pagar</th><th>Gratificación</th><th>Neto total a pagar</th><th></th>
               </tr>
@@ -245,13 +245,34 @@ function renderPlanillaTab(root) {
     return payrollService.deriveMonthInputs(emp, year, month);
   }
   function zeroCalc() {
-    return { days: 0, basico: 0, asigFamiliar: 0, vacaciones: 0, bonificaciones: 0, overtime: 0, totalBruto: 0, remAsegurable: 0, pension: 0, pensionLabel: '—', renta5ta: 0, tardanzas: 0, prestamos: 0, totalRetenciones: 0, essalud: 0, vidaLey: 0, totalAportes: 0, neto: 0, fueraPeriodo: true };
+    return { days: 0, basico: 0, asigFamiliar: 0, vacaciones: 0, bonificaciones: 0, overtime: 0, totalBruto: 0, remAsegurable: 0, pension: 0, pensionLabel: '—', onp: 0, afpFondo: 0, afpSeguro: 0, afpComision: 0, renta5ta: 0, tardanzas: 0, prestamos: 0, totalRetenciones: 0, essalud: 0, vidaLey: 0, totalAportes: 0, neto: 0, fueraPeriodo: true };
   }
+  /**
+   * Períodos cerrados antes del desglose guardaron solo `pension`. Para no
+   * alterar la foto histórica, mostramos ese importe en la columna que
+   * corresponde según el régimen del colaborador, sin intentar recalcularlo.
+   */
+  function withPensionParts(calc, emp) {
+    if (calc.onp !== undefined || calc.afpFondo !== undefined) return calc;
+    const pension = Number(calc.pension || 0);
+    const legacy = {
+      onp: emp.pensionType === 'ONP' ? pension : 0,
+      afpFondo: emp.pensionType === 'AFP' ? pension : 0,
+      afpSeguro: 0,
+      afpComision: 0,
+      pensionLegacy: true,
+    };
+    return { ...calc, ...legacy };
+  }
+
   function computeAll() {
     // Si la planilla está cerrada y tiene foto guardada, se muestra exactamente
     // lo que se cerró, aunque después se editen asistencias, bonos o vacaciones.
     if (closed && snapshot && Object.keys(snapshot).length) {
-      return Object.values(snapshot).map((s) => ({ emp: s.emp, calc: s.calc }));
+      return Object.values(snapshot).map((s) => ({
+        emp: s.emp,
+        calc: withPensionParts(s.calc, s.emp),
+      }));
     }
     const lista = showAll ? employees() : employeesForPeriod();
     return lista.map((emp) => {
@@ -267,7 +288,7 @@ function renderPlanillaTab(root) {
 
   function rowHtml(emp, calc, error) {
     if (error) {
-      return `<tr data-emp="${escapeHtml(emp.id)}"><td colspan="24"><span style="color:#b91c1c;font-size:var(--font-size-sm);">⚠ ${escapeHtml(emp.name)}: ${escapeHtml(error)}</span></td></tr>`;
+      return `<tr data-emp="${escapeHtml(emp.id)}"><td colspan="27"><span style="color:#b91c1c;font-size:var(--font-size-sm);">⚠ ${escapeHtml(emp.name)}: ${escapeHtml(error)}</span></td></tr>`;
     }
     const fuera = !!calc.fueraPeriodo;
     const badge = fuera ? ' <span class="badge badge--muted">Fuera de período</span>' : '';
@@ -285,7 +306,10 @@ function renderPlanillaTab(root) {
         <td class="cell-num" data-cell="bonificaciones">${money(calc.bonificaciones)}</td>
         <td class="cell-num" data-cell="overtime">${money(calc.overtime)}</td>
         <td class="cell-num cell-strong" data-cell="totalBruto">${money(calc.totalBruto)}</td>
-        <td class="cell-num" data-cell="pension" title="${escapeHtml(calc.pensionLabel)}">${money(calc.pension)}</td>
+        <td class="cell-num" data-cell="onp" title="ONP 13%">${money(calc.onp)}</td>
+        <td class="cell-num" data-cell="afpFondo" title="${escapeHtml(calc.pensionLegacy ? 'Importe histórico no desglosado' : `${calc.pensionLabel || 'AFP'} · fondo`)}">${money(calc.afpFondo)}</td>
+        <td class="cell-num" data-cell="afpSeguro" title="Prima de seguro AFP">${money(calc.afpSeguro)}</td>
+        <td class="cell-num" data-cell="afpComision" title="Comisión AFP">${money(calc.afpComision)}</td>
         <td class="cell-num" data-cell="renta5ta">${money(calc.renta5ta)}</td>
         <td class="cell-num" data-cell="tardanzas">${money(calc.tardanzas)}</td>
         <td class="cell-num" data-cell="prestamos">${money(calc.prestamos)}</td>
@@ -311,7 +335,10 @@ function renderPlanillaTab(root) {
         <td class="cell-num" data-total="bonificaciones">${money(totals.bonificaciones)}</td>
         <td class="cell-num" data-total="overtime">${money(totals.overtime)}</td>
         <td class="cell-num cell-strong" data-total="totalBruto">${money(totals.totalBruto)}</td>
-        <td class="cell-num" data-total="pension">${money(totals.pension)}</td>
+        <td class="cell-num" data-total="onp">${money(totals.onp)}</td>
+        <td class="cell-num" data-total="afpFondo">${money(totals.afpFondo)}</td>
+        <td class="cell-num" data-total="afpSeguro">${money(totals.afpSeguro)}</td>
+        <td class="cell-num" data-total="afpComision">${money(totals.afpComision)}</td>
         <td class="cell-num" data-total="renta5ta">${money(totals.renta5ta)}</td>
         <td class="cell-num" data-total="tardanzas">${money(totals.tardanzas)}</td>
         <td class="cell-num" data-total="prestamos">${money(totals.prestamos)}</td>
@@ -335,7 +362,7 @@ function renderPlanillaTab(root) {
       data = computeAll();
     } catch (err) {
       console.error(err);
-      tbody.innerHTML = `<tr><td colspan="24"><div class="empty-state"><span class="empty-state__icon">⚠️</span><div class="empty-state__title">Error al generar la planilla</div><div class="empty-state__desc">${escapeHtml(err.message)}</div></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="27"><div class="empty-state"><span class="empty-state__icon">⚠️</span><div class="empty-state__title">Error al generar la planilla</div><div class="empty-state__desc">${escapeHtml(err.message)}</div></div></td></tr>`;
       tfoot.innerHTML = '';
       summaryEl.textContent = '';
       const n = root.querySelector('[data-period-note]'); if (n) n.textContent = '';
@@ -347,7 +374,7 @@ function renderPlanillaTab(root) {
       const detalle = all.length > 0
         ? `<div class="empty-state__title">Sin colaboradores en ${MESES[month - 1]} ${year}</div><div class="empty-state__desc">Hay ${all.length} colaborador(es) registrado(s), pero ninguno está activo en este período (fecha de inicio posterior o cese anterior). Activa “Mostrar todos” o cambia el mes/año.</div>`
         : `<div class="empty-state__title">Sin colaboradores</div><div class="empty-state__desc">Agrega tu primer colaborador para generar la planilla.</div>`;
-      tbody.innerHTML = `<tr><td colspan="24"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span>${detalle}</div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="27"><div class="empty-state"><span class="empty-state__icon">${ICONS.users}</span>${detalle}</div></td></tr>`;
       tfoot.innerHTML = '';
       summaryEl.textContent = '';
       if (periodNote) periodNote.textContent = '';
@@ -371,9 +398,9 @@ function renderPlanillaTab(root) {
   }
   function recalcRow(tr, emp) {
     const calc = calcRow(emp, inputs[emp.id] || {}, year, month);
-    ['basico', 'asigFamiliar', 'bonificaciones', 'overtime', 'totalBruto', 'pension', 'renta5ta', 'totalRetenciones', 'essalud', 'totalAportes', 'neto'].forEach((f) => setCell(tr, f, money(calc[f])));
-    const pen = tr.querySelector('[data-cell="pension"]');
-    if (pen) pen.setAttribute('title', calc.pensionLabel);
+    ['basico', 'asigFamiliar', 'bonificaciones', 'overtime', 'totalBruto', 'onp', 'afpFondo', 'afpSeguro', 'afpComision', 'renta5ta', 'totalRetenciones', 'essalud', 'totalAportes', 'neto'].forEach((f) => setCell(tr, f, money(calc[f])));
+    const fondo = tr.querySelector('[data-cell="afpFondo"]');
+    if (fondo) fondo.setAttribute('title', `${calc.pensionLabel || 'AFP'} · fondo`);
   }
   function recalcAll() {
     const data = computeAll().filter((d) => !d.calc.fueraPeriodo);

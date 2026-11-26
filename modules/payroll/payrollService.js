@@ -142,14 +142,32 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
 
   let pension = 0;
   let pensionLabel = '—';
+  // Desglose para la planilla mensual. `pension` se mantiene como total (lo
+  // usan reportes, exportaciones y períodos cerrados) y los cuatro conceptos
+  // siempre suman exactamente ese total.
+  let onp = 0;
+  let afpFondo = 0;
+  let afpSeguro = 0;
+  let afpComision = 0;
   if (emp.pensionType === 'ONP') {
-    pension = round2(remAsegurable * TASAS.onp);
+    onp = round2(remAsegurable * TASAS.onp);
+    pension = onp;
     pensionLabel = 'ONP 13%';
   } else if (emp.pensionType === 'AFP') {
     const p = getAfpParams(year, month, emp.afp);
     const baseAfp = Math.min(remAsegurable, num(p.remMaxAsegurable, remAsegurable));
     const comision = monthlyCommission(emp.commissionType, p);
+    // Total igual al cálculo histórico (un solo redondeo) para no mover totales.
     pension = round2(baseAfp * (p.aporteObligatorio + comision + p.primaSeguro));
+    afpFondo = round2(baseAfp * p.aporteObligatorio);
+    afpSeguro = round2(baseAfp * p.primaSeguro);
+    afpComision = round2(baseAfp * comision);
+    const diff = round2(pension - afpFondo - afpSeguro - afpComision);
+    if (diff) {
+      const ajustada = round2(afpComision + diff);
+      if (ajustada >= 0) afpComision = ajustada;
+      else afpFondo = round2(Math.max(0, afpFondo + diff));
+    }
     pensionLabel = `AFP ${emp.afp || ''} · ${emp.commissionType === 'mixta' ? 'mixta' : 'flujo'}`.trim();
   }
 
@@ -208,6 +226,10 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
     netoTotal,
     pension,
     pensionLabel,
+    onp,
+    afpFondo,
+    afpSeguro,
+    afpComision,
     renta5ta,
     detalle5ta,
     tardanzas,
@@ -302,7 +324,7 @@ export function calcRow(emp, inputs = {}, year, month) {
 
 /** Suma totales de un conjunto de filas. */
 export function sumTotals(rows) {
-  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'overtime', 'totalBruto', 'pension', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto', 'gratificacionPagada', 'netoTotal'];
+  const keys = ['basico', 'asigFamiliar', 'vacaciones', 'bonificaciones', 'overtime', 'totalBruto', 'pension', 'onp', 'afpFondo', 'afpSeguro', 'afpComision', 'renta5ta', 'tardanzas', 'prestamos', 'totalRetenciones', 'essalud', 'vidaLey', 'totalAportes', 'neto', 'gratificacionPagada', 'netoTotal'];
   const acc = {};
   keys.forEach((k) => (acc[k] = 0));
   rows.forEach((r) => keys.forEach((k) => (acc[k] = round2(acc[k] + num(r[k])))));
