@@ -287,7 +287,8 @@ export function deriveMonthInputs(emp, year, month) {
     bonusesAfectas: bAfectas,
     gratificacionPagada: gratif, // gratificación registrada (campo aparte, suma al neto)
     gratificacion: round2(basico + asigFamiliar + vacation), // remuneración computable (julio/diciembre; incluye vacaciones)
-    tardanzas: att.tardinessDiscount,
+    // Tardanzas + salidas anticipadas se descuentan con la misma tarifa/minuto.
+    tardanzas: round2(att.tardinessDiscount + att.earlyDiscount),
     overtime: att.overtimePay,
     loans: round2(paymentService.sumDeductionsFor(emp.id, year, month) + loanService.sumCuotaFor(emp.id, year, month)),
     vidaLey: 0,

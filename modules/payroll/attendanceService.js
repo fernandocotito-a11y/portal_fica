@@ -43,6 +43,7 @@ function map(r) {
     entry: String(r.entry || '').slice(0, 5),
     exit: String(r.exit_time || '').slice(0, 5),
     tardinessMinutes: num(r.tardiness_minutes),
+    earlyMinutes: num(r.early_minutes),
     extraMinutes: num(r.extra_minutes),
     type: r.type || 'normal',
     withPay: r.with_pay !== false,
@@ -90,6 +91,7 @@ export const attendanceService = {
       entry,
       exit,
       tardinessMinutes: manual ? Math.max(0, Math.round(num(data.tardinessMinutes))) : auto.tardinessMinutes,
+      earlyMinutes: manual ? Math.max(0, Math.round(num(data.earlyMinutes))) : auto.earlyMinutes,
       extraMinutes: manual ? Math.max(0, Math.round(num(data.extraMinutes))) : auto.extraMinutes,
       type,
       withPay: isNormal || type === 'vacaciones' ? true : data.withPay !== false,
@@ -107,6 +109,7 @@ export const attendanceService = {
       entry: n.entry,
       exit_time: n.exit,
       tardiness_minutes: n.tardinessMinutes,
+      early_minutes: n.earlyMinutes,
       extra_minutes: n.extraMinutes,
       type: n.type,
       with_pay: n.withPay,
@@ -129,6 +132,7 @@ export const attendanceService = {
       entry: n.entry,
       exit_time: n.exit,
       tardiness_minutes: n.tardinessMinutes,
+      early_minutes: n.earlyMinutes,
       extra_minutes: n.extraMinutes,
       type: n.type,
       with_pay: n.withPay,
@@ -177,7 +181,7 @@ export const attendanceService = {
   },
 
   /**
-   * Calcula los minutos de tardanza/extra y el pago de un registro.
+   * Calcula minutos de tardanza, salida anticipada y extras, y sus importes.
    * @param {Object} r registro (date, entry, exit, type, manual, ...)
    * @param {Object|undefined} schedule horario explícito; undefined = buscar por fecha
    * @param {Number} baseSalary sueldo básico para descuentos y pago de extras
@@ -196,10 +200,12 @@ export const attendanceService = {
       isWorkDay,
       scheduledMinutes,
       tardinessMinutes: 0,
+      earlyMinutes: 0,
       extraMinutes: 0,
       workedMinutes: 0,
       overtimePay: 0,
       tardinessDiscount: 0,
+      earlyDiscount: 0,
       absenceDiscount,
       reason: '',
     };
@@ -226,13 +232,17 @@ export const attendanceService = {
     // del horario; el descuento por tardanza siempre usa 8 h de referencia.
     if (r.manual) {
       const tardiness = Math.max(0, Math.round(num(r.tardinessMinutes)));
+      const early = Math.max(0, Math.round(num(r.earlyMinutes)));
       const extra = Math.max(0, Math.round(num(r.extraMinutes)));
+      const perMinute = this.descuentoPorMinuto(baseSalary, TARDINESS_DAILY_HOURS);
       return {
         ...base,
         tardinessMinutes: tardiness,
+        earlyMinutes: early,
         extraMinutes: extra,
         overtimePay: this.calcOvertimePay(extra, baseSalary, scheduledMinutes),
-        tardinessDiscount: round2(this.descuentoPorMinuto(baseSalary, TARDINESS_DAILY_HOURS) * tardiness),
+        tardinessDiscount: round2(perMinute * tardiness),
+        earlyDiscount: round2(perMinute * early),
         reason: 'manual',
       };
     }
@@ -258,6 +268,10 @@ export const attendanceService = {
     const tardiness = s.tardinessEnabled
       ? Math.min(scheduledMinutes, Math.max(0, entry - schedEntry - num(s.toleranceMinutes)))
       : 0;
+    // Salida anticipada: mismos 8 h de referencia y tolerancia que la tardanza.
+    const early = s.tardinessEnabled
+      ? Math.min(scheduledMinutes, Math.max(0, schedExit - exit - num(s.toleranceMinutes)))
+      : 0;
     const overtimeStart = Math.max(schedExit, entry + scheduledMinutes + num(s.breakMinutes));
     let extra = s.overtimeEnabled ? Math.max(0, exit - overtimeStart) : 0;
     if (num(s.roundMinutes) > 1) {
@@ -265,16 +279,20 @@ export const attendanceService = {
     }
 
     const workedMinutes = Math.max(0, exit - entry - num(s.breakMinutes));
-    const tardinessDiscount = round2(this.descuentoPorMinuto(baseSalary, TARDINESS_DAILY_HOURS) * tardiness);
+    const perMinute = this.descuentoPorMinuto(baseSalary, TARDINESS_DAILY_HOURS);
+    const tardinessDiscount = round2(perMinute * tardiness);
+    const earlyDiscount = round2(perMinute * early);
     const overtimePay = this.calcOvertimePay(extra, baseSalary, scheduledMinutes);
 
     return {
       ...base,
       tardinessMinutes: tardiness,
+      earlyMinutes: early,
       extraMinutes: extra,
       workedMinutes,
       overtimePay,
       tardinessDiscount,
+      earlyDiscount,
       reason: 'ok',
     };
   },
@@ -282,18 +300,22 @@ export const attendanceService = {
   summarize(employeeId, year, month, baseSalary) {
     const recs = this.list(employeeId).filter((r) => dateInMonth(r.date, year, month));
     let tardinessMinutes = 0;
+    let earlyMinutes = 0;
     let extraMinutes = 0;
     let overtimePay = 0;
     let tardinessDiscount = 0;
+    let earlyDiscount = 0;
     let absentWithPay = 0;
     let absentWithoutPay = 0;
 
     recs.forEach((r) => {
       const c = this.computeRecord(r, undefined, baseSalary);
       tardinessMinutes += c.tardinessMinutes;
+      earlyMinutes += c.earlyMinutes;
       extraMinutes += c.extraMinutes;
       overtimePay = round2(overtimePay + c.overtimePay);
       tardinessDiscount = round2(tardinessDiscount + c.tardinessDiscount);
+      earlyDiscount = round2(earlyDiscount + c.earlyDiscount);
       if (ABSENCE_TYPES.includes(r.type)) {
         if (r.withPay) absentWithPay += 1;
         else absentWithoutPay += 1;
@@ -304,13 +326,15 @@ export const attendanceService = {
     return {
       records: recs,
       tardinessMinutes,
+      earlyMinutes,
       extraMinutes,
       overtimePay,
       absentWithPay,
       absentWithoutPay,
       tardinessDiscount,
+      earlyDiscount,
       absenceDiscount,
-      totalDiscount: round2(tardinessDiscount + absenceDiscount),
+      totalDiscount: round2(tardinessDiscount + earlyDiscount + absenceDiscount),
     };
   },
 };

@@ -43,7 +43,7 @@ export function renderAttendanceTab(root) {
       <div class="card__header">
         <div>
           <h3 class="card__title">Asistencias y Tardanzas</h3>
-          <p class="card__subtitle">Marca la entrada y salida reales; el sistema calcula tardanzas y horas extras según el horario vigente.</p>
+          <p class="card__subtitle">Marca la entrada y salida reales; el sistema calcula tardanzas, salidas anticipadas y horas extras según el horario vigente.</p>
         </div>
         <div style="display:flex;gap:var(--space-2);flex-wrap:wrap;">
           <button type="button" class="btn" data-schedule-btn>${ICONS.clock} Horario</button>
@@ -61,10 +61,10 @@ export function renderAttendanceTab(root) {
           </div>
         </div>
         <div class="table-wrap">
-          <table class="table" style="min-width:1120px;">
+          <table class="table" style="min-width:1220px;">
             <thead><tr>
               <th>Fecha</th><th>Empleado</th><th>Entrada</th><th>Salida</th>
-              <th style="text-align:right;">Min. tarde</th><th style="text-align:right;">Min. extra</th>
+              <th style="text-align:right;">Min. tarde</th><th style="text-align:right;">Min. antic.</th><th style="text-align:right;">Min. extra</th>
               <th style="text-align:right;">Pago extra</th>
               <th>Tipo</th><th>Goce de haber</th><th style="text-align:right;">Descuento</th><th></th>
             </tr></thead>
@@ -96,8 +96,9 @@ export function renderAttendanceTab(root) {
             </div>
           </div>
           <div class="form-hint" data-schedule-hint style="margin-top:var(--space-3);margin-bottom:var(--space-4);padding:var(--space-2) var(--space-3);background:var(--color-cream);border:1px solid var(--color-border);border-radius:var(--radius-sm);line-height:1.5;"></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-3);">
             <div class="form-group" style="margin:0;"><label class="form-label">Minutos de tardanza</label><input class="form-input" type="number" min="0" data-tardiness value="0" /></div>
+            <div class="form-group" style="margin:0;"><label class="form-label">Minutos anticipados</label><input class="form-input" type="number" min="0" data-early value="0" /></div>
             <div class="form-group" style="margin:0;"><label class="form-label">Minutos extra</label><input class="form-input" type="number" min="0" data-extra value="0" /><div class="form-hint" data-extra-pay></div></div>
           </div>
           <div class="form-group">
@@ -222,6 +223,7 @@ export function renderAttendanceTab(root) {
   const nowEntryBtn = root.querySelector('[data-now-entry]');
   const nowExitBtn = root.querySelector('[data-now-exit]');
   const tardI = root.querySelector('[data-tardiness]');
+  const earlyI = root.querySelector('[data-early]');
   const extraI = root.querySelector('[data-extra]');
   const manualI = root.querySelector('[data-manual]');
   const typeI = root.querySelector('[data-type]');
@@ -444,12 +446,17 @@ export function renderAttendanceTab(root) {
         exit: exitI.value,
         manual: true,
         tardinessMinutes: tardI.value,
+        earlyMinutes: earlyI.value,
         extraMinutes: extraI.value,
       },
       s,
       salaryOf(emp)
     );
-    extraPayHint.textContent = c.overtimePay > 0 ? `Pago estimado de extras: ${money(c.overtimePay)}` : '';
+    const avisos = [];
+    if (c.overtimePay > 0) avisos.push(`Pago estimado de extras: ${money(c.overtimePay)}`);
+    const descuento = round2(c.tardinessDiscount + c.earlyDiscount);
+    if (descuento > 0) avisos.push(`Descuento estimado: ${money(descuento)}`);
+    extraPayHint.textContent = avisos.join(' · ');
   }
 
   function recalcFromTimes() {
@@ -462,6 +469,7 @@ export function renderAttendanceTab(root) {
       salaryOf(emp)
     );
     tardI.value = c.tardinessMinutes;
+    earlyI.value = c.earlyMinutes;
     extraI.value = c.extraMinutes;
     updateExtraPay();
   }
@@ -471,10 +479,12 @@ export function renderAttendanceTab(root) {
     const manual = isNormal && manualI.checked;
     manualI.disabled = !isNormal;
     tardI.readOnly = !manual;
+    earlyI.readOnly = !manual;
     extraI.readOnly = !manual;
     if (!isNormal) {
       manualI.checked = false;
       tardI.value = 0;
+      earlyI.value = 0;
       extraI.value = 0;
       extraPayHint.textContent = '';
       return;
@@ -496,7 +506,7 @@ export function renderAttendanceTab(root) {
       exitI.value = '';
     }
     typeHint.textContent = isNormal
-      ? 'Marca la entrada y salida reales; el sistema calcula la tardanza y las horas extras.'
+      ? 'Marca la entrada y salida reales; el sistema calcula tardanza, salida anticipada y horas extras.'
       : 'Este tipo no requiere entrada/salida: se registra como novedad (falta, descanso, vacaciones o licencia).';
     updateManualState();
   }
@@ -504,12 +514,13 @@ export function renderAttendanceTab(root) {
   function render() {
     const recs = attendanceService.list().filter((r) => dateInMonth(r.date, year, month));
     if (recs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><span class="empty-state__icon">${ICONS.clock}</span><div class="empty-state__title">Sin registros</div><div class="empty-state__desc">Registra la asistencia del período seleccionado.</div></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><span class="empty-state__icon">${ICONS.clock}</span><div class="empty-state__title">Sin registros</div><div class="empty-state__desc">Registra la asistencia del período seleccionado.</div></div></td></tr>`;
       summary.textContent = '';
       return;
     }
 
     let tMin = 0;
+    let aMin = 0;
     let eMin = 0;
     let otPay = 0;
     let discount = 0;
@@ -521,11 +532,12 @@ export function renderAttendanceTab(root) {
         const c = attendanceService.computeRecord(r, undefined, sal);
         const isAbsence = ABSENCE_TYPES.includes(r.type);
         const dayDisc = isAbsence && !r.withPay ? attendanceService.descuentoPorDia(sal) : 0;
-        const total = round2(c.tardinessDiscount + dayDisc);
+        const total = round2(c.tardinessDiscount + c.earlyDiscount + dayDisc);
         const sinHorario = c.reason === 'sin_horario' && r.type === 'normal' && (r.entry || r.exit);
         const manualChip = r.manual ? ' <span class="chip chip--gold">manual</span>' : '';
         const specialChip = c.reason === 'dia_especial' ? ' <span class="chip chip--gold">día especial</span>' : '';
         tMin += c.tardinessMinutes;
+        aMin += c.earlyMinutes;
         eMin += c.extraMinutes;
         otPay = round2(otPay + c.overtimePay);
         discount = round2(discount + total);
@@ -536,6 +548,7 @@ export function renderAttendanceTab(root) {
             <td>${r.type === 'normal' ? escapeHtml(r.entry) || '—' : '—'}</td>
             <td>${r.type === 'normal' ? escapeHtml(r.exit) || '—' : '—'}</td>
             <td class="cell-num"${sinHorario ? ' title="Sin horario configurado para esta fecha"' : ''}>${c.tardinessMinutes}${sinHorario ? ' ⚠' : ''}</td>
+            <td class="cell-num">${c.earlyMinutes}</td>
             <td class="cell-num">${c.extraMinutes}</td>
             <td class="cell-num">${money(c.overtimePay)}</td>
             <td>${escapeHtml(typeLabel(r.type))}${manualChip}${specialChip}</td>
@@ -546,7 +559,7 @@ export function renderAttendanceTab(root) {
       })
       .join('');
 
-    summary.textContent = `Tardanzas: ${tMin} min · Horas extras: ${formatDuration(eMin)} (${money(otPay)}) · Descuento total del período: ${money(discount)}`;
+    summary.textContent = `Tardanzas: ${tMin} min · Salida anticipada: ${aMin} min · Horas extras: ${formatDuration(eMin)} (${money(otPay)}) · Descuento total del período: ${money(discount)}`;
   }
 
   function openCreate() {
@@ -558,6 +571,7 @@ export function renderAttendanceTab(root) {
     entryI.value = '';
     exitI.value = '';
     tardI.value = 0;
+    earlyI.value = 0;
     extraI.value = 0;
     typeI.value = 'normal';
     withpayI.checked = true;
@@ -578,6 +592,7 @@ export function renderAttendanceTab(root) {
     entryI.value = r.entry || '';
     exitI.value = r.exit || '';
     tardI.value = r.tardinessMinutes;
+    earlyI.value = r.earlyMinutes || 0;
     extraI.value = r.extraMinutes;
     typeI.value = r.type;
     withpayI.checked = r.withPay !== false;
@@ -635,6 +650,7 @@ export function renderAttendanceTab(root) {
     else updateExtraPay();
   });
   tardI.addEventListener('input', updateExtraPay);
+  earlyI.addEventListener('input', updateExtraPay);
   extraI.addEventListener('input', updateExtraPay);
   nowEntryBtn.addEventListener('click', () => {
     entryI.value = nowTime();
@@ -671,6 +687,7 @@ export function renderAttendanceTab(root) {
       entry: typeI.value === 'normal' ? entryI.value : '',
       exit: typeI.value === 'normal' ? exitI.value : '',
       tardinessMinutes: tardI.value,
+      earlyMinutes: earlyI.value,
       extraMinutes: extraI.value,
       type: typeI.value,
       withPay: withpayI.checked,

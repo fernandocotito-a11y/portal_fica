@@ -336,6 +336,21 @@ begin
   end if;
 end $$;
 
+-- Minutos anticipados (salida antes del horario). Se agrega aparte para no
+-- alterar registros históricos: los existentes quedan en 0.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public'
+       and table_name = 'payroll_attendance'
+       and column_name = 'early_minutes'
+  ) then
+    alter table public.payroll_attendance
+      add column early_minutes int not null default 0 check (early_minutes >= 0);
+  end if;
+end $$;
+
 create table if not exists public.payroll_work_schedules (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
