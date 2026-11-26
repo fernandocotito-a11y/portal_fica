@@ -21,6 +21,28 @@ const TOKEN_URL = (clientId: string) =>
 const SIRE_BASE = "https://api-sire.sunat.gob.pe/v1/contribuyente/migeigv/libros";
 const SCOPE = "https://api-sire.sunat.gob.pe";
 
+// SUNAT limita las peticiones (429) y a veces responde 5xx de forma transitoria.
+// Reintentamos un par de veces con espera corta antes de devolver el error.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [1000, 2500];
+
+async function fetchWithRetry(url: string | URL, init: RequestInit): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      const res = await fetch(url, init);
+      if (!RETRYABLE_STATUS.has(res.status) || attempt === RETRY_DELAYS_MS.length) return res;
+      // Libera el cuerpo antes de reintentar para no dejar la conexión abierta.
+      await res.arrayBuffer().catch(() => undefined);
+    } catch (e) {
+      lastError = e;
+      if (attempt === RETRY_DELAYS_MS.length) throw e;
+    }
+    await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[Math.min(attempt, RETRY_DELAYS_MS.length - 1)]));
+  }
+  throw lastError ?? new Error("No se pudo conectar con SUNAT.");
+}
+
 interface Credentials {
   client_id: string;
   client_secret: string;
@@ -46,7 +68,7 @@ function propuestaUrl(kind: string, period: string): string {
 
 /** Obtiene el token OAuth2 de SUNAT. */
 async function getToken(creds: Credentials): Promise<string> {
-  const res = await fetch(TOKEN_URL(creds.client_id), {
+  const res = await fetchWithRetry(TOKEN_URL(creds.client_id), {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -59,7 +81,13 @@ async function getToken(creds: Credentials): Promise<string> {
     }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`SUNAT token (${res.status}): ${text.slice(0, 300)}`);
+  if (!res.ok) {
+    const clean = stripHtml(text).slice(0, 300);
+    if (res.status === 429) {
+      throw new Error(`SUNAT token (429): demasiadas solicitudes. Espera 30–60 s y vuelve a intentar. ${clean}`);
+    }
+    throw new Error(`SUNAT token (${res.status}): ${clean}`);
+  }
   let data: any;
   try { data = JSON.parse(text); } catch { data = {}; }
   const token = data.access_token || data.token || data.id_token;
@@ -68,7 +96,7 @@ async function getToken(creds: Credentials): Promise<string> {
 }
 
 async function sunatJson(url: string, token: string, method = "GET"): Promise<any> {
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
@@ -79,7 +107,11 @@ async function sunatJson(url: string, token: string, method = "GET"): Promise<an
   let data: any;
   try { data = text ? JSON.parse(text) : {}; } catch { data = { _raw: text }; }
   if (!res.ok) {
-    const msg = data.msg || data.message || data.mensaje || data.error || text.slice(0, 300);
+    if (res.status === 429) {
+      throw new Error("SUNAT (429): demasiadas solicitudes. Espera 30–60 s y vuelve a pulsar Actualizar; lo ya importado no se duplica.");
+    }
+    const clean = stripHtml(text).slice(0, 300);
+    const msg = data.msg || data.message || data.mensaje || data.error || clean;
     const detail = Array.isArray(data.errors)
       ? ` · ${data.errors.map((e: any) => e?.msg || e).join("; ")}`
       : "";
@@ -158,7 +190,7 @@ async function descargarPropuesta(creds: Credentials, kind: string, period: stri
   downloadUrl.searchParams.set("codProceso", String(codProceso));
   downloadUrl.searchParams.set("numTicket", String(numTicket));
 
-  const res = await fetch(downloadUrl, {
+  const res = await fetchWithRetry(downloadUrl, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -166,8 +198,11 @@ async function descargarPropuesta(creds: Credentials, kind: string, period: stri
     },
   });
   if (!res.ok) {
-    const t = await res.text();
-    throw new Error(`SUNAT descarga (${res.status}): ${t.slice(0, 300)}`);
+    const t = stripHtml(await res.text()).slice(0, 300);
+    if (res.status === 429) {
+      throw new Error("SUNAT descarga (429): demasiadas solicitudes. Espera 30–60 s y vuelve a pulsar Actualizar; lo ya importado no se duplica.");
+    }
+    throw new Error(`SUNAT descarga (${res.status}): ${t}`);
   }
   const bytes = new Uint8Array(await res.arrayBuffer());
   if (!bytes.length) throw new Error("SUNAT devolvió un archivo vacío.");

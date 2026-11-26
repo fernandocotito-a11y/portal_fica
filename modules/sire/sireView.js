@@ -23,6 +23,23 @@ function yearOptions() {
   return years;
 }
 
+function formatElapsed(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** Convierte los errores de SUNAT en una recomendación concreta para el usuario. */
+function syncAdvice(message = '') {
+  const m = String(message).toLowerCase();
+  if (m.includes('(429)') || m.includes('too many')) {
+    return 'SUNAT está limitando solicitudes (429). Espera 30–60 s y vuelve a pulsar “Actualizar desde SUNAT”. Los comprobantes ya importados no se duplican.';
+  }
+  if (m.includes('(422)') || m.includes('validacion') || m.includes('no terminó') || m.includes('no devolvió')) {
+    return 'SUNAT tardó más de lo normal en generar el archivo. Vuelve a intentar en 1–2 min; si persiste, importa el ZIP/CSV manual desde Compras o Ventas.';
+  }
+  return 'Vuelve a intentar en unos segundos. Si el error continúa, usa la importación manual de ZIP/CSV como respaldo.';
+}
+
 export function render(root) {
   const company = authService.activeCompany() || {};
   const isSuper = authService.isSuperAdmin();
@@ -38,9 +55,12 @@ export function render(root) {
     saving: false,
     testing: false,
     testResult: null,
+    startedAt: null,
+    syncError: null,
     // Conserva lo escrito en el formulario entre re-renderizados (memoria del navegador).
     form: { clientId: '', clientSecret: '', ruc: '', solUser: '', password: '' },
   };
+  let ticker = null;
 
   root.innerHTML = `
     <div data-sire-root>
@@ -77,8 +97,31 @@ export function render(root) {
     const p = String(state.period || CURRENT_PERIOD);
     const periodYear = Number(p.slice(0, 4)) || CURRENT_YEAR;
     const periodMonth = Number(p.slice(4, 6)) || 1;
-    const statusMsg = state.status
+    const statusMsg = !state.busy && state.status
       ? `<div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-3);">${escapeHtml(state.status)}</div>`
+      : '';
+    const elapsed = state.startedAt ? formatElapsed(Math.floor((Date.now() - state.startedAt) / 1000)) : '00:00';
+    const busyBox = state.busy
+      ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-3);"><div class="card__body" style="display:flex;gap:var(--space-3);align-items:flex-start;">
+          <span style="flex:0 0 auto;color:var(--color-gold);">${ICONS.clock}</span>
+          <div style="flex:1;">
+            <strong data-sync-status>${escapeHtml(state.status || 'Esperando a SUNAT…')}</strong>
+            <div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-2);">
+              Tiempo de espera: <strong data-elapsed>${elapsed}</strong>. SUNAT suele tardar 30–90 s en generar la propuesta.
+            </div>
+            <div class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-2);">
+              No cierres esta ventana. Si aparece un error 429 o de validación, espera 30–60 s y vuelve a pulsar: lo ya importado no se duplica.
+            </div>
+          </div>
+        </div></div>`
+      : '';
+    const errorBox = state.syncError
+      ? `<div class="card" style="border-color:#c62828;margin-top:var(--space-3);"><div class="card__body">
+          <strong>⚠ No se pudo completar la descarga</strong>
+          <div style="font-size:var(--font-size-sm);margin-top:var(--space-2);">${escapeHtml(state.syncError.message)}</div>
+          <div class="text-muted" style="font-size:var(--font-size-sm);margin-top:var(--space-2);">${escapeHtml(state.syncError.advice)}</div>
+          <button type="button" class="btn" style="margin-top:var(--space-3);" data-sync-retry>Reintentar</button>
+        </div></div>`
       : '';
     const result = state.result
       ? `<div class="card" style="border-color:var(--color-gold);margin-top:var(--space-4);"><div class="card__body">
@@ -127,6 +170,8 @@ export function render(root) {
             </div>
             <button type="button" class="btn btn--primary" data-sync ${state.busy || configured === false ? 'disabled' : ''}>${ICONS.arrowRight} Actualizar desde SUNAT</button>
           </div>
+          ${busyBox}
+          ${errorBox}
           ${statusMsg}
           ${result}
           <p class="text-muted" style="font-size:var(--font-size-xs);margin-top:var(--space-3);">
@@ -219,7 +264,7 @@ export function render(root) {
       return;
     }
 
-    if (e.target.closest('[data-sync]')) {
+    if (e.target.closest('[data-sync]') || e.target.closest('[data-sync-retry]')) {
       sync();
       return;
     }
@@ -336,10 +381,19 @@ export function render(root) {
   }
 
   async function sync() {
+    if (state.busy) return;
     state.busy = true;
-    state.status = `Conectando con SUNAT para descargar ${state.kind === 'venta' ? 'ventas' : 'compras'} de ${periodLabel(state.period)}…`;
+    state.syncError = null;
     state.result = null;
+    state.startedAt = Date.now();
+    state.status = `Conectando con SUNAT para descargar ${state.kind === 'venta' ? 'ventas' : 'compras'} de ${periodLabel(state.period)}…`;
     renderContent();
+    ticker = setInterval(() => {
+      if (!state.busy) return;
+      const seconds = Math.floor((Date.now() - (state.startedAt || Date.now())) / 1000);
+      const el = content.querySelector('[data-elapsed]');
+      if (el) el.textContent = formatElapsed(seconds);
+    }, 1000);
     try {
       const result = await sireService.sincronizar(state.kind, state.period, (msg) => {
         state.status = msg || state.status;
@@ -350,9 +404,13 @@ export function render(root) {
       state.result = result;
       showToast(`Listo: ${result.imported} nuevo(s), ${result.updated || 0} actualizado(s), ${result.skipped} sin cambios / omitido(s).`);
     } catch (err) {
+      const message = err.message || String(err);
       state.status = '';
-      showToast(err.message || String(err), 'error');
+      state.syncError = { message, advice: syncAdvice(message) };
+      showToast(message, 'error');
     } finally {
+      clearInterval(ticker);
+      ticker = null;
       state.busy = false;
       renderContent();
     }
