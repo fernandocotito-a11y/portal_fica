@@ -95,7 +95,7 @@ export function renderAttendanceTab(root) {
               <div style="display:flex;gap:var(--space-1);"><input class="form-input" type="time" data-exit /><button type="button" class="btn btn--sm btn--ghost" data-now-exit>Ahora</button></div>
             </div>
           </div>
-          <div class="form-hint" data-schedule-hint style="margin-top:calc(var(--space-2) * -1);margin-bottom:var(--space-3);"></div>
+          <div class="form-hint" data-schedule-hint style="margin-top:var(--space-3);margin-bottom:var(--space-4);padding:var(--space-2) var(--space-3);background:var(--color-cream);border:1px solid var(--color-border);border-radius:var(--radius-sm);line-height:1.5;"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
             <div class="form-group" style="margin:0;"><label class="form-label">Minutos de tardanza</label><input class="form-input" type="number" min="0" data-tardiness value="0" /></div>
             <div class="form-group" style="margin:0;"><label class="form-label">Minutos extra</label><input class="form-input" type="number" min="0" data-extra value="0" /><div class="form-hint" data-extra-pay></div></div>
