@@ -103,7 +103,7 @@ function renderPlanillaTab(root) {
               <tr>
                 <th>Código</th><th>Doc.</th><th>Apellidos y nombres</th><th>Inicio</th><th>Cargo</th>
                 <th>Días</th><th>Básico</th><th>Asig. fam.</th><th>Vacac.</th><th>Bonif.</th><th>H. extras</th><th>Total bruto</th>
-                <th>ONP</th><th>AFP pensión</th><th>AFP seguro</th><th>AFP comisión</th><th>Renta 5ta</th><th>Tard./Faltas</th><th>Prést./Adel.</th><th>Total ret.</th>
+                <th>ONP</th><th>AFP PENSION</th><th>AFP SEGURO</th><th>AFP COMISION</th><th>Renta 5ta</th><th>Tard./Faltas</th><th>Prést./Adel.</th><th>Total ret.</th>
                 <th>Essalud 9%</th><th>Vida Ley</th><th>Total aport.</th>
                 <th>Neto a pagar</th><th>Gratificación</th><th>Neto total a pagar</th><th></th>
               </tr>
