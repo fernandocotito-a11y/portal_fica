@@ -12,7 +12,7 @@ import { payrollService, calcRow } from './payrollService.js';
 import { getBaseSalary } from './salaryHistoryService.js';
 import { taxService } from './taxService.js';
 import { paramsService } from './paramsService.js';
-import { MESES, TASAS, getRmv } from './payrollConfig.js';
+import { MESES, getRmv } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';
 import { ICONS, escapeHtml } from '../../js/utils.js';
 
@@ -106,20 +106,14 @@ export function renderRentaSimTab(root) {
     const det = sel.detalle;
     const tramos = taxService.detalleImpuestoAnual(det.rni, det.uit);
 
-    // Composición de la renta bruta anual (por concepto)
-    let salario = 0;
-    let vac = 0;
-    let bonif = 0;
-    let extra = 0;
-    for (const r of schedule) {
-      salario = round2(salario + r.basico + r.asigFamiliar);
-      vac = round2(vac + r.vacaciones);
-      bonif = round2(bonif + r.bonifAfectas);
-      extra = round2(extra + r.overtime);
-    }
-    const gratificaciones = round2(schedule[0].gratificacion * 2); // julio + diciembre
-    const bonifExtra = round2(gratificaciones * TASAS.essalud);
-    const totalRentaBruta = round2(salario + vac + bonif + extra + gratificaciones + bonifExtra);
+    // Composición de la renta bruta anual: la toma del MISMO detalle del motor.
+    // Antes se usaba `schedule[0].gratificacion * 2` (siempre enero), por lo
+    // que con aumentos/cambios de sueldo el simulador mostraba otra cifra que
+    // la planilla aunque la retención sí coincidiera.
+    const gratificaciones = round2(det.gratificacionesProyectadas);
+    const bonifExtra = round2(det.bonifExtraordinaria);
+    const remuneraciones = round2(det.rentaBruta - gratificaciones - bonifExtra);
+    const totalRentaBruta = round2(det.rentaBruta);
 
     const fuente = manual
       ? `Sueldo manual: ${money(sueldo)}${asig ? ' · con asignación familiar' : ''}`
@@ -141,7 +135,15 @@ export function renderRentaSimTab(root) {
       </tr>`).join('');
 
     const coincide = Math.abs(det.retencionMes - sel.renta5ta) < 0.01;
-    const cuadraAnio = Math.abs(totalRetenido - det.impuestoAnualProyectado) < 0.01;
+    // Con sueldos que bajan, la retención se corta en 0 y puede quedar un
+    // exceso retenido: eso NO es un error, SUNAT lo regulariza al declarar.
+    const difAnio = round2(totalRetenido - det.impuestoAnualProyectado);
+    const cuadraAnio = Math.abs(difAnio) < 0.01;
+    const notaAnio = cuadraAnio
+      ? '✅ Cuadra exacto.'
+      : difAnio > 0
+        ? `⚠ Se retuvo ${money(difAnio)} de más; la planilla no devuelve ese exceso (se regulariza ante SUNAT).`
+        : `⚠ Faltan ${money(-difAnio)} por retener; los meses siguientes regularizan.`;
 
     results.innerHTML = `
       <div class="card" style="margin-top:var(--space-4);">
@@ -150,17 +152,14 @@ export function renderRentaSimTab(root) {
             <h3 class="card__title">Resumen ${MESES[month - 1]} ${year}</h3>
             <p class="card__subtitle" style="margin:0;">${fuente}</p>
           </div>
-          <span class="badge badge--gold">UIT ${money(det.uit)} · RMV ${money(getRmv(year))}</span>
+          <span class="badge badge--gold">UIT ${money(det.uit)} · RMV ${money(getRmv(year, month))}</span>
         </div>
         <div class="card__body">
           <div class="table-wrap"><table class="table">
             <thead><tr><th>Composición de la renta bruta anual</th><th style="text-align:right;">Monto (S/)</th></tr></thead>
             <tbody>
-              <tr><td>Salario anual (básico + asignación familiar)</td><td class="cell-num">${money(salario)}</td></tr>
-              ${vac > 0 ? `<tr><td>Vacaciones</td><td class="cell-num">${money(vac)}</td></tr>` : ''}
-              ${bonif > 0 ? `<tr><td>Bonificaciones regulares</td><td class="cell-num">${money(bonif)}</td></tr>` : ''}
-              ${extra > 0 ? `<tr><td>Horas extras</td><td class="cell-num">${money(extra)}</td></tr>` : ''}
-              <tr><td>Gratificaciones (julio + diciembre)</td><td class="cell-num">${money(gratificaciones)}</td></tr>
+              <tr><td>Remuneraciones acumuladas + proyección de sueldos</td><td class="cell-num">${money(remuneraciones)}</td></tr>
+              <tr><td>Gratificaciones proyectadas (julio + diciembre)</td><td class="cell-num">${money(gratificaciones)}</td></tr>
               <tr><td>Bonificación extraordinaria (9%)</td><td class="cell-num">${money(bonifExtra)}</td></tr>
             </tbody>
             <tfoot><tr><td>Renta bruta anual proyectada</td><td class="cell-num cell-strong">${money(totalRentaBruta)}</td></tr></tfoot>
@@ -197,7 +196,7 @@ export function renderRentaSimTab(root) {
             <tbody>${filasMeses}</tbody>
             <tfoot><tr><td>Total retenido en el año</td><td></td><td class="cell-num cell-strong">${money(totalRetenido)}</td></tr></tfoot>
           </table></div>
-          <p class="form-hint" style="margin-top:var(--space-3);">El total del año (${money(totalRetenido)}) debe ser igual al impuesto anual (${money(det.impuestoAnualProyectado)}). ${cuadraAnio ? '✅ Cuadra exacto.' : '⚠ Revisar.'}</p>
+          <p class="form-hint" style="margin-top:var(--space-3);">Total retenido: ${money(totalRetenido)} · Impuesto anual proyectado: ${money(det.impuestoAnualProyectado)}. ${notaAnio}</p>
         </div>
       </div>
     `;

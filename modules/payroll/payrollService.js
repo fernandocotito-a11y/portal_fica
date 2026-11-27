@@ -16,6 +16,7 @@ import { vacationService } from './vacationService.js';
 import { bonusService } from './bonusService.js';
 import { paymentService } from './paymentService.js';
 import { gratificacionService } from './gratificacionService.js';
+import { benefitsService } from './benefitsService.js';
 import { loanService } from './loanService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission, laborRules } from './payrollConfig.js';
 import { setPeriodClosedChecker, assertDateRangeOpen } from './periodLock.js';
@@ -283,15 +284,16 @@ export function deriveMonthInputs(emp, year, month) {
   const bAfectas = bonusService.sumRegular(emp.id, year, month);
   const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
   const gratif = gratificacionService.sumFor(emp.id, year, month);
-  const basico = round2(sueldoMes * (days / 30));
-  const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year, month) * TASAS.asignacionFamiliar) : 0;
+  // Base de gratificación del semestre (promedio de los 6 meses), no el sueldo
+  // del mes: si hubo aumento, julio/diciembre deben proyectarse con el promedio.
+  const gratComputable = round2(benefitsService.gratificacionBase(emp, year, month <= 6 ? 'julio' : 'diciembre'));
   return {
     days,
     vacation,
     bonuses: round2(bAfectas + bExtra),
     bonusesAfectas: bAfectas,
     gratificacionPagada: gratif, // gratificación registrada (campo aparte, suma al neto)
-    gratificacion: round2(basico + asigFamiliar + vacation), // remuneración computable (julio/diciembre; incluye vacaciones)
+    gratificacion: gratComputable, // remuneración computable usada por Renta 5ta
     // Tardanzas + salidas anticipadas se descuentan con la misma tarifa/minuto.
     tardanzas: round2(att.tardinessDiscount + att.earlyDiscount),
     overtime: att.overtimePay,
