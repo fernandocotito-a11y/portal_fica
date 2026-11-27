@@ -463,7 +463,7 @@ export function render(root) {
     const t = state.data.totals;
     const last = state.data.timeline.months[state.data.timeline.months.length - 1] || {};
     return `
-      <div class="stats">
+      <div class="stats stats--six">
         <div class="stat-card"><span class="stat-card__icon">${ICONS.briefcase}</span><div><div class="stat-card__value">${fmt(t.igvVentas)}</div><div class="stat-card__label">IGV ventas ${state.year}</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.building}</span><div><div class="stat-card__value">${fmt(t.igvCompras)}</div><div class="stat-card__label">IGV compras ${state.year}</div></div></div>
         <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${fmt(t.igvPorPagar)}</div><div class="stat-card__label">IGV a pagar ${state.year}</div></div></div>

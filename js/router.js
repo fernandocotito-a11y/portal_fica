@@ -104,7 +104,7 @@ const routes = [
     guard: 'auth',
     company: true,
     permission: 'declaraciones',
-    loader: () => import('../modules/declaraciones/declaracionesView.js'),
+    loader: () => import('../modules/declaraciones/declaracionesView.js?v=decl-stats'),
   },
   {
     pattern: /^\/reportes\/?$/,
