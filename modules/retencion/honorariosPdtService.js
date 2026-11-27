@@ -20,9 +20,10 @@ function isoToDdMmYyyy(value) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 }
 
-/** Importe del PDT 601: entero en centavos, sin separador decimal (macrovalidado). */
-function pdtAmount(value) {
-  return String(Math.round(round2(Number(value) || 0) * 100));
+/** Importe del PDT 601: valor numérico normal (sin convertir a centavos). */
+function formatPdtAmount(value) {
+  const n = round2(Number(value) || 0);
+  return Number.isInteger(n) ? String(Math.round(n)) : n.toFixed(2);
 }
 
 function penOf(row, field) {
@@ -88,7 +89,7 @@ export function build4ta(rows) {
       pdtDocType(row.tipo_doc_emitido),
       row.serie || '',
       row.numero || '',
-      pdtAmount(penOf(row, 'renta_bruta')),
+      formatPdtAmount(penOf(row, 'renta_bruta')),
       isoToDdMmYyyy(row.fecha_pago || row.fecha_emision),
       isoToDdMmYyyy(row.fecha_emision),
       Number(row.indicador_retencion) > 0 ? '1' : '0',
