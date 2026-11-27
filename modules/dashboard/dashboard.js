@@ -18,6 +18,37 @@ function badgeClass(status) {
   return 'badge--soon';
 }
 
+/**
+ * Recordatorio de RHE: solo se muestra si el usuario tiene permiso de
+ * retenciones y no importó recibos del mes en curso. Nunca rompe el dashboard.
+ */
+async function renderRheReminder(container) {
+  const slot = container.querySelector('[data-rhe-reminder]');
+  if (!slot) return;
+  try {
+    const { honorariosService } = await import('../retencion/honorariosService.js?v=rhe1');
+    await honorariosService.refresh();
+    const now = new Date();
+    const year = String(now.getFullYear());
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const rows = honorariosService.list({ year, month, includeAnulados: true });
+    if (rows.length || !container.isConnected) { slot.innerHTML = ''; return; }
+    slot.innerHTML = `
+      <div class="card" style="border-color:var(--color-gold);margin-bottom:var(--space-4);">
+        <div class="card__body" style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;">
+          <span style="color:var(--color-gold);flex-shrink:0;">${ICONS.info}</span>
+          <div style="flex:1;min-width:220px;">
+            <strong>Descarga el TXT de Recibos por Honorarios de SUNAT</strong>
+            <div class="text-muted" style="font-size:var(--font-size-sm);">Necesitas el archivo de Consulta Receptor del mes para el PDT 601 y el asiento.</div>
+          </div>
+          <a class="btn" href="#/retencion">Ir a Retenciones ${ICONS.arrowRight}</a>
+        </div>
+      </div>`;
+  } catch {
+    slot.innerHTML = '';
+  }
+}
+
 export default {
   title: 'Panel Principal',
 
@@ -88,9 +119,12 @@ export default {
       </div>
 
       <div class="stats">${statsHtml}</div>
+      ${authService.can('retenciones') ? '<div data-rhe-reminder></div>' : ''}
 
       <h3 style="font-size: var(--font-size-lg); color: var(--color-primary); margin-bottom: var(--space-4);">Módulos del portal</h3>
       <div class="module-grid">${cardsHtml}</div>
     `;
+
+    if (authService.can('retenciones')) renderRheReminder(container);
   },
 };

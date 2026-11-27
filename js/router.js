@@ -83,7 +83,7 @@ const routes = [
     guard: 'auth',
     company: true,
     permission: 'retenciones',
-    loader: () => import('../modules/retencion/retencionView.js'),
+    loader: () => import('../modules/retencion/retencionView.js?v=rhe1'),
   },
   {
     pattern: /^\/sire\/?$/,
