@@ -169,7 +169,11 @@ export function renderVacationTab(root) {
     const max = emp && emp.cese ? emp.cese : '';
     fromI.min = min;
     fromI.max = max;
-    toI.min = fromI.value && fromI.value > min ? fromI.value : min;
+    // No recalcular `toI.min` mientras se escribe "Desde": en algunos
+    // navegadores el date input dispara change al completar el año y eso
+    // hacía que el campo "Hasta" se moviera/perdiera lo digitado.
+    // La regla desde <= hasta se valida al registrar (buildData).
+    toI.min = min;
     toI.max = max;
   }
 
