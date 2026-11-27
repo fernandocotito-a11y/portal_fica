@@ -10,7 +10,7 @@
 import { honorariosService } from './honorariosService.js';
 import { parseHonorariosTxt } from './honorariosParser.js';
 import { buildAsiento, downloadPdtZip, downloadPdtSingle, downloadAsiento } from './honorariosPdtService.js';
-import { periodLabel, periodToInput, inputToPeriod } from '../compras/comprasConfig.js';
+import { periodLabel, periodToInput, inputToPeriod, MONTHS } from '../compras/comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
 
@@ -46,6 +46,30 @@ function blankRheForm() {
     pagado: false,
     fecha_pago: '',
   };
+}
+
+/** Año numérico + Mes con nombres, sin el auto-relleno de input[type=month]. */
+function rhePeriodControls(period, label) {
+  const p = String(period || '').replace(/\D/g, '').slice(0, 6).padEnd(6, '0');
+  const yyyy = p.slice(0, 4);
+  const mm = p.slice(4, 6);
+  return `
+    <div class="form-group" style="margin:0;min-width:250px;">
+      <label class="form-label">${escapeHtml(label)}</label>
+      <div style="display:flex;gap:var(--space-2);">
+        <div style="width:100px;">
+          <label class="form-label" style="font-size:var(--font-size-xs);">Año</label>
+          <input type="number" class="form-input" data-rhe-period-year min="2020" max="2100" value="${escapeHtml(yyyy)}" />
+        </div>
+        <div style="flex:1;">
+          <label class="form-label" style="font-size:var(--font-size-xs);">Mes</label>
+          <select class="form-input" data-rhe-period-month>${MONTHS.map((name, i) => {
+            const value = String(i + 1).padStart(2, '0');
+            return `<option value="${value}"${value === mm ? ' selected' : ''}>${escapeHtml(name)}</option>`;
+          }).join('')}</select>
+        </div>
+      </div>
+    </div>`;
 }
 
 function rheExcludedText(ex = {}) {
@@ -211,10 +235,7 @@ export function render(root) {
         </div>
         <div class="card__body">
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4);">
-            <div class="form-group" style="margin:0;min-width:170px;">
-              <label class="form-label">${state.rheDateField === 'pago' ? 'Mes de pago' : 'Mes de emisión'}</label>
-              <input type="month" class="form-input" data-rhe-period value="${escapeHtml(periodToInput(state.rhePeriod))}" />
-            </div>
+            ${rhePeriodControls(state.rhePeriod, state.rheDateField === 'pago' ? 'Mes de pago' : 'Mes de emisión')}
             <div class="form-group" style="margin:0;min-width:150px;">
               <label class="form-label">Filtrar por</label>
               <select class="form-input" data-rhe-date-field>
@@ -297,7 +318,7 @@ export function render(root) {
               <thead><tr>
                 <th>Fecha emisión</th><th>Emisor</th><th>Comprobante</th><th>Descripción</th>
                 <th style="text-align:right;">Renta bruta</th><th style="text-align:right;">IR</th><th style="text-align:right;">Renta neta</th>
-                <th>Fecha pago</th><th>Pago</th><th>Cuenta de gasto</th><th>Estado</th><th>Acciones</th>
+                <th>Fecha de pago</th><th>Cuenta de gasto</th><th>Estado</th><th>Acciones</th>
               </tr></thead>
               <tbody>${rows.length ? rows.map((r) => `<tr>
                 <td style="white-space:nowrap;">${escapeHtml(displayDate(r.fecha_emision))}</td>
@@ -307,12 +328,19 @@ export function render(root) {
                 <td class="cell-num">${num(rhePen(r, 'renta_bruta'))}</td>
                 <td class="cell-num">${num(rhePen(r, 'impuesto_renta'))}</td>
                 <td class="cell-num cell-strong">${num(rhePen(r, 'renta_neta'))}</td>
-                <td style="white-space:nowrap;">${escapeHtml(displayDate(r.fecha_pago))}<input type="date" class="form-input" data-rhe-pago-fecha="${escapeHtml(r.id)}" value="${escapeHtml(r.fecha_pago || '')}" style="min-width:140px;margin-top:var(--space-1);" /></td>
-                <td><span class="badge ${r.pagado ? 'badge--active' : 'badge--gold'}">${r.pagado ? 'PAGADO' : 'PENDIENTE'}</span><label style="display:flex;gap:var(--space-2);align-items:center;margin-top:var(--space-1);font-size:var(--font-size-xs);"><input type="checkbox" data-rhe-pagado="${escapeHtml(r.id)}"${r.pagado ? ' checked' : ''} /> Marcar pagado</label></td>
+                <td style="white-space:nowrap;min-width:200px;">
+                  <div style="display:flex;align-items:center;gap:var(--space-2);margin-bottom:6px;">
+                    <span class="badge ${r.pagado ? 'badge--active' : 'badge--gold'}">${r.pagado ? 'PAGADO' : 'PENDIENTE'}</span>
+                    <label style="display:flex;align-items:center;gap:4px;font-size:var(--font-size-xs);color:var(--color-text-muted);">
+                      <input type="checkbox" data-rhe-pagado="${escapeHtml(r.id)}"${r.pagado ? ' checked' : ''} /> Marcar pagado
+                    </label>
+                  </div>
+                  <input type="date" class="form-input" data-rhe-pago-fecha="${escapeHtml(r.id)}" value="${escapeHtml(r.fecha_pago || '')}" style="width:100%;min-width:170px;" />
+                </td>
                 <td><select class="form-input" data-rhe-cuenta="${escapeHtml(r.id)}" style="min-width:200px;">${rheAccountOptions(r.cuenta_gasto)}</select></td>
                 <td><span class="badge ${r.anulado ? 'badge--gold' : 'badge--active'}">${r.anulado ? 'ANULADO' : 'VIGENTE'}</span></td>
                 <td><button type="button" class="btn btn--ghost btn--sm" data-rhe-delete="${escapeHtml(r.id)}">Eliminar</button></td>
-              </tr>`).join('') : `<tr><td colspan="12"><div class="empty-state"><span class="empty-state__icon">${ICONS.briefcase}</span><div class="empty-state__title">Sin recibos en ${escapeHtml(periodLabel(state.rhePeriod))}</div><div class="empty-state__desc">Importa el TXT, agrega un recibo o cambia el mes / filtro.</div></div></td></tr>`}</tbody>
+              </tr>`).join('') : `<tr><td colspan="11"><div class="empty-state"><span class="empty-state__icon">${ICONS.briefcase}</span><div class="empty-state__title">Sin recibos en ${escapeHtml(periodLabel(state.rhePeriod))}</div><div class="empty-state__desc">Importa el TXT, agrega un recibo o cambia el mes / filtro.</div></div></td></tr>`}</tbody>
             </table>
           </div>
         </div>
@@ -339,10 +367,7 @@ export function render(root) {
         </div>
         <div class="card__body">
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4);">
-            <div class="form-group" style="margin:0;min-width:170px;">
-              <label class="form-label">Mes de pago</label>
-              <input type="month" class="form-input" data-rhe-asiento-period value="${escapeHtml(periodToInput(state.rhePeriod))}" />
-            </div>
+            ${rhePeriodControls(state.rhePeriod, 'Mes de pago')}
             <div class="form-group" style="margin:0;min-width:170px;">
               <label class="form-label">Cuenta retenciones</label>
               <input class="form-input" data-rhe-cuenta-retencion value="${escapeHtml(state.rheConfig.cuenta_retencion)}" />
@@ -648,8 +673,12 @@ export function render(root) {
       handleRheFiles(selected);
       return;
     }
-    if (e.target.matches('[data-rhe-period]') || e.target.matches('[data-rhe-asiento-period]')) {
-      state.rhePeriod = inputToPeriod(e.target.value) || CURRENT_PERIOD;
+    if (e.target.matches('[data-rhe-period-year],[data-rhe-period-month]')) {
+      const yearEl = content.querySelector('[data-rhe-period-year]');
+      const monthEl = content.querySelector('[data-rhe-period-month]');
+      const yyyy = String(yearEl?.value || '').replace(/\D/g, '').slice(0, 4) || String(CURRENT_PERIOD).slice(0, 4);
+      const mm = String(monthEl?.value || '').replace(/\D/g, '').slice(0, 2).padStart(2, '0') || '01';
+      state.rhePeriod = `${yyyy}${mm}`;
       refreshRhePeriod();
       return;
     }
@@ -664,7 +693,7 @@ export function render(root) {
       return;
     }
     if (e.target.matches('[data-rhe-pagado]')) {
-      const id = e.target.dataset.rhePago;
+      const id = e.target.dataset.rhePagado;
       const checked = e.target.checked;
       const row = honorariosService.all().find((r) => r.id === id);
       updateRheRow(id, {
@@ -675,7 +704,7 @@ export function render(root) {
     }
     if (e.target.matches('[data-rhe-pago-fecha]')) {
       const value = e.target.value;
-      updateRheRow(e.target.dataset.rhePagoFecha, { fecha_pago: value || null, pagado: !!value });
+      updateRheRow(e.target.getAttribute('data-rhe-pago-fecha'), { fecha_pago: value || null, pagado: !!value });
       return;
     }
     if (e.target.matches('[data-rhe-form]')) {
