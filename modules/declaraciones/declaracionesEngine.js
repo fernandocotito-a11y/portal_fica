@@ -67,6 +67,7 @@ function daysBetween(fromIso, toIso) {
  *     pagosPreviosRenta = 0,
  *     fechaVencimiento = '',                    // YYYY-MM-DD (cronograma SUNAT)
  *     fechaDeclaracion = '',                    // YYYY-MM-DD real (vacío = sin declarar)
+ *     pagado = false, fechaPago = '',           // control de pago en SUNAT
  *     tasaInteresDiaria = TIM_DIARIO,           // 0.04% por defecto
  *     interesManual = false,                    // true = usar intereses / interesesRenta
  *     intereses = 0, interesesRenta = 0,
@@ -295,6 +296,8 @@ export function calculatePeriodTaxes(periodData, previousPeriodState, config = {
     totalAPagar,
     fechaVencimiento,
     fechaDeclaracion,
+    fechaPago: String(periodData.fechaPago || ''),
+    pagado: periodData.pagado === true,
     tasaInteres,
     diasAtraso,
     interesesAuto,

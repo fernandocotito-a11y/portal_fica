@@ -281,7 +281,8 @@ function yearOptions() {
 }
 
 function statusInfo(m) {
-  if (m.estado === 'declarado') return { label: 'Declarado', cls: 'badge--active' };
+  if (m.pagado) return { label: 'Pagado', cls: 'badge--active' };
+  if (m.estado === 'declarado') return { label: 'Declarado', cls: 'badge--config' };
   if (m.fechaVencimiento && TODAY > m.fechaVencimiento) return { label: 'Vencido', cls: 'badge--gold' };
   return { label: 'Pendiente', cls: 'badge--muted' };
 }
@@ -664,7 +665,7 @@ export function render(root) {
           </div>
           <div style="display:flex;align-items:center;gap:var(--space-2);">
             <span class="badge ${st.cls}"><span class="badge__dot"></span>${st.label}</span>
-            <span class="text-muted" style="font-size:var(--font-size-sm);">Vence ${m.fechaVencimiento || '—'}${m.fechaDeclaracion ? ` · Declarado ${m.fechaDeclaracion}` : ''}</span>
+            <span class="text-muted" style="font-size:var(--font-size-sm);">Vence ${m.fechaVencimiento || '—'}${m.fechaDeclaracion ? ` · Declarado ${m.fechaDeclaracion}` : ''}${m.fechaPago ? ` · Pagado en SUNAT ${m.fechaPago}` : ''}</span>
           </div>
           <div style="margin-left:auto;display:flex;gap:var(--space-2);">
             <button type="button" class="btn" data-periodo="${m.mes}">${ICONS.edit} Control / fechas</button>
@@ -677,11 +678,12 @@ export function render(root) {
       <div class="card" style="margin-bottom:var(--space-4);">
         <div class="card__header"><div>
           <h4 class="card__title" style="font-size:var(--font-size-md);">Importar en SUNAT · FV 621</h4>
-          <p class="card__subtitle">SUNAT permite importar el detalle de las casillas 171 (percepciones) y 179 (retenciones). Descarga el TXT y súbelo en la casilla correspondiente. Las ventas, compras y renta se prellenan desde SIRE.</p>
+          <p class="card__subtitle">SUNAT solo permite importar el detalle de las casillas 171 (percepciones) y 179 (retenciones). Las demás casillas se prellenan desde SIRE y se editan manualmente. El Excel de la ficha completa es solo para revisión o copia, no se importa.</p>
         </div></div>
         <div class="card__body" style="display:flex;flex-wrap:wrap;gap:var(--space-3);align-items:center;">
           <button type="button" class="btn" data-fv621-txt="retencion" data-fv621-mes="${m.mes}" title="Archivo plano para la casilla 179 del FV 621">${ICONS.arrowRight} TXT retenciones · casilla 179</button>
           <button type="button" class="btn" data-fv621-txt="percepcion" data-fv621-mes="${m.mes}" title="Archivo plano para la casilla 171 del FV 621">${ICONS.arrowRight} TXT percepciones · casilla 171</button>
+          <button type="button" class="btn" data-fv621-xlsx data-fv621-mes="${m.mes}" title="Excel con todas las casillas del 621 para revisión o copia">${ICONS.arrowRight} Excel ficha 621</button>
           <span class="text-muted" style="font-size:var(--font-size-sm);">
             Retenciones: ${retRows.length} registro(s) · S/ ${fmt(m.retencionesMes)} ·
             Percepciones: ${perRows.length} registro(s) · S/ ${fmt(m.percepcionesMes)}
@@ -722,6 +724,7 @@ export function render(root) {
         <td class="cell-strong">${escapeHtml(MONTHS[m.mes - 1])}</td>
         <td>${m.fechaVencimiento || '—'}</td>
         <td>${m.fechaDeclaracion || '—'}</td>
+        <td>${m.fechaPago || '—'}</td>
         <td class="cell-num ${m.diasAtraso > 0 ? 'text-danger' : ''}">${m.diasAtraso || 0}</td>
         <td class="cell-num">${fmt(m.intereses)}</td>
         <td class="cell-num">${fmt(m.interesesRenta)}</td>
@@ -763,7 +766,7 @@ export function render(root) {
           <div class="table-wrap">
             <table class="table">
               <thead><tr>
-                <th>Periodo</th><th>Vencimiento</th><th>Declaración</th><th class="cell-num">Días atraso</th>
+                <th>Periodo</th><th>Vencimiento</th><th>Declaración</th><th>Pago SUNAT</th><th class="cell-num">Días atraso</th>
                 <th class="cell-num">Interés IGV</th><th class="cell-num">Interés Renta</th><th>Estado</th><th></th>
               </tr></thead>
               <tbody>${rows}</tbody>
@@ -971,6 +974,15 @@ export function render(root) {
           <div class="form-group"><label class="form-label">Fecha de declaración (real)</label>
             <input class="form-input" type="date" name="fecha_declaracion" value="${escapeHtml(m.fechaDeclaracion || '')}"></div>
         </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">
+          <label class="permission-item">
+            <input type="checkbox" name="pagado" ${m.pagado ? 'checked' : ''} data-pago-toggle>
+            <span class="permission-item__box">${ICONS.check}</span>
+            <span class="permission-item__label">Pagado en SUNAT</span>
+          </label>
+          <div class="form-group"><label class="form-label">Fecha de pago (SUNAT)</label>
+            <input class="form-input" type="date" name="fecha_pago" value="${escapeHtml(m.fechaPago || '')}" ${m.pagado ? '' : 'disabled'}></div>
+        </div>
         <div class="form-group"><label class="form-label">Estado</label>
           <select class="form-input" name="estado">
             <option value="pendiente"${m.estado === 'pendiente' ? ' selected' : ''}>Pendiente</option>
@@ -1011,6 +1023,14 @@ export function render(root) {
       intRenta.disabled = !toggle.checked;
     });
 
+    const pagoToggle = dialog.querySelector('[data-pago-toggle]');
+    const fechaPagoI = dialog.querySelector('[name="fecha_pago"]');
+    pagoToggle.addEventListener('change', () => {
+      fechaPagoI.disabled = !pagoToggle.checked;
+      if (pagoToggle.checked && !fechaPagoI.value) fechaPagoI.value = TODAY;
+      if (!pagoToggle.checked) fechaPagoI.value = '';
+    });
+
     dialog.querySelector('[data-close-periodo]').addEventListener('click', close);
     dialog.querySelector('form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1022,6 +1042,8 @@ export function render(root) {
           // Si no se cambió la fecha, se guarda vacía para seguir el cronograma.
           fecha_vencimiento: typedVenc && typedVenc !== autoVenc ? typedVenc : '',
           fecha_declaracion: fd.get('fecha_declaracion') || '',
+          pagado: fd.get('pagado') === 'on',
+          fecha_pago: fd.get('fecha_pago') || '',
           estado: fd.get('estado') || 'pendiente',
           interes_manual: fd.get('interes_manual') === 'on',
           intereses: Number(fd.get('intereses') || 0),
@@ -1126,6 +1148,36 @@ export function render(root) {
           `TXT FV 621 generado: ${res.count} registro(s), S/ ${fmt(res.total)}. Súbelo en la casilla ${casilla}.${extra}`,
           res.warnings.length ? 'info' : 'success',
         );
+      } catch (err) {
+        showToast(err.message || String(err), 'error');
+      }
+      return;
+    }
+
+    const fv621Xlsx = e.target.closest('[data-fv621-xlsx]');
+    if (fv621Xlsx) {
+      const mes = Number(fv621Xlsx.dataset.fv621Mes || state.pdtMes);
+      const m = state.data?.timeline?.months?.find((x) => x.mes === mes);
+      if (!m) return;
+      try {
+        const rows = FICHA.map((r) => {
+          if (r.section) return [r.section, '', '', '', ''];
+          return [
+            r.label,
+            r.base?.casilla || '',
+            r.base ? pdtCellValue(r.base, m) : '',
+            r.tributo?.casilla || '',
+            r.tributo ? pdtCellValue(r.tributo, m) : '',
+          ];
+        });
+        await downloadXlsx(`PDT_621_${m.anio}${String(m.mes).padStart(2, '0')}.xlsx`, [{
+          name: `621 ${MONTHS[m.mes - 1]} ${m.anio}`,
+          headers: ['Concepto', 'Casilla base', 'Base', 'Casilla tributo', 'Tributo'],
+          rows,
+          widths: [46, 14, 16, 16, 16],
+          numberFormat: '#,##0.00;(#,##0.00)',
+        }]);
+        showToast(`Excel de la ficha 621 generado para ${MONTHS[m.mes - 1]} ${m.anio}.`);
       } catch (err) {
         showToast(err.message || String(err), 'error');
       }

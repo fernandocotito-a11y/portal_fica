@@ -324,6 +324,8 @@ export const declaracionesService = {
       src.pagosPreviosRenta = Number(ov.pagos_previos_renta || 0);
       src.fechaVencimiento = ov.fecha_vencimiento || defaultVencimiento(year, m, company.ruc);
       src.fechaDeclaracion = ov.fecha_declaracion || '';
+      src.pagado = !!ov.pagado;
+      src.fechaPago = ov.fecha_pago || '';
       src.interesManual = !!ov.interes_manual;
       src.intereses = Number(ov.intereses || 0);
       src.interesesRenta = Number(ov.intereses_renta || 0);
@@ -484,6 +486,8 @@ export const declaracionesService = {
       intereses_renta: round2(patch.intereses_renta || 0),
       fecha_declaracion: dateOrNull(patch.fecha_declaracion),
       fecha_vencimiento: dateOrNull(patch.fecha_vencimiento),
+      pagado: !!patch.pagado,
+      fecha_pago: dateOrNull(patch.fecha_pago),
       interes_manual: !!patch.interes_manual,
       estado: patch.estado || 'pendiente',
       updated_at: nowIso(),

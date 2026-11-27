@@ -116,7 +116,11 @@ export function renderAuditTab(root) {
     // Semáforo de estado
     stateSel.value = s.state;
 
-    dueEl.textContent = `Vencimiento estimado: ${s.dueDate} · ${s.trabajadores} trabajador(es)`;
+    const fechasControl = [
+      s.fechaDeclaracion ? `Declarado ${s.fechaDeclaracion}` : '',
+      s.fechaPago ? `Pagado en SUNAT ${s.fechaPago}` : '',
+    ].filter(Boolean).join(' · ');
+    dueEl.textContent = `Vencimiento estimado: ${s.dueDate} · ${s.trabajadores} trabajador(es)${fechasControl ? ` · ${fechasControl}` : ''}`;
     obligEl.innerHTML =
       obligCard('EsSalud (9%)', s.essalud, 'Aporte del empleador') +
       obligCard('ONP (13%)', s.onp, 'Retenido al trabajador') +
@@ -127,7 +131,7 @@ export function renderAuditTab(root) {
       `<div class="stat-card"><div style="flex:1;">
         <div class="stat-card__label">Estado de pago</div>
         <div style="margin-top:6px;"><span class="badge ${SEMAFORO[s.state] || 'badge--muted'}"><span class="badge__dot"></span>${escapeHtml((ESTADOS.find((e) => e.value === s.state) || {}).label || s.state)}</span></div>
-        <div class="text-muted" style="font-size:var(--font-size-xs);margin-top:4px;">Vence ${s.dueDate}</div>
+        <div class="text-muted" style="font-size:var(--font-size-xs);margin-top:4px;">Vence ${s.dueDate}${s.fechaDeclaracion ? ` · Declarado ${s.fechaDeclaracion}` : ''}${s.fechaPago ? ` · Pagado ${s.fechaPago}` : ''}</div>
       </div></div>`;
 
     // Asiento contable

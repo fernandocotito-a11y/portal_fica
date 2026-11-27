@@ -23,7 +23,10 @@ export const accountingBridgeService = {
     const basicos = sum((r) => num(r.calc.basico) + num(r.calc.asigFamiliar) + num(r.calc.bonificaciones) + num(r.calc.overtime));
     const tardanzas = sum((r) => num(r.calc.tardanzas));
     const vacaciones = sum((r) => num(r.calc.vacaciones));
-    const gratificaciones = round2(num(opts.gratificaciones));
+    // La gratificación registrada ya viene en cada fila (netoTotal la incluye).
+    // Antes se tomaba de `opts`, que la vista nunca enviaba: el asiento quedaba
+    // desbalanceado y el haber subestimado en julio/diciembre.
+    const gratificaciones = sum((r) => num(r.calc.gratificacionPagada));
     const essalud = sum((r) => num(r.calc.essalud));
     const vidaLey = sum((r) => num(r.calc.vidaLey));
 
@@ -31,7 +34,8 @@ export const accountingBridgeService = {
     const afp = sum((r) => (r.employee.pensionType === 'AFP' ? num(r.calc.pension) : 0));
     const renta5ta = sum((r) => num(r.calc.renta5ta));
     const prestamos = sum((r) => num(r.calc.prestamos));
-    const neto = sum((r) => num(r.calc.neto));
+    // El haber debe ser el NETO TOTAL (incluye gratificación pagada), no `neto`.
+    const netoTotal = sum((r) => num(r.calc.netoTotal));
 
     const sueldosGasto = round2(basicos - tardanzas);
 
@@ -53,7 +57,8 @@ export const accountingBridgeService = {
     if (renta5ta) push('40173', 'Renta de 5ta categoría', 0, renta5ta);
     if (afp) push('417', 'Administradoras de fondos de pensiones (AFP)', 0, afp);
     if (prestamos) push('141', 'Personal (préstamos y adelantos por cobrar)', 0, prestamos);
-    push('4111', 'Remuneraciones por pagar', 0, neto);
+    if (vidaLey) push('417', 'Seguro Vida Ley', 0, vidaLey);
+    push('4111', 'Remuneraciones por pagar', 0, netoTotal);
 
     const totalDebe = round2(lines.reduce((s, l) => s + l.debe, 0));
     const totalHaber = round2(lines.reduce((s, l) => s + l.haber, 0));

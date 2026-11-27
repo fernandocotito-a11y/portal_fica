@@ -45,6 +45,8 @@ create table if not exists public.tax_declaration_periods (
   intereses_renta numeric(14, 2) not null default 0,
   fecha_declaracion date,
   fecha_vencimiento date,
+  pagado boolean not null default false,
+  fecha_pago date,
   interes_manual boolean not null default false,
   estado text not null default 'pendiente' check (estado in ('pendiente', 'declarado')),
   created_at timestamptz not null default now(),
@@ -58,6 +60,8 @@ create table if not exists public.tax_declaration_periods (
 alter table public.tax_declaration_periods
   add column if not exists fecha_declaracion date,
   add column if not exists fecha_vencimiento date,
+  add column if not exists pagado boolean not null default false,
+  add column if not exists fecha_pago date,
   add column if not exists interes_manual boolean not null default false;
 
 alter table public.tax_declaration_periods drop constraint if exists tax_declaration_periods_estado_check;
