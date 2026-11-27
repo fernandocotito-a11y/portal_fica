@@ -37,7 +37,7 @@ export function renderVacationTab(root) {
           <div class="form-group" style="margin:0;min-width:90px;"><label class="form-label">Días</label><input class="form-input" data-days value="0" readonly style="background:#f5efeb;font-weight:700;" /></div>
         </div>
         <p style="font-size:12px;color:#7a726a;margin:var(--space-3) 0 0;">
-          El período es el récord vacacional (ej. 2025-2026). Las fechas son las del descanso efectivo y determinan en qué mes(es) se refleja la planilla.
+          El período es el récord vacacional (ej. 2025-2026). Las fechas son las del descanso efectivo y determinan en qué mes(es) se refleja la planilla. Deben estar dentro del período y no exceder la fecha de cese; se valida al registrar.
         </p>
         <p style="font-size:12px;color:#3e2723;margin:4px 0 0;font-weight:600;" data-available></p>
 
@@ -163,23 +163,14 @@ export function renderVacationTab(root) {
   }
 
   function updateDateConstraints() {
-    const emp = selectedEmp();
-    const p = selectedPeriod(emp);
-    const min = p ? p.start : '';
-    const max = emp && emp.cese ? emp.cese : '';
-    // Chrome dispara `change` en el date input apenas el valor temporal es
-    // válido (al escribir el segundo dígito del año). Si escribimos min/max en
-    // ese instante, el control se reinicia a dd/mm/aaaa. Por eso los límites
-    // solo se aplican cuando el campo no está en edición.
-    if (document.activeElement !== fromI) {
-      fromI.min = min;
-      fromI.max = max;
-    }
-    // La regla desde <= hasta se valida al registrar (buildData).
-    if (document.activeElement !== toI) {
-      toI.min = min;
-      toI.max = max;
-    }
+    // Ojo: no usar min/max en estos date inputs. Chrome reinicia el control a
+    // dd/mm/aaaa mientras se escribe el año (al llegar al segundo dígito el
+    // valor temporal es 0002 y queda por debajo del min del período).
+    // Las reglas de período/cese/desde<=hasta se validan en buildData().
+    fromI.removeAttribute('min');
+    fromI.removeAttribute('max');
+    toI.removeAttribute('min');
+    toI.removeAttribute('max');
   }
 
   function updateAvailableHint() {
