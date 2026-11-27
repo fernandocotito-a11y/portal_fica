@@ -261,9 +261,13 @@ export function renderAttendanceTab(root) {
 
   function fillEmployeeSelect(selected) {
     const list = employees();
-    employeeSel.innerHTML = list.length
-      ? list.map((e) => `<option value="${e.id}"${e.id === selected ? ' selected' : ''}>${escapeHtml(e.name)}</option>`).join('')
-      : '<option value="">Sin colaboradores</option>';
+    // El colaborador se elige siempre de forma explícita: nada de preseleccionar
+    // al primero de la lista para evitar registrar asistencias con otro nombre.
+    const placeholder = '<option value="">Seleccione un colaborador</option>';
+    employeeSel.innerHTML = placeholder + list
+      .map((e) => `<option value="${e.id}"${e.id === selected ? ' selected' : ''}>${escapeHtml(e.name)}</option>`)
+      .join('');
+    employeeSel.value = selected || '';
   }
 
   function ensureYearOption(y) {
@@ -459,6 +463,18 @@ export function renderAttendanceTab(root) {
     extraPayHint.textContent = avisos.join(' · ');
   }
 
+  /**
+   * Si ya hay entrada pero falta la salida, completa con la hora de salida del
+   * horario vigente. Así se puede registrar rápido sin escribir ambos campos.
+   * Nunca sobrescribe una hora que el usuario ya digitó.
+   */
+  function applyDefaultExit() {
+    if (typeI.value !== 'normal' || manualI.checked) return;
+    if (!entryI.value || exitI.value) return;
+    const s = scheduleService.scheduleFor(dateI.value);
+    if (s && s.exit) exitI.value = String(s.exit).slice(0, 5);
+  }
+
   function recalcFromTimes() {
     if (typeI.value !== 'normal') return;
     const emp = payrollService.getEmployee(employeeSel.value);
@@ -633,6 +649,7 @@ export function renderAttendanceTab(root) {
   manualI.addEventListener('change', updateManualState);
   dateI.addEventListener('change', () => {
     updateScheduleHint();
+    applyDefaultExit();
     if (!manualI.checked) recalcFromTimes();
     else updateExtraPay();
   });
@@ -642,6 +659,7 @@ export function renderAttendanceTab(root) {
     else updateExtraPay();
   });
   entryI.addEventListener('change', () => {
+    applyDefaultExit();
     if (!manualI.checked) recalcFromTimes();
     else updateExtraPay();
   });
@@ -654,6 +672,7 @@ export function renderAttendanceTab(root) {
   extraI.addEventListener('input', updateExtraPay);
   nowEntryBtn.addEventListener('click', () => {
     entryI.value = nowTime();
+    applyDefaultExit();
     if (!manualI.checked) recalcFromTimes();
     else updateExtraPay();
   });
@@ -681,6 +700,8 @@ export function renderAttendanceTab(root) {
       showToast('Selecciona un empleado.', 'error');
       return;
     }
+    // Último chance para completar la salida si el usuario solo digitó entrada.
+    applyDefaultExit();
     const data = {
       employeeId: employeeSel.value,
       date: dateI.value,
