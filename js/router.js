@@ -90,7 +90,7 @@ const routes = [
     guard: 'auth',
     company: true,
     permission: 'honorarios',
-    loader: () => import('../modules/honorarios/honorariosView.js'),
+    loader: () => import('../modules/honorarios/honorariosView.js?v=29022a2'),
   },
   {
     pattern: /^\/sire\/?$/,
