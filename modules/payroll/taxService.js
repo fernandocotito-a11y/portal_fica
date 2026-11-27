@@ -144,6 +144,9 @@ export function retencionMensual({
     rni,
     impuestoAnualProyectado,
     divisor,
+    remuneracionesAcumuladas: round2(num(remuneracionesAcumuladas)),
+    gratificacionesProyectadas: round2(num(gratificacionesProyectadas)),
+    bonifExtraordinaria: round2(num(bonifExtraordinaria)),
     retencionesAcumuladas: num(retencionesAcumuladas),
     retencionMes,
   };
