@@ -110,6 +110,15 @@ export const MODULES = [
     group: 'operations',
   },
   {
+    key: 'honorarios',
+    name: 'Recibos de Honorarios',
+    description: 'Importación del TXT de Recibos por Honorarios Electrónicos, PDT 601 y asiento mensual.',
+    icon: ic('<path d="M19 5 5 19"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/>'),
+    status: 'active',
+    adminOnly: false,
+    group: 'operations',
+  },
+  {
     key: 'declaraciones',
     name: 'Declaraciones SUNAT',
     description: 'Liquidación mensual de IGV y Renta (FV 621).',
@@ -206,6 +215,7 @@ export function moduleHash(key) {
   if (key === 'planillas') return '#/payroll';
   if (key === 'compras') return '#/compras';
   if (key === 'retenciones') return '#/retencion';
+  if (key === 'honorarios') return '#/honorarios';
   if (key === 'sire') return '#/sire';
   if (key === 'declaraciones') return '#/declaraciones';
   if (key === 'reportes') return '#/reportes';

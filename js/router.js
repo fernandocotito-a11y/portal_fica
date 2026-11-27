@@ -83,7 +83,14 @@ const routes = [
     guard: 'auth',
     company: true,
     permission: 'retenciones',
-    loader: () => import('../modules/retencion/retencionView.js?v=rhe1'),
+    loader: () => import('../modules/retencion/retencionView.js'),
+  },
+  {
+    pattern: /^\/honorarios\/?$/,
+    guard: 'auth',
+    company: true,
+    permission: 'honorarios',
+    loader: () => import('../modules/honorarios/honorariosView.js'),
   },
   {
     pattern: /^\/sire\/?$/,
