@@ -9,7 +9,7 @@
 
 import { honorariosService } from './honorariosService.js';
 import { parseHonorariosTxt } from './honorariosParser.js';
-import { buildAsiento, downloadPdt, downloadAsiento } from './honorariosPdtService.js';
+import { buildAsiento, downloadPdtZip, downloadPdtSingle, downloadAsiento } from './honorariosPdtService.js';
 import { periodLabel, periodToInput, inputToPeriod } from '../compras/comprasConfig.js';
 import { authService } from '../../services/authService.js';
 import { ICONS, escapeHtml, showToast } from '../../js/utils.js';
@@ -152,7 +152,11 @@ export function render(root) {
             <h3 class="card__title">Recibos por Honorarios Electrónicos</h3>
             <p class="card__subtitle">TXT descargado manualmente de SUNAT OLE → Consulta Receptor de Recibos por Honorarios Electrónicos.</p>
           </div>
-          <button type="button" class="btn" data-rhe-pdt ${monthRows.length ? '' : 'disabled'}>${ICONS.arrowRight} Descargar PDT 601</button>
+          <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
+            <button type="button" class="btn" data-rhe-pdt ${monthRows.length ? '' : 'disabled'}>${ICONS.arrowRight} Descargar PDT 601 (ZIP)</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-rhe-pdt-single="ps4" ${monthRows.length ? '' : 'disabled'}>Descargar .ps4</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-rhe-pdt-single="4ta" ${monthRows.length ? '' : 'disabled'}>Descargar .4ta</button>
+          </div>
         </div>
         <div class="card__body">
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:flex-end;margin-bottom:var(--space-4);">
@@ -421,14 +425,29 @@ export function render(root) {
     }
   }
 
-  function downloadRhePdt() {
+  async function downloadRhePdt() {
+    const rows = rheMonthRows(true);
+    if (!rows.length) { showToast('No hay recibos en el mes seleccionado para el PDT 601.', 'error'); return; }
+    const button = content.querySelector('[data-rhe-pdt]');
+    if (button) button.disabled = true;
+    try {
+      const { year, month } = rheYearMonth();
+      const res = await downloadPdtZip(company, rows, year, month);
+      showToast(`PDT 601 descargado en ZIP con ${res.ps4Name} y ${res.fourtaName}.`);
+    } catch (err) {
+      showToast(err.message || String(err), 'error');
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function downloadRhePdtSingle(ext) {
     const rows = rheMonthRows(true);
     if (!rows.length) { showToast('No hay recibos en el mes seleccionado para el PDT 601.', 'error'); return; }
     try {
       const { year, month } = rheYearMonth();
-      const res = downloadPdt(company, rows, year, month);
-      const extra = res.warnings.length ? ` ${res.warnings[0]}` : '';
-      showToast(`PDT 601 generado (${res.count} recibo(s)) con el RUC de ${company.ruc || 'la empresa activa'}. Se descargaron ${res.ps4Name} y ${res.fourtaName}.${extra}`, res.warnings.length ? 'info' : 'success');
+      const res = downloadPdtSingle(company, rows, year, month, ext);
+      showToast(`PDT 601 descargado: ${res.fileName}.`);
     } catch (err) {
       showToast(err.message || String(err), 'error');
     }
@@ -454,6 +473,8 @@ export function render(root) {
     if (e.target.closest('[data-rhe-drop]')) { content.querySelector('[data-rhe-files]')?.click(); return; }
     if (e.target.closest('[data-rhe-do-import]')) { doRheImport(); return; }
     if (e.target.closest('[data-rhe-reset]')) { state.rheParsed = null; state.rheStatus = ''; renderContent(); return; }
+    const single = e.target.closest('[data-rhe-pdt-single]');
+    if (single) { downloadRhePdtSingle(single.dataset.rhePdtSingle); return; }
     if (e.target.closest('[data-rhe-pdt]')) { downloadRhePdt(); return; }
     if (e.target.closest('[data-rhe-save-config]')) { saveRheConfig(); return; }
     if (e.target.closest('[data-rhe-asiento-csv]')) { downloadRheAsientoCsv(); return; }

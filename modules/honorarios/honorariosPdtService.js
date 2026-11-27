@@ -9,7 +9,12 @@
    ========================================================================== */
 
 import { accountingBridgeService } from '../payroll/accountingBridgeService.js';
-import { round2, downloadText } from '../payroll/payrollUtils.js';
+import { round2, downloadText, downloadBlob } from '../payroll/payrollUtils.js';
+
+async function loadJSZip() {
+  const mod = await import('https://esm.sh/jszip@3');
+  return mod.default || mod;
+}
 
 function vigentes(rows) {
   return (Array.isArray(rows) ? rows : []).filter((r) => !r.anulado);
@@ -118,6 +123,36 @@ export function downloadPdt(company, rows, year, month) {
   downloadText(ps4Name, ps4, 'text/plain');
   setTimeout(() => downloadText(fourtaName, fourta, 'text/plain'), 300);
   return { ps4Name, fourtaName, count: vigentes(rows).length, warnings: [...new Set(warnings)] };
+}
+
+/** Descarga un solo TXT del PDT 601 (ps4 o 4ta) para los botones sueltos. */
+export function downloadPdtSingle(company, rows, year, month, ext) {
+  const warnings = [];
+  const suffix = String(ext || '').replace(/^\./, '').toLowerCase();
+  if (suffix !== 'ps4' && suffix !== '4ta') {
+    throw new Error(`Extensión PDT no soportada: ${ext || '—'}. Usa ps4 o 4ta.`);
+  }
+  const content = suffix === 'ps4' ? buildPs4(rows, warnings) : build4ta(rows);
+  const fileName = buildFileName(company?.ruc, year, month, suffix);
+  downloadText(fileName, content, 'text/plain');
+  return { fileName, count: vigentes(rows).length, warnings: [...new Set(warnings)] };
+}
+
+/** Un solo clic: ZIP con los dos TXT, evita el bloqueo de descargas automáticas. */
+export async function downloadPdtZip(company, rows, year, month) {
+  const warnings = [];
+  const ps4 = buildPs4(rows, warnings);
+  const fourta = build4ta(rows);
+  const ps4Name = buildFileName(company?.ruc, year, month, 'ps4');
+  const fourtaName = buildFileName(company?.ruc, year, month, '4ta');
+  const JSZip = await loadJSZip();
+  const zip = new JSZip();
+  zip.file(ps4Name, ps4);
+  zip.file(fourtaName, fourta);
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const zipName = `PDT601_${year}${String(month).padStart(2, '0')}_${company?.ruc || 'sinruc'}.zip`;
+  downloadBlob(zipName, blob);
+  return { zipName, ps4Name, fourtaName, count: vigentes(rows).length, warnings: [...new Set(warnings)] };
 }
 
 function accountName(accounts, cuenta, fallback) {
