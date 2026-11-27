@@ -167,14 +167,19 @@ export function renderVacationTab(root) {
     const p = selectedPeriod(emp);
     const min = p ? p.start : '';
     const max = emp && emp.cese ? emp.cese : '';
-    fromI.min = min;
-    fromI.max = max;
-    // No recalcular `toI.min` mientras se escribe "Desde": en algunos
-    // navegadores el date input dispara change al completar el año y eso
-    // hacía que el campo "Hasta" se moviera/perdiera lo digitado.
+    // Chrome dispara `change` en el date input apenas el valor temporal es
+    // válido (al escribir el segundo dígito del año). Si escribimos min/max en
+    // ese instante, el control se reinicia a dd/mm/aaaa. Por eso los límites
+    // solo se aplican cuando el campo no está en edición.
+    if (document.activeElement !== fromI) {
+      fromI.min = min;
+      fromI.max = max;
+    }
     // La regla desde <= hasta se valida al registrar (buildData).
-    toI.min = min;
-    toI.max = max;
+    if (document.activeElement !== toI) {
+      toI.min = min;
+      toI.max = max;
+    }
   }
 
   function updateAvailableHint() {
@@ -457,7 +462,11 @@ export function renderVacationTab(root) {
     updateAvailableHint();
   });
 
-  fromI.addEventListener('change', () => {
+  // `change` se dispara demasiado pronto en Chrome (al completar el año) y
+  // reiniciaba el date input. Actualizamos el impacto mientras se escribe y
+  // aplicamos límites/validaciones recién cuando se sale del campo.
+  fromI.addEventListener('input', updateImpact);
+  fromI.addEventListener('blur', () => {
     updateDateConstraints();
     updateImpact();
   });
