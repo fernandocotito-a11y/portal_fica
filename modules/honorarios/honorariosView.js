@@ -28,6 +28,23 @@ function displayDate(iso) {
   return `${d}/${m}/${y}`;
 }
 
+function formDate(iso) {
+  const s = String(iso || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? displayDate(s) : '';
+}
+
+function parseFormDate(value) {
+  const m = String(value || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const d = Number(m[1]);
+  const mo = Number(m[2]);
+  const y = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 function blankRheForm() {
   return {
     fecha_emision: '',
@@ -277,7 +294,7 @@ export function render(root) {
               </div>
               <div class="card__body">
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--space-3);">
-                  <div class="form-group" style="margin:0;"><label class="form-label">Fecha emisión</label><input type="date" class="form-input" data-rhe-form="fecha_emision" value="${escapeHtml(state.rheForm.fecha_emision)}" /></div>
+                  <div class="form-group" style="margin:0;"><label class="form-label">Fecha emisión</label><input type="text" class="form-input" data-rhe-form="fecha_emision" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" value="${escapeHtml(formDate(state.rheForm.fecha_emision))}" /></div>
                   <div class="form-group" style="margin:0;"><label class="form-label">Tipo emisor</label><select class="form-input" data-rhe-form="doc_tipo_codigo"><option value="06"${state.rheForm.doc_tipo_codigo === '06' ? ' selected' : ''}>RUC</option><option value="01"${state.rheForm.doc_tipo_codigo === '01' ? ' selected' : ''}>DNI</option></select></div>
                   <div class="form-group" style="margin:0;"><label class="form-label">Nro documento</label><input class="form-input" data-rhe-form="doc_numero" value="${escapeHtml(state.rheForm.doc_numero)}" placeholder="RUC/DNI del emisor" /></div>
                   <div class="form-group" style="margin:0;"><label class="form-label">Razón social / Emisor</label><input class="form-input" data-rhe-form="emisor_nombre" value="${escapeHtml(state.rheForm.emisor_nombre)}" /></div>
@@ -290,7 +307,7 @@ export function render(root) {
                   <div class="form-group" style="margin:0;"><label class="form-label">Renta neta</label><input type="number" step="0.01" class="form-input" data-rhe-form="renta_neta" value="${escapeHtml(state.rheForm.renta_neta)}" /></div>
                   <div class="form-group" style="margin:0;"><label class="form-label">Moneda</label><select class="form-input" data-rhe-form="moneda"><option value="PEN"${state.rheForm.moneda === 'PEN' ? ' selected' : ''}>PEN</option><option value="USD"${state.rheForm.moneda === 'USD' ? ' selected' : ''}>USD</option></select></div>
                   <div class="form-group" style="margin:0;"><label class="form-label">Pagado</label><label style="display:flex;gap:var(--space-2);align-items:center;min-height:38px;"><input type="checkbox" data-rhe-form="pagado"${state.rheForm.pagado ? ' checked' : ''} /> Marcar como pagado</label></div>
-                  <div class="form-group" style="margin:0;"><label class="form-label">Fecha de pago</label><input type="date" class="form-input" data-rhe-form="fecha_pago" value="${escapeHtml(state.rheForm.fecha_pago)}"${state.rheForm.pagado ? '' : ' disabled'} /></div>
+                  <div class="form-group" style="margin:0;"><label class="form-label">Fecha de pago</label><input type="text" class="form-input" data-rhe-form="fecha_pago" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" value="${escapeHtml(formDate(state.rheForm.fecha_pago))}"${state.rheForm.pagado ? '' : ' disabled'} /></div>
                 </div>
                 <div style="margin-top:var(--space-4);"><button type="button" class="btn btn--primary" data-rhe-form-save>${ICONS.check} Guardar recibo</button></div>
               </div>
@@ -335,7 +352,7 @@ export function render(root) {
                       <input type="checkbox" data-rhe-pagado="${escapeHtml(r.id)}"${r.pagado ? ' checked' : ''} /> Marcar pagado
                     </label>
                   </div>
-                  <input type="date" class="form-input" data-rhe-pago-fecha="${escapeHtml(r.id)}" value="${escapeHtml(r.fecha_pago || '')}" style="width:100%;min-width:170px;" />
+                  <input type="text" class="form-input" data-rhe-pago-fecha="${escapeHtml(r.id)}" placeholder="dd/mm/aaaa" inputmode="numeric" maxlength="10" value="${escapeHtml(formDate(r.fecha_pago))}" style="width:100%;min-width:170px;" />
                 </td>
                 <td><select class="form-input" data-rhe-cuenta="${escapeHtml(r.id)}" style="min-width:200px;">${rheAccountOptions(r.cuenta_gasto)}</select></td>
                 <td><span class="badge ${r.anulado ? 'badge--gold' : 'badge--active'}">${r.anulado ? 'ANULADO' : 'VIGENTE'}</span></td>
@@ -703,8 +720,14 @@ export function render(root) {
       return;
     }
     if (e.target.matches('[data-rhe-pago-fecha]')) {
-      const value = e.target.value;
-      updateRheRow(e.target.getAttribute('data-rhe-pago-fecha'), { fecha_pago: value || null, pagado: !!value });
+      const raw = e.target.value;
+      const iso = raw ? parseFormDate(raw) : null;
+      if (raw && !iso) {
+        showToast('Fecha inválida. Usa dd/mm/aaaa, por ejemplo 20/08/2026.', 'error');
+        renderContent();
+        return;
+      }
+      updateRheRow(e.target.getAttribute('data-rhe-pago-fecha'), { fecha_pago: iso, pagado: !!iso });
       return;
     }
     if (e.target.matches('[data-rhe-form]')) {
@@ -715,11 +738,22 @@ export function render(root) {
         renderContent();
         return;
       }
-      state.rheForm[key] = e.target.value;
-      if (key === 'fecha_pago' && e.target.value && !state.rheForm.pagado) {
-        state.rheForm.pagado = true;
-        renderContent();
+      if (key === 'fecha_emision' || key === 'fecha_pago') {
+        const raw = e.target.value;
+        const iso = raw ? parseFormDate(raw) : '';
+        if (raw && !iso) {
+          showToast('Fecha inválida. Usa dd/mm/aaaa, por ejemplo 20/08/2026.', 'error');
+          renderContent();
+          return;
+        }
+        state.rheForm[key] = iso;
+        if (key === 'fecha_pago' && iso && !state.rheForm.pagado) {
+          state.rheForm.pagado = true;
+          renderContent();
+        }
+        return;
       }
+      state.rheForm[key] = e.target.value;
       return;
     }
     if (e.target.matches('[data-rhe-cuenta]')) {
@@ -730,7 +764,13 @@ export function render(root) {
 
   viewRoot.addEventListener('input', (e) => {
     if (e.target.matches('[data-rhe-form]') && e.target.type !== 'checkbox') {
-      state.rheForm[e.target.dataset.rheForm] = e.target.value;
+      const key = e.target.dataset.rheForm;
+      if (key === 'fecha_emision' || key === 'fecha_pago') {
+        const iso = e.target.value ? parseFormDate(e.target.value) : '';
+        if (iso || !e.target.value) state.rheForm[key] = iso;
+        return;
+      }
+      state.rheForm[key] = e.target.value;
       return;
     }
     if (e.target.matches('[data-rhe-search]')) {
