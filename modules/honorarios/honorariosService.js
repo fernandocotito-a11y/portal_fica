@@ -75,7 +75,7 @@ function writeJson(key, value) {
 function loadLocal(companyId) {
   const data = readJson(localKey(companyId), {});
   records = Array.isArray(data.records) ? data.records : [];
-  records.forEach((r) => { r.dedupe_key = r.dedupe_key || dedupeKey(r); });
+  records.forEach((r) => { normalizePago(r); r.dedupe_key = r.dedupe_key || dedupeKey(r); });
 }
 
 function saveLocal(companyId) {
@@ -122,6 +122,48 @@ function cleanNumber(value) {
   return round2(num(value));
 }
 
+/** El TXT no trae fecha de pago: se deriva del saldo pendiente. */
+function normalizePago(rec) {
+  const paid = rec.pagado === undefined || rec.pagado === null
+    ? round2(num(rec.pendiente_pago)) === 0
+    : !!rec.pagado;
+  rec.pagado = paid;
+  if (paid) {
+    if (!rec.fecha_pago) rec.fecha_pago = rec.fecha_emision || null;
+  } else {
+    rec.fecha_pago = null;
+  }
+  return rec;
+}
+
+function isoDate(value) {
+  const s = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+/** Serie = LEFT 4, número = lo que sigue al guion (para alta manual). */
+function splitSerieNumero(value) {
+  const s = String(value || '').trim();
+  const guion = s.indexOf('-');
+  return {
+    serie: s.slice(0, 4),
+    numero: guion >= 0 ? s.slice(guion + 1).trim() : (s.slice(4).trim() || s),
+  };
+}
+
+function asBoolean(value) {
+  return value === true || value === 1 || value === '1' || value === 'on' || value === 'true';
+}
+
+const EDITABLE_FIELDS = new Set([
+  'fecha_emision', 'fecha_pago', 'pagado', 'pendiente_pago', 'anulado',
+  'doc_tipo_codigo', 'doc_numero', 'emisor_nombre', 'tipo_doc_emisor',
+  'tipo_doc_emitido', 'nro_doc_emitido', 'serie', 'numero', 'descripcion',
+  'observacion', 'moneda', 'renta_bruta', 'impuesto_renta', 'renta_neta',
+  'renta_bruta_pen', 'impuesto_renta_pen', 'renta_neta_pen',
+  'indicador_retencion', 'cuenta_gasto', 'cuenta_gasto_nombre',
+]);
+
 function cleanRecord(rec) {
   const out = { ...rec };
   ['id', 'created_at', 'updated_at', 'warnings', 'company_id', 'created_by'].forEach((key) => { delete out[key]; });
@@ -137,6 +179,7 @@ function cleanRecord(rec) {
   out.indicador_retencion = num(out.indicador_retencion) > 0 ? 1 : 0;
   out.anulado = !!out.anulado;
   out.moneda = String(out.moneda || 'PEN').trim().toUpperCase().slice(0, 3) || 'PEN';
+  normalizePago(out);
   out.dedupe_key = out.dedupe_key || dedupeKey(out);
   return out;
 }
@@ -230,21 +273,22 @@ export const honorariosService = {
         .range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
       const chunk = data || [];
-      out.push(...chunk.map(rowToRecord));
+      out.push(...chunk.map(rowToRecord).map(normalizePago));
       if (chunk.length < pageSize) break;
       from += pageSize;
     }
     records = out;
   },
 
-  /** Lista de recibos del mes. `year`/`month` aceptan número o texto. */
-  list({ year, month, search, includeAnulados = false } = {}) {
+  /** Lista de recibos del mes. Por defecto filtra por FECHA DE PAGO. */
+  list({ year, month, search, includeAnulados = false, dateField = 'pago' } = {}) {
+    const field = dateField === 'emision' ? 'fecha_emision' : 'fecha_pago';
     let out = records.slice();
     if (!includeAnulados) out = out.filter((r) => !r.anulado);
-    if (year) out = out.filter((r) => String(r.fecha_emision || '').slice(0, 4) === String(year).padStart(4, '0'));
+    if (year) out = out.filter((r) => String(r[field] || '').slice(0, 4) === String(year).padStart(4, '0'));
     if (month) {
       const mm = String(month).padStart(2, '0');
-      out = out.filter((r) => String(r.fecha_emision || '').slice(5, 7) === mm);
+      out = out.filter((r) => String(r[field] || '').slice(5, 7) === mm);
     }
     const q = String(search || '').trim().toLowerCase();
     if (q) {
@@ -339,6 +383,167 @@ export const honorariosService = {
     const i = records.findIndex((r) => r.id === id);
     if (i >= 0) records[i] = rowToRecord(data);
     return rowToRecord(data);
+  },
+
+  /** Alta individual: mismo dedupe que el TXT, con prefijo MANUAL. */
+  async createManual(input = {}) {
+    const companyId = cid();
+    if (!companyId) throw new Error('No hay empresa activa.');
+    await detectMode();
+
+    const fecha_emision = isoDate(input.fecha_emision);
+    const doc_numero = String(input.doc_numero || '').trim();
+    if (!fecha_emision || !doc_numero) {
+      throw new Error('La fecha de emisión y el número de documento del emisor son obligatorios.');
+    }
+    const digits = doc_numero.replace(/\D/g, '');
+    const doc_tipo_codigo = input.doc_tipo_codigo === '01' || (input.doc_tipo_codigo !== '06' && digits.length === 8) ? '01' : '06';
+    const nro_doc_emitido = String(input.nro_doc_emitido || '').trim();
+    const parts = splitSerieNumero(nro_doc_emitido);
+    const pagado = asBoolean(input.pagado);
+    const fecha_pago = pagado ? (isoDate(input.fecha_pago) || fecha_emision) : null;
+    const moneda = String(input.moneda || 'PEN').trim().toUpperCase().slice(0, 3) || 'PEN';
+    const renta_bruta = cleanNumber(input.renta_bruta);
+    const impuesto_renta = cleanNumber(input.impuesto_renta);
+    const renta_neta = cleanNumber(input.renta_neta);
+    const pendiente_pago = input.pendiente_pago === undefined || input.pendiente_pago === ''
+      ? (pagado ? 0 : renta_neta)
+      : cleanNumber(input.pendiente_pago);
+
+    const rec = {
+      fecha_emision,
+      tipo_doc_emitido: String(input.tipo_doc_emitido || 'RH').trim().toUpperCase() || 'RH',
+      nro_doc_emitido,
+      estado_doc: 'NO ANULADO',
+      anulado: false,
+      tipo_doc_emisor: doc_tipo_codigo === '01' ? 'DNI' : 'RUC',
+      doc_tipo_codigo,
+      doc_numero,
+      emisor_nombre: String(input.emisor_nombre || '').trim(),
+      tipo_renta: String(input.tipo_renta || '').trim(),
+      gratuito: String(input.gratuito || '').trim(),
+      descripcion: String(input.descripcion || '').trim(),
+      observacion: String(input.observacion || '').trim(),
+      moneda,
+      renta_bruta,
+      impuesto_renta,
+      renta_neta,
+      pendiente_pago,
+      indicador_retencion: impuesto_renta > 0 ? 1 : 0,
+      fecha_pago,
+      pagado,
+      serie: String(input.serie || '').trim() || parts.serie,
+      numero: String(input.numero || '').trim() || parts.numero,
+      raw: { origen: 'Alta manual' },
+      source: 'manual',
+      source_file: 'MANUAL',
+    };
+    rec.dedupe_key = `MANUAL|${dedupeKey(rec)}`;
+
+    const warnings = [];
+    await applyExchangeRates([rec], warnings);
+    accountFor(rec, await this.accounts());
+    normalizePago(rec);
+
+    if (records.some((r) => r.dedupe_key === rec.dedupe_key)) {
+      throw new Error('Ya existe un recibo manual idéntico (emisor, comprobante, serie, número y fecha).');
+    }
+
+    let saved;
+    if (mode === 'local') {
+      saved = { ...rec, id: uid(), company_id: companyId, created_at: nowIso(), updated_at: nowIso() };
+      const prev = records;
+      records = [...records, saved];
+      try { saveLocal(companyId); } catch (err) { records = prev; throw err; }
+    } else {
+      const { data, error } = await supabase
+        .from('honorarios_recibos')
+        .upsert({ ...rec, company_id: companyId }, { onConflict: 'company_id,dedupe_key', ignoreDuplicates: true })
+        .select();
+      if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error('Ya existe un recibo manual idéntico.');
+      saved = rowToRecord(data[0]);
+      normalizePago(saved);
+      records.push(saved);
+    }
+    return { record: saved, warnings: [...new Set(warnings)] };
+  },
+
+  /** Actualiza pago, fecha de pago, cuenta de gasto u otros campos editables. */
+  async update(id, patch = {}) {
+    const companyId = cid();
+    if (!companyId) throw new Error('No hay empresa activa.');
+    await detectMode();
+    const current = records.find((r) => r.id === id);
+    if (!current) throw new Error('No se encontró el recibo indicado.');
+
+    const next = {};
+    Object.entries(patch || {}).forEach(([key, value]) => {
+      if (EDITABLE_FIELDS.has(key)) next[key] = value;
+    });
+    if ('pagado' in next) next.pagado = asBoolean(next.pagado);
+    if ('anulado' in next) next.anulado = asBoolean(next.anulado);
+    ['fecha_emision', 'fecha_pago'].forEach((key) => {
+      if (key in next) next[key] = isoDate(next[key]);
+    });
+    ['pendiente_pago', 'renta_bruta', 'impuesto_renta', 'renta_neta', 'renta_bruta_pen', 'impuesto_renta_pen', 'renta_neta_pen'].forEach((key) => {
+      if (key in next) next[key] = cleanNumber(next[key]);
+    });
+    if ('fecha_pago' in next && next.fecha_pago && !('pagado' in next)) next.pagado = true;
+
+    const merged = normalizePago({ ...current, ...next });
+    if ('pagado' in next || 'fecha_pago' in next || 'pendiente_pago' in next || 'fecha_emision' in next) {
+      next.pagado = merged.pagado;
+      next.fecha_pago = merged.fecha_pago;
+    }
+
+    let saved;
+    if (mode === 'local') {
+      saved = { ...current, ...next };
+      const prev = records;
+      records = records.map((r) => (r.id === id ? saved : r));
+      try { saveLocal(companyId); } catch (err) { records = prev; throw err; }
+    } else {
+      const { data, error } = await supabase
+        .from('honorarios_recibos')
+        .update(next)
+        .eq('id', id)
+        .eq('company_id', companyId)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      saved = rowToRecord(data);
+      normalizePago(saved);
+      const i = records.findIndex((r) => r.id === id);
+      if (i >= 0) records[i] = saved;
+    }
+    return saved;
+  },
+
+  /** Borra todas las filas de un TXT (o del alta manual) de la empresa activa. */
+  async removeByFile(sourceFile) {
+    const companyId = cid();
+    if (!companyId) throw new Error('No hay empresa activa.');
+    const target = String(sourceFile || '').trim();
+    if (!target) throw new Error('Selecciona un archivo para limpiar.');
+    await detectMode();
+    if (mode === 'local') {
+      const prev = records;
+      const removed = prev.filter((r) => String(r.source_file || '') === target).length;
+      records = prev.filter((r) => String(r.source_file || '') !== target);
+      try { saveLocal(companyId); } catch (err) { records = prev; throw err; }
+      return removed;
+    }
+    const { data, error } = await supabase
+      .from('honorarios_recibos')
+      .delete()
+      .eq('company_id', companyId)
+      .eq('source_file', target)
+      .select('id');
+    if (error) throw new Error(error.message);
+    const deletedIds = new Set((data || []).map((r) => r.id));
+    records = records.filter((r) => !deletedIds.has(r.id));
+    return deletedIds.size;
   },
 
   async config() {
@@ -446,14 +651,20 @@ export const honorariosService = {
     records = records.filter((r) => r.id !== id);
   },
 
+  /** Totales del PDT/asiento: solo pagados con fecha de pago en el mes. */
   summary(year, month) {
-    const rows = this.list({ year, month });
-    const s = { count: rows.length, bruta: 0, retenido: 0, neto: 0, anulados: records.filter((r) => {
-      const y = String(r.fecha_emision || '').slice(0, 4) === String(year).padStart(4, '0');
-      const m = !month || String(r.fecha_emision || '').slice(5, 7) === String(month).padStart(2, '0');
-      return y && m && r.anulado;
-    }).length };
-    rows.forEach((r) => {
+    const pagoRows = this.list({ year, month, dateField: 'pago', includeAnulados: true });
+    const emisionRows = this.list({ year, month, dateField: 'emision', includeAnulados: true });
+    const paid = pagoRows.filter((r) => !r.anulado && r.pagado === true);
+    const s = {
+      count: paid.length,
+      bruta: 0,
+      retenido: 0,
+      neto: 0,
+      anulados: pagoRows.filter((r) => r.anulado).length,
+      pendientes: emisionRows.filter((r) => !r.anulado && r.pagado !== true).length,
+    };
+    paid.forEach((r) => {
       s.bruta += num(r.renta_bruta_pen) || num(r.renta_bruta);
       s.retenido += num(r.impuesto_renta_pen) || num(r.impuesto_renta);
       s.neto += num(r.renta_neta_pen) || num(r.renta_neta);

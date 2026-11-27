@@ -11,6 +11,8 @@
      Impuesto a la Renta|Renta Neta|Monto Neto Pendiente de Pago
    ========================================================================== */
 
+import { round2 } from '../payroll/payrollUtils.js';
+
 const utf8 = new TextDecoder('utf-8');
 const win1252 = new TextDecoder('windows-1252');
 
@@ -266,13 +268,16 @@ export function parseHonorariosTxt(text, fileName = '') {
       renta_neta: parseAmount(get(cells, 'renta_neta')),
       pendiente_pago: parseAmount(get(cells, 'pendiente_pago')),
       indicador_retencion: impuesto_renta > 0 ? 1 : 0,
-      fecha_pago: fecha_emision,
       serie,
       numero,
       raw,
       source: 'sunat_rhe',
       source_file: fileName,
     };
+    // El TXT no trae fecha de pago real: si no hay saldo pendiente se asume pagado
+    // en la fecha de emisión; si hay saldo, queda pendiente hasta que se marque.
+    rec.pagado = round2(rec.pendiente_pago) === 0;
+    rec.fecha_pago = rec.pagado ? rec.fecha_emision : null;
     rec.dedupe_key = dedupeKey(rec);
     records.push(rec);
   }

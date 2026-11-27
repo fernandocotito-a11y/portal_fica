@@ -5,7 +5,8 @@
      .ps4  (7 campos):  06|10472193762|0|0|0|1|0|
      .4ta  (11 campos): 06|10472193762|R|E001|105|1500|01/09/2026|01/09/2026|0||
    El RUC del nombre del archivo es de la EMPRESA ACTIVA, no del emisor.
-   Los recibos ANULADO se excluyen del PDT y del asiento.
+   Solo se declaran recibos PAGADOS cuya FECHA DE PAGO esté en el mes: se
+    excluyen anulados, impagos y recibos pagados en otro mes.
    ========================================================================== */
 
 import { accountingBridgeService } from '../payroll/accountingBridgeService.js';
@@ -16,12 +17,55 @@ async function loadJSZip() {
   return mod.default || mod;
 }
 
-function vigentes(rows) {
-  return (Array.isArray(rows) ? rows : []).filter((r) => !r.anulado);
+/** Acepta YYYY-MM-DD y DD/MM/AAAA; devuelve YYYY-MM-DD. */
+function normalizeIsoDate(value) {
+  const s = String(value || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  if (!m) return '';
+  const yyyy = m[3].length === 2 ? `20${m[3]}` : m[3];
+  return `${yyyy}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+}
+
+/** Si no vienen año/mes, se toma el mes de pago del primer recibo pagado. */
+function resolvePeriod(rows, year, month) {
+  if (year && month) {
+    return { yyyy: String(year).padStart(4, '0'), mm: String(month).padStart(2, '0') };
+  }
+  const first = (Array.isArray(rows) ? rows : [])
+    .map((r) => normalizeIsoDate(r.fecha_pago))
+    .find(Boolean);
+  return first ? { yyyy: first.slice(0, 4), mm: first.slice(5, 7) } : { yyyy: '', mm: '' };
+}
+
+/** Recibos declarables: vigentes, PAGADOS y con pago en el mes seleccionado. */
+function paraPdt(rows, year, month) {
+  const { yyyy, mm } = resolvePeriod(rows, year, month);
+  if (!yyyy || !mm) return [];
+  const prefix = `${yyyy}-${mm}`;
+  return (Array.isArray(rows) ? rows : []).filter((r) => {
+    if (r.anulado || r.pagado !== true) return false;
+    return normalizeIsoDate(r.fecha_pago).startsWith(prefix);
+  });
+}
+
+/** Detalle de exclusiones para los toasts. */
+function exclusionStats(rows, year, month) {
+  const { yyyy, mm } = resolvePeriod(rows, year, month);
+  const prefix = yyyy && mm ? `${yyyy}-${mm}` : '';
+  const stats = { anulados: 0, impagos: 0, otroMes: 0 };
+  (Array.isArray(rows) ? rows : []).forEach((r) => {
+    if (r.anulado) { stats.anulados += 1; return; }
+    const pago = normalizeIsoDate(r.fecha_pago);
+    if (r.pagado !== true || !pago) { stats.impagos += 1; return; }
+    if (prefix && !pago.startsWith(prefix)) stats.otroMes += 1;
+  });
+  return stats;
 }
 
 function isoToDdMmYyyy(value) {
-  const m = String(value || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const iso = normalizeIsoDate(value);
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 }
 
@@ -56,10 +100,10 @@ export function splitDniName(name, warnings = []) {
   return { paterno: '0', materno: '0', nombres: '0' };
 }
 
-export function buildPs4(rows, warnings = []) {
+export function buildPs4(rows, warnings = [], year, month) {
   const lines = [];
   const seen = new Set();
-  vigentes(rows).forEach((row) => {
+  paraPdt(rows, year, month).forEach((row) => {
     const key = `${row.doc_tipo_codigo || '06'}|${row.doc_numero || ''}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -86,8 +130,8 @@ function pdtDocType(value) {
   return s.slice(0, 1);
 }
 
-export function build4ta(rows) {
-  return vigentes(rows).map((row) => {
+export function build4ta(rows, warnings = [], year, month) {
+  return paraPdt(rows, year, month).map((row) => {
     const fields = [
       row.doc_tipo_codigo === '01' ? '01' : '06',
       row.doc_numero || '',
@@ -95,8 +139,8 @@ export function build4ta(rows) {
       row.serie || '',
       row.numero || '',
       formatPdtAmount(penOf(row, 'renta_bruta')),
-      isoToDdMmYyyy(row.fecha_pago || row.fecha_emision),
       isoToDdMmYyyy(row.fecha_emision),
+      isoToDdMmYyyy(row.fecha_pago),
       Number(row.indicador_retencion) > 0 ? '1' : '0',
       '',
       '',
@@ -116,13 +160,19 @@ export function buildFileName(companyRuc, year, month, ext) {
 /** Descarga los dos TXT del PDT 601 con una pausa entre ellos. */
 export function downloadPdt(company, rows, year, month) {
   const warnings = [];
-  const ps4 = buildPs4(rows, warnings);
-  const fourta = build4ta(rows);
+  const ps4 = buildPs4(rows, warnings, year, month);
+  const fourta = build4ta(rows, warnings, year, month);
   const ps4Name = buildFileName(company?.ruc, year, month, 'ps4');
   const fourtaName = buildFileName(company?.ruc, year, month, '4ta');
   downloadText(ps4Name, ps4, 'text/plain');
   setTimeout(() => downloadText(fourtaName, fourta, 'text/plain'), 300);
-  return { ps4Name, fourtaName, count: vigentes(rows).length, warnings: [...new Set(warnings)] };
+  return {
+    ps4Name,
+    fourtaName,
+    count: paraPdt(rows, year, month).length,
+    excluded: exclusionStats(rows, year, month),
+    warnings: [...new Set(warnings)],
+  };
 }
 
 /** Descarga un solo TXT del PDT 601 (ps4 o 4ta) para los botones sueltos. */
@@ -132,17 +182,24 @@ export function downloadPdtSingle(company, rows, year, month, ext) {
   if (suffix !== 'ps4' && suffix !== '4ta') {
     throw new Error(`Extensión PDT no soportada: ${ext || '—'}. Usa ps4 o 4ta.`);
   }
-  const content = suffix === 'ps4' ? buildPs4(rows, warnings) : build4ta(rows);
+  const content = suffix === 'ps4'
+    ? buildPs4(rows, warnings, year, month)
+    : build4ta(rows, warnings, year, month);
   const fileName = buildFileName(company?.ruc, year, month, suffix);
   downloadText(fileName, content, 'text/plain');
-  return { fileName, count: vigentes(rows).length, warnings: [...new Set(warnings)] };
+  return {
+    fileName,
+    count: paraPdt(rows, year, month).length,
+    excluded: exclusionStats(rows, year, month),
+    warnings: [...new Set(warnings)],
+  };
 }
 
 /** Un solo clic: ZIP con los dos TXT, evita el bloqueo de descargas automáticas. */
 export async function downloadPdtZip(company, rows, year, month) {
   const warnings = [];
-  const ps4 = buildPs4(rows, warnings);
-  const fourta = build4ta(rows);
+  const ps4 = buildPs4(rows, warnings, year, month);
+  const fourta = build4ta(rows, warnings, year, month);
   const ps4Name = buildFileName(company?.ruc, year, month, 'ps4');
   const fourtaName = buildFileName(company?.ruc, year, month, '4ta');
   const JSZip = await loadJSZip();
@@ -152,7 +209,14 @@ export async function downloadPdtZip(company, rows, year, month) {
   const blob = await zip.generateAsync({ type: 'blob' });
   const zipName = `PDT601_${year}${String(month).padStart(2, '0')}_${company?.ruc || 'sinruc'}.zip`;
   downloadBlob(zipName, blob);
-  return { zipName, ps4Name, fourtaName, count: vigentes(rows).length, warnings: [...new Set(warnings)] };
+  return {
+    zipName,
+    ps4Name,
+    fourtaName,
+    count: paraPdt(rows, year, month).length,
+    excluded: exclusionStats(rows, year, month),
+    warnings: [...new Set(warnings)],
+  };
 }
 
 function accountName(accounts, cuenta, fallback) {
@@ -161,17 +225,17 @@ function accountName(accounts, cuenta, fallback) {
 }
 
 /**
- * Asiento MENSUAL: todas las recibos vigentes del mes en una sola transacción.
+ * Asiento MENSUAL: recibos PAGADOS en el mes de pago, en una sola transacción.
  * Debe: cuentas de gasto por concepto. Haber: retenciones y pago.
  */
-export function buildAsiento(rows, config = {}, accounts = [], periodOverride = '') {
+export function buildAsiento(rows, config = {}, accounts = [], year, month) {
   const warnings = [];
-  const list = vigentes(rows);
-  const firstDate = String(list[0]?.fecha_emision || '').slice(0, 7).replace('-', '');
-  const period = String(periodOverride || list[0]?.period || firstDate || '');
+  const { yyyy, mm } = resolvePeriod(rows, year, month);
+  const list = paraPdt(rows, year, month);
+  const period = yyyy && mm ? `${yyyy}${mm}` : String(list[0]?.period || '');
   const lines = [];
 
-  if (!list.length) warnings.push('No hay recibos vigentes en el período seleccionado para generar el asiento.');
+  if (!list.length) warnings.push('No hay recibos PAGADOS con fecha de pago en el mes seleccionado para generar el asiento.');
 
   const groups = new Map();
   let sinCuenta = 0;
@@ -222,6 +286,8 @@ export function buildAsiento(rows, config = {}, accounts = [], periodOverride = 
 
   return {
     period,
+    count: list.length,
+    excluded: exclusionStats(rows, year, month),
     lines,
     totalDebe,
     totalHaber,
@@ -236,7 +302,11 @@ export function downloadAsiento(entry, company, year, month) {
   const ruc = String(company?.ruc || '').replace(/\D/g, '');
   const fileName = `ASIENTO_HONORARIOS_${yyyy}${mm}${ruc ? `_${ruc}` : ''}.csv`;
   downloadText(fileName, accountingBridgeService.toCSV(entry, company), 'text/csv');
-  return fileName;
+  return {
+    fileName,
+    count: entry.count || 0,
+    excluded: entry.excluded || { anulados: 0, impagos: 0, otroMes: 0 },
+  };
 }
 
 export default { buildPs4, build4ta, buildFileName, downloadPdt, buildAsiento, downloadAsiento };
