@@ -10,7 +10,7 @@
 
 import { payrollService, calcRow } from './payrollService.js';
 import { getBaseSalary } from './salaryHistoryService.js';
-import { taxService } from './taxService.js';
+import { taxService } from './taxService.js?v=a304029';
 import { paramsService } from './paramsService.js';
 import { MESES, getRmv } from './payrollConfig.js';
 import { money, round2 } from './payrollUtils.js';

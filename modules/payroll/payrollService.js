@@ -8,7 +8,7 @@
 
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
-import { taxService } from './taxService.js';
+import { taxService } from './taxService.js?v=a304029';
 import { activeCompanyId, activeCompany } from './payrollScope.js';
 import { afpRatesService } from './afpRatesService.js';
 import { attendanceService } from './attendanceService.js';
