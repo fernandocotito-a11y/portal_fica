@@ -8,6 +8,7 @@
    ========================================================================== */
 
 import { payrollService, calcRow } from './payrollService.js';
+import { getBaseSalary } from './salaryHistoryService.js';
 import { attendanceService } from './attendanceService.js';
 import { accountStatementService } from './accountStatementService.js';
 import { sunatExporterService } from './sunatExporterService.js';
@@ -102,7 +103,7 @@ export function renderExportTab(root) {
     return employees().map((emp) => ({
       employee: emp,
       calc: calcRow(emp, payrollService.deriveMonthInputs(emp, year, month), year, month),
-      attendance: attendanceService.summarize(emp.id, year, month, emp.baseSalary),
+      attendance: attendanceService.summarize(emp.id, year, month, getBaseSalary(emp, year, month)),
     }));
   }
 

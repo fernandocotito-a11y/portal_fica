@@ -9,6 +9,7 @@
    ========================================================================== */
 
 import { payrollService } from './payrollService.js';
+import { getBaseSalary } from './salaryHistoryService.js';
 import { vacationService } from './vacationService.js';
 import { laborRules, MESES } from './payrollConfig.js';
 import { money, fmtDate, num, round2 } from './payrollUtils.js';
@@ -209,10 +210,11 @@ export function renderVacationTab(root) {
     }
 
     const split = vacationService.splitByMonth(fromI.value, toI.value);
-    const base = num(emp.baseSalary);
     let capped = false;
     const rows = split
       .map((m) => {
+        // Cada mes usa el sueldo vigente en ese mes (importa si hubo aumento).
+        const base = round2(getBaseSalary(emp, m.year, m.month));
         const paidDays = Math.min(30, m.days);
         if (m.days > paidDays) capped = true;
         const vacPay = round2((paidDays * base) / 30);

@@ -9,6 +9,7 @@
    ========================================================================== */
 
 import { payrollService } from './payrollService.js';
+import { getBaseSalary } from './salaryHistoryService.js';
 import { attendanceService, ATTENDANCE_TYPES, ABSENCE_TYPES } from './attendanceService.js';
 import { scheduleService, workDaysLabel } from './scheduleService.js';
 import { MESES, WORK_DAY_LABELS } from './payrollConfig.js';
@@ -27,8 +28,13 @@ function typeLabel(value) {
   return (ATTENDANCE_TYPES.find((t) => t.value === value) || {}).label || value || '—';
 }
 
-function salaryOf(emp) {
-  return emp ? Number(emp.baseSalary) || 0 : 0;
+function salaryOf(emp, dateISO) {
+  if (!emp) return 0;
+  const s = String(dateISO || '');
+  const fallback = new Date();
+  const y = Number(s.slice(0, 4)) || fallback.getFullYear();
+  const m = Number(s.slice(5, 7)) || fallback.getMonth() + 1;
+  return round2(getBaseSalary(emp, y, m));
 }
 
 export function renderAttendanceTab(root) {
@@ -454,7 +460,7 @@ export function renderAttendanceTab(root) {
         extraMinutes: extraI.value,
       },
       s,
-      salaryOf(emp)
+      salaryOf(emp, dateI.value)
     );
     const avisos = [];
     if (c.overtimePay > 0) avisos.push(`Pago estimado de extras: ${money(c.overtimePay)}`);
@@ -482,7 +488,7 @@ export function renderAttendanceTab(root) {
     const c = attendanceService.computeRecord(
       { type: 'normal', date: dateI.value, entry: entryI.value, exit: exitI.value },
       s,
-      salaryOf(emp)
+      salaryOf(emp, dateI.value)
     );
     tardI.value = c.tardinessMinutes;
     earlyI.value = c.earlyMinutes;
@@ -544,7 +550,7 @@ export function renderAttendanceTab(root) {
     tbody.innerHTML = recs
       .map((r) => {
         const emp = payrollService.getEmployee(r.employeeId);
-        const sal = salaryOf(emp);
+        const sal = salaryOf(emp, r.date);
         const c = attendanceService.computeRecord(r, undefined, sal);
         const isAbsence = ABSENCE_TYPES.includes(r.type);
         const dayDisc = isAbsence && !r.withPay ? attendanceService.descuentoPorDia(sal) : 0;

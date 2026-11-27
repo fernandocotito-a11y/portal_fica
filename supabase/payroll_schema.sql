@@ -45,6 +45,21 @@ create table if not exists public.payroll_employees (
   created_at timestamptz not null default now()
 );
 
+-- 1.1) Historial de sueldos --------------------------------------------------
+-- `payroll_employees.base_salary` queda como sueldo BASE/inicial. Los aumentos
+-- se registran aquí con el mes desde el que rigen; el cálculo de cada mes resuelve
+-- el sueldo vigente sin alterar los meses anteriores.
+create table if not exists public.payroll_salary_history (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  employee_id uuid not null references public.payroll_employees(id) on delete cascade,
+  year int not null check (year between 2000 and 2100),
+  month int not null check (month between 1 and 12),
+  base_salary numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique (company_id, employee_id, year, month)
+);
+
 -- 2) Períodos (planilla mensual) --------------------------------------------
 create table if not exists public.payroll_periods (
   id uuid primary key default gen_random_uuid(),
@@ -117,6 +132,7 @@ alter table public.payroll_attendance enable row level security;
 alter table public.payroll_vacations enable row level security;
 alter table public.payroll_liquidations enable row level security;
 alter table public.payroll_tax_state enable row level security;
+alter table public.payroll_salary_history enable row level security;
 
 -- Políticas por empresa (acceso si el usuario tiene acceso a esa empresa) ----
 drop policy if exists "payroll_employees_all" on public.payroll_employees;
@@ -143,8 +159,13 @@ drop policy if exists "payroll_tax_state_all" on public.payroll_tax_state;
 create policy "payroll_tax_state_all" on public.payroll_tax_state
   for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
 
+drop policy if exists "payroll_salary_history_all" on public.payroll_salary_history;
+create policy "payroll_salary_history_all" on public.payroll_salary_history
+  for all using (public.can_access_company(company_id)) with check (public.can_access_company(company_id));
+
 -- Índices -------------------------------------------------------------------
 create index if not exists idx_payroll_employees_company on public.payroll_employees(company_id);
+create index if not exists idx_payroll_salary_history_emp on public.payroll_salary_history(company_id, employee_id, year, month);
 create index if not exists idx_payroll_attendance_company on public.payroll_attendance(company_id);
 create index if not exists idx_payroll_vacations_company on public.payroll_vacations(company_id);
 create index if not exists idx_payroll_liquidations_company on public.payroll_liquidations(company_id);

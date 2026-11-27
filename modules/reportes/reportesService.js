@@ -74,6 +74,7 @@ export function buildReport(companies, raw, year, warnings = []) {
   const periodsByCompany = groupByCompany(raw.periods || []);
   const balancesByCompany = groupByCompany(raw.balances || []);
   const declByCompany = groupByCompany(raw.declRows || []);
+  const salaryByCompany = groupByCompany(raw.salaryRows || []);
 
   const reports = (companies || []).map((company) => buildCompanyReport(company, {
     taxRows: taxByCompany.get(company.id) || [],
@@ -82,6 +83,7 @@ export function buildReport(companies, raw, year, warnings = []) {
     periods: periodsByCompany.get(company.id) || [],
     balances: (balancesByCompany.get(company.id) || [])[0] || null,
     declRows: declByCompany.get(company.id) || [],
+    salaryRows: salaryByCompany.get(company.id) || [],
   }, year));
 
   return {
@@ -116,7 +118,7 @@ export const reportesService = {
     const inCompanies = (query) => query.in('company_id', ids);
     const yearTax = (query) => inCompanies(query).gte('period', `${y}01`).lte('period', `${y}12`);
 
-    const [taxRows, retentionRows, employees, periods, balances, declRows] = await Promise.all([
+    const [taxRows, retentionRows, employees, periods, balances, declRows, salaryRows] = await Promise.all([
       safeFetch('Compras y ventas', () => fetchAll(
         'tax_records',
         'id,company_id,kind,period,issue_date,doc_type,series,number,counterparty_name,doc_id_number,total,taxed_base,discount_base,igv,discount_igv,taxed_base_ng,igv_ng,taxed_base_dng,igv_dng,acq_value_ng,exonerated,unaffected,isc,icbper,other_taxes,currency,exchange_rate,source,raw',
@@ -144,8 +146,13 @@ export const reportesService = {
       ), warnings),
       safeFetch('Declaraciones · control de períodos', () => fetchAll(
         'tax_declaration_periods',
-        'id,company_id,anio,mes,pagos_previos,pagos_previos_renta,intereses,intereses_renta,fecha_declaracion,fecha_vencimiento,interes_manual,estado',
+        'id,company_id,anio,mes,pagos_previos,pagos_previos_renta,intereses,intereses_renta,fecha_declaracion,fecha_vencimiento,pagado,fecha_pago,interes_manual,estado',
         (query) => inCompanies(query).eq('anio', y),
+      ), warnings),
+      safeFetch('Planillas · historial de sueldos', () => fetchAll(
+        'payroll_salary_history',
+        'id,company_id,employee_id,year,month,base_salary',
+        inCompanies,
       ), warnings),
     ]);
 
@@ -166,7 +173,7 @@ export const reportesService = {
     try { await legalParamsService.refresh(); } catch { /* se usan los valores de respaldo */ }
 
     return buildReport(companies, {
-      taxRows: taxRowsWithRate, retentionRows, employees, periods, balances, declRows,
+      taxRows: taxRowsWithRate, retentionRows, employees, periods, balances, declRows, salaryRows,
     }, y, warnings);
   },
 };

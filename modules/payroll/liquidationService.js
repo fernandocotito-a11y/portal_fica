@@ -21,6 +21,7 @@ import { gratificacionService } from './gratificacionService.js';
 import { calcRow, deriveMonthInputs, inPeriod, getAfpParams } from './payrollService.js';
 import { impuestoAnual, uitDelAnio, DEDUCCION_UIT } from './taxService.js';
 import { assertDateOpen } from './periodLock.js';
+import { getBaseSalary } from './salaryHistoryService.js';
 
 let cache = [];
 
@@ -176,7 +177,7 @@ export const liquidationService = {
 
     /* ------------------------------- Remuneración ------------------------------ */
     const asig = emp.asignacionFamiliar ? round2(getRmv(year, cese.m) * TASAS.asignacionFamiliar) : 0;
-    const basico = round2(num(emp.baseSalary));
+    const basico = round2(getBaseSalary(emp, cese.y, cese.m));
     const base = round2(basico + asig);
     const daily = round2(base / 30);
 

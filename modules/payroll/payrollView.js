@@ -9,6 +9,7 @@
    ========================================================================== */
 
 import { payrollService, calcRow, sumTotals, inPeriod } from './payrollService.js';
+import { salaryHistoryService, getBaseSalary } from './salaryHistoryService.js';
 import { attendanceService } from './attendanceService.js';
 import { scheduleService } from './scheduleService.js';
 import { vacationService } from './vacationService.js';
@@ -135,7 +136,19 @@ function renderPlanillaTab(root) {
             <div class="form-group" style="margin:0;"><label class="form-label">Cargo</label><input class="form-input" data-position placeholder="Ej. Asistente contable" /></div>
           </div>
           <div class="form-group"><label class="form-label">Fecha de cese (si aplica)</label><input class="form-input" type="date" data-cese /><span class="field-error" data-error-cese></span></div>
-          <div class="form-group"><label class="form-label">Sueldo básico (S/) <span class="req">*</span></label><input class="form-input" type="number" min="0" step="0.01" data-salary placeholder="Ej. 1200.00" /><span class="field-error" data-error-salary></span></div>
+          <div class="form-group"><label class="form-label">Sueldo básico inicial (S/) <span class="req">*</span></label><input class="form-input" type="number" min="0" step="0.01" data-salary placeholder="Ej. 1200.00" /><span class="field-error" data-error-salary></span><span class="text-muted" style="font-size:var(--font-size-xs);display:block;margin-top:4px;" data-sueldo-vigente></span></div>
+          <div class="form-group" data-salary-history-group hidden style="margin-bottom:var(--space-4);">
+            <label class="form-label">Historial de sueldos (aumentos)</label>
+            <div data-salary-history-list style="display:flex;flex-direction:column;gap:var(--space-2);margin-bottom:var(--space-3);"></div>
+            <div style="display:grid;grid-template-columns:1.2fr .8fr 1fr auto;gap:var(--space-2);align-items:end;">
+              <div><label class="form-label">Nuevo sueldo (S/)</label><input class="form-input" type="number" min="0" step="0.01" data-hist-salary placeholder="Ej. 1500.00" /></div>
+              <div><label class="form-label">Año</label><select class="form-input" data-hist-year>${years.map((y) => `<option value="${y}"${y === CURRENT_YEAR ? ' selected' : ''}>${y}</option>`).join('')}</select></div>
+              <div><label class="form-label">Desde</label><select class="form-input" data-hist-month>${MESES.map((mm, i) => `<option value="${i + 1}"${i + 1 === now.getMonth() + 1 ? ' selected' : ''}>${mm}</option>`).join('')}</select></div>
+              <button type="button" class="btn" data-hist-add>+ Agregar</button>
+            </div>
+            <span class="field-error" data-error-history></span>
+            <span class="text-muted" style="font-size:var(--font-size-xs);display:block;margin-top:4px;">El cambio rige desde el mes indicado. El sueldo de los meses anteriores no se modifica.</span>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-4);">
             <div class="form-group" style="margin:0;"><label class="form-label">Régimen de pensiones <span class="req">*</span></label><select class="form-input" data-pension>${optionsHtml(REGIMENES_PENSION, 'ONP')}</select></div>
             <div class="form-group" style="margin:0;" data-afp-group><label class="form-label">AFP</label><select class="form-input" data-afp>${optionsHtml(AFP_LIST, 'HABITAT')}</select></div>
@@ -194,6 +207,14 @@ function renderPlanillaTab(root) {
   const ceseI = root.querySelector('[data-cese]');
   const positionI = root.querySelector('[data-position]');
   const salaryI = root.querySelector('[data-salary]');
+  const vigenteEl = root.querySelector('[data-sueldo-vigente]');
+  const histGroup = root.querySelector('[data-salary-history-group]');
+  const histList = root.querySelector('[data-salary-history-list]');
+  const histSalaryI = root.querySelector('[data-hist-salary]');
+  const histYearI = root.querySelector('[data-hist-year]');
+  const histMonthI = root.querySelector('[data-hist-month]');
+  const histAddBtn = root.querySelector('[data-hist-add]');
+  const errHistory = root.querySelector('[data-error-history]');
   const pensionI = root.querySelector('[data-pension]');
   const afpGroup = root.querySelector('[data-afp-group]');
   const afpI = root.querySelector('[data-afp]');
@@ -449,6 +470,27 @@ function renderPlanillaTab(root) {
   function updateContractVisibility() {
     contractEndGroup.hidden = contractI.value !== 'plazo_fijo';
   }
+
+  function renderSalaryHistory() {
+    const emp = editingId ? payrollService.getEmployee(editingId) : null;
+    histGroup.hidden = !editingId;
+    vigenteEl.textContent = emp
+      ? `Vigente en ${MESES[month - 1]} ${year}: ${money(getBaseSalary(emp, year, month))}`
+      : '';
+    if (!editingId) {
+      histList.innerHTML = '';
+      return;
+    }
+    const rows = salaryHistoryService.forEmployee(editingId);
+    histList.innerHTML = rows.length
+      ? rows.map((r) => `
+          <div style="display:flex;align-items:center;gap:var(--space-2);">
+            <span class="chip chip--muted">${escapeHtml(MESES[r.month - 1])} ${r.year} · ${money(r.baseSalary)}</span>
+            <button type="button" class="btn btn--ghost btn--sm" data-hist-del="${r.id}">Quitar</button>
+          </div>`).join('')
+      : '<span class="text-muted" style="font-size:var(--font-size-xs);">Aún no hay aumentos registrados.</span>';
+  }
+
   function openCreate() {
     editingId = null;
     modalTitle.textContent = 'Nuevo colaborador';
@@ -458,6 +500,8 @@ function renderPlanillaTab(root) {
     errDoc.textContent = '';
     errStart.textContent = '';
     errCese.textContent = '';
+    errHistory.textContent = '';
+    histSalaryI.value = '';
     pensionI.value = 'ONP';
     docTypeI.value = 'DNI';
     activeGroup.hidden = true;
@@ -472,6 +516,7 @@ function renderPlanillaTab(root) {
     contractEndI.value = '';
     updateContractVisibility();
     updateAfpVisibility();
+    renderSalaryHistory();
     modal.showModal();
     nameI.focus();
   }
@@ -485,6 +530,8 @@ function renderPlanillaTab(root) {
     errDoc.textContent = '';
     errStart.textContent = '';
     errCese.textContent = '';
+    errHistory.textContent = '';
+    histSalaryI.value = '';
     codeI.value = emp.code || '';
     docTypeI.value = emp.docType || 'DNI';
     docNumI.value = emp.docNumber || '';
@@ -508,6 +555,7 @@ function renderPlanillaTab(root) {
     activeGroup.hidden = false;
     activeI.checked = emp.active !== false;
     updateAfpVisibility();
+    renderSalaryHistory();
     modal.showModal();
     nameI.focus();
   }
@@ -526,8 +574,8 @@ function renderPlanillaTab(root) {
     return ok;
   }
 
-  yearSel.addEventListener('change', () => { year = Number(yearSel.value); loadPeriod(); });
-  monthSel.addEventListener('change', () => { month = Number(monthSel.value); loadPeriod(); });
+  yearSel.addEventListener('change', () => { year = Number(yearSel.value); loadPeriod(); if (modal.open) renderSalaryHistory(); });
+  monthSel.addEventListener('change', () => { month = Number(monthSel.value); loadPeriod(); if (modal.open) renderSalaryHistory(); });
   root.querySelector('[data-showall]').addEventListener('change', (e) => { showAll = e.target.checked; renderTable(); });
   addBtn.addEventListener('click', openCreate);
   root.querySelector('[data-close-modal]').addEventListener('click', () => modal.close());
@@ -535,6 +583,38 @@ function renderPlanillaTab(root) {
   modal.addEventListener('cancel', (e) => { e.preventDefault(); modal.close(); });
   pensionI.addEventListener('change', updateAfpVisibility);
   contractI.addEventListener('change', updateContractVisibility);
+  histAddBtn.addEventListener('click', async () => {
+    if (!editingId) return;
+    errHistory.textContent = '';
+    try {
+      await salaryHistoryService.add(editingId, {
+        year: Number(histYearI.value),
+        month: Number(histMonthI.value),
+        baseSalary: Number(histSalaryI.value),
+      });
+      histSalaryI.value = '';
+      renderSalaryHistory();
+      loadPeriod();
+      showToast('Cambio de sueldo registrado.');
+    } catch (err) {
+      errHistory.textContent = err.message;
+      showToast(err.message, 'error');
+    }
+  });
+  histList.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-hist-del]');
+    if (!btn) return;
+    errHistory.textContent = '';
+    try {
+      await salaryHistoryService.remove(btn.dataset.histDel);
+      renderSalaryHistory();
+      loadPeriod();
+      showToast('Cambio de sueldo eliminado.');
+    } catch (err) {
+      errHistory.textContent = err.message;
+      showToast(err.message, 'error');
+    }
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

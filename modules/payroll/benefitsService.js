@@ -10,6 +10,7 @@
 import { num, round2, clamp } from './payrollUtils.js';
 import { getRmv, TASAS } from './payrollConfig.js';
 import { attendanceService } from './attendanceService.js';
+import { salaryHistoryService } from './salaryHistoryService.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
 const lastDayOfMonth = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -55,9 +56,14 @@ export const benefitsService = {
     return emp.asignacionFamiliar ? round2(getRmv(year, month) * TASAS.asignacionFamiliar) : 0;
   },
 
-  /** Base computable de gratificación = básico + asignación familiar. */
-  gratificacionBase(emp, year, month) {
-    return round2(num(emp.baseSalary) + this.asignacionFamiliar(emp, year, month));
+  /** Base computable de gratificación = promedio del semestre + asignación familiar. */
+  gratificacionBase(emp, year, semestre = 'diciembre') {
+    const months = semestre === 'julio'
+      ? Array.from({ length: 6 }, (_, i) => ({ year, month: i + 1 }))
+      : Array.from({ length: 6 }, (_, i) => ({ year, month: i + 7 }));
+    const sueldoPromedio = salaryHistoryService.average(emp, months);
+    const month = semestre === 'julio' ? 6 : 12;
+    return round2(sueldoPromedio + this.asignacionFamiliar(emp, year, month));
   },
 
   /**
@@ -77,8 +83,7 @@ export const benefitsService = {
 
   /** Gratificación de un semestre (auto: meses + bono según salud). */
   calcGratificacion(emp, { year, semestre = 'diciembre', factor = 1, salud = null } = {}) {
-    const month = semestre === 'julio' ? 7 : 12;
-    const base = this.gratificacionBase(emp, year, month);
+    const base = this.gratificacionBase(emp, year, semestre);
     const meses = clamp(this.gratificacionMeses(emp, year, semestre), 0, 6);
     const monto = round2((base / 6) * meses * num(factor, 1));
     const s = salud || emp.salud || 'ESSALUD';
@@ -149,9 +154,10 @@ export const benefitsService = {
   calcCts(emp, { year, periodo = 'noviembre', factor = 1, hasCts = true } = {}) {
     const month = periodo === 'mayo' ? 5 : 11;
     const asig = this.asignacionFamiliar(emp, year, month);
-    const gratiRef = round2(num(emp.baseSalary) + asig);
+    const sueldoPromedio = salaryHistoryService.average(emp, this.semesterMonths(year, periodo));
+    const gratiRef = round2(sueldoPromedio + asig);
     const sexto = round2(gratiRef / 6);
-    const base = round2(num(emp.baseSalary) + asig + sexto);
+    const base = round2(sueldoPromedio + asig + sexto);
     const dias = this.ctsDiasComputables(emp, year, periodo);
     if (!hasCts) return { base, sexto, diasComputables: dias, monto: 0, hasCts: false };
     const monto = round2((base / 360) * dias * num(factor, 1));

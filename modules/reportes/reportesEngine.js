@@ -171,7 +171,8 @@ function estimatePayroll(employees, periodRow, year, month, today) {
         const inp = rows[emp.id] || {};
         if (Object.keys(inp).length) hasPeriodData = true;
         const days = inp.days != null ? Number(inp.days) : 30;
-        const basic = round2(Number(emp.base_salary || 0) * (Math.max(0, Math.min(30, days)) / 30));
+        const sueldoMes = salaryForMonth(emp, salaryRows, year, month);
+        const basic = round2(sueldoMes * (Math.max(0, Math.min(30, days)) / 30));
         const asig = emp.asignacion_familiar ? round2(rmv * 0.1) : 0;
         const vacation = round2(Number(inp.vacation || 0));
         const bonuses = round2(Number(inp.bonuses || 0));
@@ -204,6 +205,16 @@ function estimatePayroll(employees, periodRow, year, month, today) {
   };
 }
 
+/** Sueldo vigente en un mes desde el historial crudo (motor sin I/O). */
+function salaryForMonth(emp, salaryRows, year, month) {
+  const target = Number(year) * 12 + Number(month);
+  const vigentes = (salaryRows || [])
+    .filter((r) => r.employee_id === emp.id && Number(r.year) * 12 + Number(r.month) <= target)
+    .sort((a, b) => (Number(a.year) * 12 + Number(a.month)) - (Number(b.year) * 12 + Number(b.month)));
+  if (!vigentes.length) return Number(emp.base_salary || 0);
+  return Number(vigentes[vigentes.length - 1].base_salary || 0);
+}
+
 /** Construye el modelo de una empresa para el ejercicio. */
 export function buildCompanyReport(company, raw, year) {
   const y = Number(year);
@@ -212,6 +223,7 @@ export function buildCompanyReport(company, raw, year) {
   const employees = raw.employees || [];
   const periods = raw.periods || [];
   const declRows = raw.declRows || [];
+  const salaryRows = raw.salaryRows || [];
   const periodByMonth = new Map(periods.map((p) => [Number(p.month), p]));
   const declByMonth = new Map(declRows.map((p) => [Number(p.mes), p]));
   const balances = raw.balances || {};

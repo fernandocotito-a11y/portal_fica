@@ -9,6 +9,7 @@
    ========================================================================== */
 
 import { payrollService, calcRow } from './payrollService.js';
+import { getBaseSalary } from './salaryHistoryService.js';
 import { taxService } from './taxService.js';
 import { paramsService } from './paramsService.js';
 import { MESES, TASAS, getRmv } from './payrollConfig.js';
@@ -122,7 +123,7 @@ export function renderRentaSimTab(root) {
 
     const fuente = manual
       ? `Sueldo manual: ${money(sueldo)}${asig ? ' · con asignación familiar' : ''}`
-      : `Colaborador: ${escapeHtml(emp.name || '')} · sueldo ${money(emp.baseSalary)}${emp.asignacionFamiliar ? ' · con asignación familiar' : ''}`;
+      : `Colaborador: ${escapeHtml(emp.name || '')} · sueldo vigente ${money(getBaseSalary(emp, year, month))}${emp.asignacionFamiliar ? ' · con asignación familiar' : ''}`;
 
     const filasTramos = tramos.map((t) => `
       <tr>

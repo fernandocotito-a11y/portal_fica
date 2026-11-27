@@ -19,6 +19,7 @@ import { gratificacionService } from './gratificacionService.js';
 import { loanService } from './loanService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission, laborRules } from './payrollConfig.js';
 import { setPeriodClosedChecker, assertDateRangeOpen } from './periodLock.js';
+import { salaryHistoryService, getBaseSalary } from './salaryHistoryService.js';
 
 /* ------------------------------------------------------------ caché en memoria */
 let employeesCache = [];
@@ -125,9 +126,11 @@ function benefitFactor() {
 function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gratAcum = 0) {
   const uit = getUit(year);
   const rmv = getRmv(year, month);
+  // Sueldo vigente del mes (historial de aumentos), con el sueldo base como fallback.
+  const sueldoMes = round2(getBaseSalary(emp, year, month));
 
   const days = clamp(num(inputs.days, 30), 0, 30);
-  const basico = round2(num(emp.baseSalary) * (days / 30));
+  const basico = round2(sueldoMes * (days / 30));
   const asigFamiliar = emp.asignacionFamiliar ? round2(rmv * TASAS.asignacionFamiliar) : 0;
   const vacaciones = round2(num(inputs.vacation));
   const bonificaciones = round2(num(inputs.bonuses));
@@ -183,7 +186,7 @@ function computeRow(emp, inputs = {}, year, month, retAcum = 0, remAcum = 0, gra
   // Remuneración mensual recurrente completa (sin prorrateo por vacaciones ni
   // faltas): sirve para proyectar los meses futuros. Las vacaciones y bonos
   // del mes se suman UNA SOLA VEZ en la parte acumulada.
-  const remuneracionRecurrente = round2(num(emp.baseSalary) + asigFamiliar);
+  const remuneracionRecurrente = round2(sueldoMes + asigFamiliar);
   const gratBase = round2(num(inputs.gratificacion, basico + asigFamiliar + vacaciones) * factor);
   const gratProyectada = round2(gratBase * (month <= 7 ? 2 : 1));
   const gratTotal = round2(gratAcum + gratProyectada);
@@ -270,16 +273,17 @@ export function inPeriod(emp, year, month) {
  * bonificaciones y pagos/adelantos). Todo automático (no se ingresa a mano).
  */
 export function deriveMonthInputs(emp, year, month) {
-  const att = attendanceService.summarize(emp.id, year, month, emp.baseSalary);
+  const sueldoMes = round2(getBaseSalary(emp, year, month));
+  const att = attendanceService.summarize(emp.id, year, month, sueldoMes);
   // Mes comercial de 30 días: si el descanso cubre todo el mes calendario (31 días),
   // se pagan como máximo 30 días para no exceder la remuneración mensual.
   const vacDays = Math.min(30, vacationService.takenInMonth(emp.id, year, month));
   const days = Math.min(30, Math.max(0, 30 - att.absentWithoutPay - vacDays));
-  const vacation = round2(vacDays * (emp.baseSalary / 30));
+  const vacation = round2(vacDays * (sueldoMes / 30));
   const bAfectas = bonusService.sumRegular(emp.id, year, month);
   const bExtra = bonusService.sumExtraordinaria(emp.id, year, month);
   const gratif = gratificacionService.sumFor(emp.id, year, month);
-  const basico = round2(num(emp.baseSalary) * (days / 30));
+  const basico = round2(sueldoMes * (days / 30));
   const asigFamiliar = emp.asignacionFamiliar ? round2(getRmv(year, month) * TASAS.asignacionFamiliar) : 0;
   return {
     days,
@@ -354,6 +358,8 @@ export const payrollService = {
     });
     // El bloqueo de períodos cerrados se comparte con todas las pestañas.
     setPeriodClosedChecker((year, month) => !!periodsCache[this.periodKey(year, month)]?.closed);
+    // El historial se carga después del bloqueo para poder validar los meses.
+    await salaryHistoryService.refresh();
   },
 
   listEmployees() {

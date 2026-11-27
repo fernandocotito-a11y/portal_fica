@@ -15,6 +15,7 @@
    ========================================================================== */
 
 import { payrollService, calcRow, inPeriod } from './payrollService.js';
+import { getBaseSalary } from './salaryHistoryService.js';
 import { vacationService } from './vacationService.js';
 import { attendanceService, ATTENDANCE_TYPES } from './attendanceService.js';
 import { paymentService, PAYMENT_CONCEPTS, PAYMENT_TYPES } from './paymentService.js';
@@ -269,7 +270,7 @@ export const accountStatementService = {
       totalDiscount: 0,
     };
     for (let m = 1; m <= 12; m++) {
-      const s = attendanceService.summarize(employeeId, year, m, employee.baseSalary);
+      const s = attendanceService.summarize(employeeId, year, m, getBaseSalary(employee, year, m));
       attTotals.tardinessMinutes += s.tardinessMinutes;
       attTotals.extraMinutes += s.extraMinutes;
       attTotals.overtimePay = round2(attTotals.overtimePay + s.overtimePay);
@@ -281,7 +282,7 @@ export const accountStatementService = {
     }
 
     const attendance = asistencias.map((r) => {
-      const c = attendanceService.computeRecord(r, undefined, employee.baseSalary);
+      const c = attendanceService.computeRecord(r, undefined, getBaseSalary(employee, Number(String(r.date || '').slice(0, 4)) || year, Number(String(r.date || '').slice(5, 7)) || 1));
       return {
         date: r.date || '',
         type: r.type,
