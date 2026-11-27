@@ -146,11 +146,12 @@ export function renderLiquidationTab(root) {
   function fillEmployees(preferredId) {
     const keep = preferredId || employeeSel.value;
     const emps = payrollService.listEmployees().filter((e) => e.active !== false);
-    employeeSel.innerHTML = emps
+    // Sin placeholder, el navegador preseleccionaba al primero y se podía
+    // calcular/guardar una liquidación (y marcar el cese) del empleado errado.
+    employeeSel.innerHTML = '<option value="">Seleccione un colaborador</option>' + emps
       .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.cese ? ' (cesado)' : ''}</option>`)
       .join('');
-    if (!emps.length) employeeSel.innerHTML = '<option value="">Sin colaboradores</option>';
-    else if (keep && emps.some((e) => e.id === keep)) employeeSel.value = keep;
+    employeeSel.value = keep && emps.some((e) => e.id === keep) ? keep : '';
   }
 
   function build() {

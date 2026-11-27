@@ -129,9 +129,11 @@ export function renderExportTab(root) {
 
   /* --------------------------- Estado de cuenta ------------------------- */
   function fillStatementSelectors() {
-    stmtEmp.innerHTML = employees()
+    const keep = stmtEmp.value;
+    stmtEmp.innerHTML = '<option value="">Seleccione un colaborador</option>' + employees()
       .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}</option>`)
       .join('');
+    stmtEmp.value = keep || '';
     const years = accountStatementService.availableYears();
     stmtYearSel.innerHTML = years.map((y) => `<option value="${y}"${y === stmtYear ? ' selected' : ''}>${y}</option>`).join('');
     stmtEmployeeId = stmtEmp.value || '';
@@ -139,7 +141,7 @@ export function renderExportTab(root) {
 
   function renderStatement() {
     if (!stmtEmployeeId) {
-      stmtEl.innerHTML = `<p class="text-muted">No hay colaboradores.</p>`;
+      stmtEl.innerHTML = `<p class="text-muted">Selecciona un colaborador para ver su estado de cuenta.</p>`;
       return;
     }
     const s = accountStatementService.getStatement(stmtEmployeeId, stmtYear);

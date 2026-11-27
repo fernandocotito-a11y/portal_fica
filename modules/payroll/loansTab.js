@@ -100,9 +100,11 @@ export function renderLoansTab(root) {
   /** Incluye al colaborador del préstamo que se edita aunque esté inactivo. */
   function fillEmployees(includeId = null) {
     const list = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
-    empSel.innerHTML = list
+    const keep = includeId || empSel.value;
+    empSel.innerHTML = '<option value="">Seleccione un colaborador</option>' + list
       .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`)
       .join('');
+    empSel.value = keep && list.some((e) => e.id === keep) ? keep : '';
   }
 
   function cuotaPreview() {
@@ -124,6 +126,7 @@ export function renderLoansTab(root) {
     editingId = null;
     addBtn.innerHTML = `${ICONS.plus} Registrar`;
     cancelBtn.hidden = true;
+    empSel.value = '';
     descI.value = '';
     montoI.value = '0';
     cuotasI.value = '1';

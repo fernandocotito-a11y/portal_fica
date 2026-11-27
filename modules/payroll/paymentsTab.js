@@ -60,15 +60,18 @@ export function renderPaymentsTab(root) {
   /** Incluye al colaborador del registro que se edita aunque esté inactivo. */
   function fillEmployees(includeId = null) {
     const list = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
-    empSel.innerHTML = list
+    const keep = includeId || empSel.value;
+    empSel.innerHTML = '<option value="">Seleccione un colaborador</option>' + list
       .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`)
       .join('');
+    empSel.value = keep && list.some((e) => e.id === keep) ? keep : '';
   }
 
   function resetForm() {
     editingId = null;
     addBtn.innerHTML = `${ICONS.plus} Registrar`;
     cancelBtn.hidden = true;
+    empSel.value = '';
     conceptoCat.value = PAYMENT_CONCEPTS[0].value;
     tipoSel.value = 'adelanto';
     conceptoI.value = '';

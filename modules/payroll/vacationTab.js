@@ -358,10 +358,14 @@ export function renderVacationTab(root) {
 
   function fillSelectors(includeId = null) {
     const emps = payrollService.listEmployees().filter((e) => e.active !== false || e.id === includeId);
-    empSel.innerHTML = emps.length
-      ? emps.map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`).join('')
-      : '<option value="">Sin colaboradores</option>';
-    fillPeriods(includeId || empSel.value);
+    const keep = includeId || empSel.value;
+    // El colaborador se elige explícitamente: nunca queda preseleccionado el
+    // primero de la lista al abrir la pestaña.
+    empSel.innerHTML = '<option value="">Seleccione un colaborador</option>' + emps
+      .map((e) => `<option value="${e.id}">${escapeHtml(e.name)}${e.active === false ? ' (inactivo)' : ''}</option>`)
+      .join('');
+    empSel.value = keep && emps.some((e) => e.id === keep) ? keep : '';
+    fillPeriods(empSel.value || '');
   }
 
   function startEdit(id) {
