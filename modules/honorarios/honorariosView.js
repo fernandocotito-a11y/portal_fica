@@ -154,8 +154,8 @@ export function render(root) {
           </div>
           <div style="display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap;">
             <button type="button" class="btn" data-rhe-pdt ${monthRows.length ? '' : 'disabled'}>${ICONS.arrowRight} Descargar PDT 601 (ZIP)</button>
-            <button type="button" class="btn btn--ghost btn--sm" data-rhe-pdt-single="ps4" ${monthRows.length ? '' : 'disabled'}>Descargar .ps4</button>
-            <button type="button" class="btn btn--ghost btn--sm" data-rhe-pdt-single="4ta" ${monthRows.length ? '' : 'disabled'}>Descargar .4ta</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-rhe-pdt-single="ps4" title="Descargar .ps4" ${monthRows.length ? '' : 'disabled'}>Proveedores</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-rhe-pdt-single="4ta" title="Descargar .4ta" ${monthRows.length ? '' : 'disabled'}>Comprobantes</button>
           </div>
         </div>
         <div class="card__body">
@@ -447,7 +447,8 @@ export function render(root) {
     try {
       const { year, month } = rheYearMonth();
       const res = downloadPdtSingle(company, rows, year, month, ext);
-      showToast(`PDT 601 descargado: ${res.fileName}.`);
+      const tipo = ext === 'ps4' ? 'Proveedores' : 'Comprobantes';
+      showToast(`Descargado ${res.fileName} (${tipo}).`);
     } catch (err) {
       showToast(err.message || String(err), 'error');
     }
