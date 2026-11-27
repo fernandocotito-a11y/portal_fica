@@ -113,7 +113,7 @@ export const MODULES = [
     key: 'honorarios',
     name: 'Recibos de Honorarios',
     description: 'Importación del TXT de Recibos por Honorarios Electrónicos, PDT 601 y asiento mensual.',
-    icon: ic('<path d="M19 5 5 19"/><circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/>'),
+    icon: ic('<path d="M5 3h14v18l-2.8-2-2.8 2-2.8-2-2.8 2L5 21Z"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
     status: 'active',
     adminOnly: false,
     group: 'operations',

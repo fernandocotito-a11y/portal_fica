@@ -267,7 +267,7 @@ export function render(root) {
           </div>
           <input type="file" data-rhe-files accept=".txt,.csv" hidden />
           <div data-rhe-drop style="border:1.5px dashed var(--color-border);border-radius:var(--radius-lg);padding:var(--space-6);text-align:center;cursor:pointer;">
-            ${ICONS.briefcase}
+            ${ICONS.receipt}
             <div style="margin-top:var(--space-2);"><strong>Arrastra aquí el TXT de SUNAT</strong> o haz clic para seleccionarlo</div>
             <div class="text-muted" style="font-size:var(--font-size-sm);">Acepta .txt y .csv con separador |. El login de SUNAT NO se automatiza: descarga el archivo manualmente.</div>
             <button type="button" class="btn" style="margin-top:var(--space-3);">Seleccionar TXT</button>
@@ -324,7 +324,7 @@ export function render(root) {
               </div>
             </div>` : ''}
           <div class="stats" style="margin-top:var(--space-4);">
-            <div class="stat-card"><span class="stat-card__icon">${ICONS.briefcase}</span><div><div class="stat-card__value">${summary.count}</div><div class="stat-card__label">Recibos pagados (mes de pago)</div></div></div>
+            <div class="stat-card"><span class="stat-card__icon">${ICONS.receipt}</span><div><div class="stat-card__value">${summary.count}</div><div class="stat-card__label">Recibos pagados (mes de pago)</div></div></div>
             <div class="stat-card"><span class="stat-card__icon">${ICONS.arrowRight}</span><div><div class="stat-card__value">${num(summary.bruta)}</div><div class="stat-card__label">Renta bruta (PEN)</div></div></div>
             <div class="stat-card"><span class="stat-card__icon">${ICONS.check}</span><div><div class="stat-card__value">${num(summary.retenido)}</div><div class="stat-card__label">Impuesto retenido</div></div></div>
             <div class="stat-card"><span class="stat-card__icon">${ICONS.info}</span><div><div class="stat-card__value">${summary.pendientes || 0}</div><div class="stat-card__label">Pendientes de pago</div></div></div>
@@ -357,7 +357,7 @@ export function render(root) {
                 <td><select class="form-input" data-rhe-cuenta="${escapeHtml(r.id)}" style="min-width:200px;">${rheAccountOptions(r.cuenta_gasto)}</select></td>
                 <td><span class="badge ${r.anulado ? 'badge--gold' : 'badge--active'}">${r.anulado ? 'ANULADO' : 'VIGENTE'}</span></td>
                 <td><button type="button" class="btn btn--ghost btn--sm" data-rhe-delete="${escapeHtml(r.id)}">Eliminar</button></td>
-              </tr>`).join('') : `<tr><td colspan="11"><div class="empty-state"><span class="empty-state__icon">${ICONS.briefcase}</span><div class="empty-state__title">Sin recibos en ${escapeHtml(periodLabel(state.rhePeriod))}</div><div class="empty-state__desc">Importa el TXT, agrega un recibo o cambia el mes / filtro.</div></div></td></tr>`}</tbody>
+              </tr>`).join('') : `<tr><td colspan="11"><div class="empty-state"><span class="empty-state__icon">${ICONS.receipt}</span><div class="empty-state__title">Sin recibos en ${escapeHtml(periodLabel(state.rhePeriod))}</div><div class="empty-state__desc">Importa el TXT, agrega un recibo o cambia el mes / filtro.</div></div></td></tr>`}</tbody>
             </table>
           </div>
         </div>
