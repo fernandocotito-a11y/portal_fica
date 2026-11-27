@@ -335,7 +335,7 @@ select.form-input {
   gap: var(--space-4);
   margin-bottom: var(--space-6);
 }
-/* Declaraciones: 6 tarjetas de totales en filas completas (3x2 / 6x1 / 2x3). */
+/* Declaraciones: 6 tarjetas de totales siempre en filas completas (3x2 / 2x3). */
 .stats--six {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -350,11 +350,6 @@ select.form-input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-@media (min-width: 1600px) {
-  .stats--six {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-  }
 }
 @media (max-width: 768px) {
   .stats--six {
