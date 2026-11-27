@@ -18,6 +18,7 @@ import { paymentService } from './paymentService.js';
 import { gratificacionService } from './gratificacionService.js';
 import { loanService } from './loanService.js';
 import { TASAS, RENTA_5TA, AFP_BASE, getUit, getRmv, monthlyCommission, laborRules } from './payrollConfig.js';
+import { setPeriodClosedChecker, assertDateRangeOpen } from './periodLock.js';
 
 /* ------------------------------------------------------------ caché en memoria */
 let employeesCache = [];
@@ -351,6 +352,8 @@ export const payrollService = {
     (per.data || []).forEach((p) => {
       periodsCache[`${p.year}-${String(p.month).padStart(2, '0')}`] = { closed: !!p.closed, rows: p.rows || {} };
     });
+    // El bloqueo de períodos cerrados se comparte con todas las pestañas.
+    setPeriodClosedChecker((year, month) => !!periodsCache[this.periodKey(year, month)]?.closed);
   },
 
   listEmployees() {
@@ -363,7 +366,14 @@ export const payrollService = {
   /** Deriva los conceptos de un mes (asistencia, vacaciones, bonos, pagos). */
   deriveMonthInputs,
 
+  /** Los datos del colaborador que afectan cálculos no se tocan si hay meses cerrados en su ventana. */
+  assertEmployeeWindow(data) {
+    if (!data || !data.startDate) return;
+    assertDateRangeOpen(data.startDate, data.cese || '');
+  },
+
   async createEmployee(data) {
+    this.assertEmployeeWindow(data);
     const { data: row, error } = await supabase.from('payroll_employees').insert(toEmployeeRow(data)).select().single();
     if (error) throw new Error(error.message);
     const emp = mapEmployee(row);
@@ -373,6 +383,10 @@ export const payrollService = {
   async updateEmployee(id, patch) {
     const current = this.getEmployee(id) || {};
     const merged = { ...current, ...patch };
+    const sensitive = ['startDate', 'baseSalary', 'pensionType', 'afp', 'commissionType', 'cuspp', 'cese', 'asignacionFamiliar', 'salud', 'contractType', 'contractEnd', 'active'];
+    if (sensitive.some((f) => String(current[f] ?? '') !== String(merged[f] ?? ''))) {
+      this.assertEmployeeWindow(merged);
+    }
     const { data: row, error } = await supabase.from('payroll_employees').update(toEmployeeRow(merged)).eq('id', id).select().single();
     if (error) throw new Error(error.message);
     const emp = mapEmployee(row);
@@ -381,6 +395,7 @@ export const payrollService = {
     return emp;
   },
   async removeEmployee(id) {
+    this.assertEmployeeWindow(this.getEmployee(id));
     const { error } = await supabase.from('payroll_employees').delete().eq('id', id);
     if (error) throw new Error(error.message);
     employeesCache = employeesCache.filter((e) => e.id !== id);

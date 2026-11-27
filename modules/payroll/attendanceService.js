@@ -14,6 +14,7 @@ import { num, round2, dateInMonth, isoWeekday, hhmmToMinutes } from './payrollUt
 import { activeCompanyId } from './payrollScope.js';
 import { OVERTIME } from './payrollConfig.js';
 import { scheduleService, shiftMinutes } from './scheduleService.js';
+import { assertDateOpen } from './periodLock.js';
 
 let cache = [];
 
@@ -101,6 +102,7 @@ export const attendanceService = {
   },
 
   async create(data) {
+    assertDateOpen(data.date);
     const n = this.normalize(data);
     const row = {
       company_id: activeCompanyId(),
@@ -124,7 +126,10 @@ export const attendanceService = {
   },
 
   async update(id, patch) {
-    const merged = { ...(this.getById(id) || {}), ...patch };
+    const old = this.getById(id) || {};
+    assertDateOpen(old.date);
+    const merged = { ...old, ...patch };
+    assertDateOpen(merged.date);
     const n = this.normalize(merged);
     const row = {
       employee_id: n.employeeId || null,
@@ -148,6 +153,7 @@ export const attendanceService = {
   },
 
   async remove(id) {
+    assertDateOpen(this.getById(id)?.date);
     const { error } = await supabase.from('payroll_attendance').delete().eq('id', id);
     if (error) throw new Error(error.message);
     cache = cache.filter((r) => r.id !== id);

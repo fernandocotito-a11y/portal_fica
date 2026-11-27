@@ -601,7 +601,7 @@ function renderPlanillaTab(root) {
     const data = computeAll().filter((d) => !d.calc.fueraPeriodo);
     if (data.length === 0) { showToast('No hay colaboradores para cerrar.', 'error'); return; }
     const totals = sumTotals(data.map((d) => d.calc));
-    const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.netoTotal)}. Después no podrás editarla.`, confirmText: 'Cerrar planilla' });
+    const ok = await confirmDialog({ title: 'Cerrar planilla del mes', message: `Se cerrará la planilla de ${MESES[month - 1]} ${year} con un neto total de ${money(totals.netoTotal)}. Después no podrás editarla ni registrar cambios de ese mes en bonificaciones, asistencia, vacaciones, pagos ni préstamos.`, confirmText: 'Cerrar planilla' });
     if (ok) {
       try {
         clearTimeout(saveTimer);
@@ -622,7 +622,7 @@ function renderPlanillaTab(root) {
   reopenBtn.addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Reabrir planilla',
-      message: `¿Reabrir la planilla de ${MESES[month - 1]} ${year}? Podrás editarla y volver a cerrarla cuando esté lista.`,
+      message: `¿Reabrir la planilla de ${MESES[month - 1]} ${year}? Podrás editarla en todas las pestañas y volver a cerrarla cuando esté lista.`,
       confirmText: 'Reabrir',
     });
     if (!ok) return;

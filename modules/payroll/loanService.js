@@ -9,6 +9,7 @@
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
 import { activeCompanyId } from './payrollScope.js';
+import { assertPeriodOpen } from './periodLock.js';
 
 let cache = [];
 
@@ -32,6 +33,17 @@ function fromIndex(idx) {
   return { year: Math.floor(idx / 12), month: (idx % 12) + 1 };
 }
 
+/** Un préstamo no se toca si cualquiera de sus cuotas cae en un mes cerrado. */
+function assertLoanMonthsOpen(loan) {
+  if (!loan) return;
+  const n = Math.max(1, Math.round(num(loan.nCuotas, 1)));
+  const start = monthIndex(loan.startYear, loan.startMonth);
+  for (let i = 0; i < n; i++) {
+    const { year, month } = fromIndex(start + i);
+    assertPeriodOpen(year, month);
+  }
+}
+
 export const loanService = {
   async refresh() {
     const cid = activeCompanyId();
@@ -52,6 +64,7 @@ export const loanService = {
   },
 
   async create(data) {
+    assertLoanMonthsOpen(data);
     const row = {
       company_id: activeCompanyId(),
       employee_id: data.employeeId,
@@ -69,7 +82,10 @@ export const loanService = {
   },
 
   async update(id, patch) {
-    const merged = { ...(this.getById(id) || {}), ...patch };
+    const old = this.getById(id);
+    assertLoanMonthsOpen(old);
+    const merged = { ...(old || {}), ...patch };
+    assertLoanMonthsOpen(merged);
     const row = {
       employee_id: merged.employeeId,
       descripcion: merged.descripcion || null,
@@ -87,6 +103,7 @@ export const loanService = {
   },
 
   async remove(id) {
+    assertLoanMonthsOpen(this.getById(id));
     const { error } = await supabase.from('payroll_loans').delete().eq('id', id);
     if (error) throw new Error(error.message);
     cache = cache.filter((l) => l.id !== id);

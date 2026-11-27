@@ -20,6 +20,7 @@ import { vacationService } from './vacationService.js';
 import { gratificacionService } from './gratificacionService.js';
 import { calcRow, deriveMonthInputs, inPeriod, getAfpParams } from './payrollService.js';
 import { impuestoAnual, uitDelAnio, DEDUCCION_UIT } from './taxService.js';
+import { assertDateOpen } from './periodLock.js';
 
 let cache = [];
 
@@ -132,6 +133,7 @@ export const liquidationService = {
   },
 
   async save(liq) {
+    assertDateOpen(liq.fechaCese);
     const row = {
       company_id: activeCompanyId(),
       employee_id: liq.employeeId || null,
@@ -149,6 +151,7 @@ export const liquidationService = {
   },
 
   async remove(id) {
+    assertDateOpen(cache.find((l) => l.id === id)?.fechaCese);
     const { error } = await supabase.from('payroll_liquidations').delete().eq('id', id);
     if (error) throw new Error(error.message);
     cache = cache.filter((r) => r.id !== id);

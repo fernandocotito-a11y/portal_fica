@@ -16,6 +16,7 @@
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
 import { activeCompanyId } from './payrollScope.js';
+import { assertMonthsOpen, assertPeriodOpen } from './periodLock.js';
 
 let cache = [];
 const DIAS_LEGALES = 30;
@@ -112,7 +113,22 @@ export const vacationService = {
     return employeeId ? cache.filter((r) => r.employeeId === employeeId) : cache.slice();
   },
 
+  /** Un registro no se toca si cualquier mes de su rango está cerrado. */
+  assertRecordMonthsOpen(rec) {
+    if (!rec) return;
+    const parts = this.splitByMonth(rec.dateFrom, rec.dateTo);
+    if (parts.length) {
+      assertMonthsOpen(parts);
+      return;
+    }
+    if (rec.monthYear) {
+      const [y, m] = String(rec.monthYear).split('-').map(Number);
+      assertPeriodOpen(y, m);
+    }
+  },
+
   async create(data) {
+    this.assertRecordMonthsOpen(data);
     const row = {
       company_id: activeCompanyId(),
       employee_id: data.employeeId,
@@ -130,7 +146,10 @@ export const vacationService = {
     return rec;
   },
   async update(id, patch) {
-    const merged = { ...(this.list().find((r) => r.id === id) || {}), ...patch };
+    const old = this.list().find((r) => r.id === id) || {};
+    this.assertRecordMonthsOpen(old);
+    const merged = { ...old, ...patch };
+    this.assertRecordMonthsOpen(merged);
     const row = {
       employee_id: merged.employeeId || null,
       period: merged.period || null,
@@ -148,6 +167,7 @@ export const vacationService = {
     return rec;
   },
   async remove(id) {
+    this.assertRecordMonthsOpen(this.list().find((r) => r.id === id));
     const { error } = await supabase.from('payroll_vacations').delete().eq('id', id);
     if (error) throw new Error(error.message);
     cache = cache.filter((r) => r.id !== id);

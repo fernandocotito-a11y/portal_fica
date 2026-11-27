@@ -12,6 +12,7 @@ import { supabase } from '../../js/supabase.js';
 import { activeCompanyId } from './payrollScope.js';
 import { num, todayIso, hhmmToMinutes, fmtDate, isoWeekday } from './payrollUtils.js';
 import { WORK_DAY_LABELS } from './payrollConfig.js';
+import { assertDateOpen, assertDateRangeOpen } from './periodLock.js';
 
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5];
 const ROUND_OPTIONS = [1, 5, 10, 15, 30];
@@ -240,8 +241,13 @@ export const scheduleService = {
     return `${range} · ${s.entry}–${s.exit} · ${workDaysLabel(s.workDays)} · refrigerio ${s.breakMinutes} min`;
   },
 
+  assertScheduleMonthsOpen(s) {
+    if (s) assertDateRangeOpen(s.effectiveFrom, s.effectiveTo);
+  },
+
   async create(data) {
     validate(data);
+    this.assertScheduleMonthsOpen(data);
     const from = data.effectiveFrom;
     const to = data.effectiveTo || '';
     const days = Array.from(new Set((data.workDays || []).map(Number)));
@@ -271,7 +277,9 @@ export const scheduleService = {
   async update(id, patch) {
     const current = this.getById(id);
     if (!current) throw new Error('Horario no encontrado.');
+    this.assertScheduleMonthsOpen(current);
     const merged = { ...current, ...patch };
+    this.assertScheduleMonthsOpen(merged);
     validate(merged);
 
     const days = Array.from(new Set((merged.workDays || []).map(Number)));
@@ -297,6 +305,7 @@ export const scheduleService = {
   },
 
   async remove(id) {
+    this.assertScheduleMonthsOpen(this.getById(id));
     const { error } = await supabase.from('payroll_work_schedules').delete().eq('id', id);
     if (error) throw new Error(error.message);
     await this.refresh();
@@ -307,6 +316,11 @@ export const scheduleService = {
   async saveException(data) {
     const date = String(data.date || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('La fecha del día especial es obligatoria.');
+    assertDateOpen(date);
+    if (data.id) {
+      const old = exceptions.find((e) => e.id === data.id);
+      assertDateOpen(old?.date);
+    }
     const row = {
       company_id: activeCompanyId(),
       date,
@@ -330,6 +344,7 @@ export const scheduleService = {
   },
 
   async removeException(id) {
+    assertDateOpen(exceptions.find((e) => e.id === id)?.date);
     const { error } = await supabase.from('payroll_schedule_exceptions').delete().eq('id', id);
     if (error) throw new Error(error.message);
     await this.refresh();

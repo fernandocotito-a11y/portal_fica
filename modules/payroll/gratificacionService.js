@@ -8,6 +8,7 @@
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
 import { activeCompanyId } from './payrollScope.js';
+import { assertPeriodOpen } from './periodLock.js';
 
 let cache = [];
 
@@ -56,6 +57,7 @@ export const gratificacionService = {
   },
 
   async create({ employeeId, year, month, monto, bonificacion = 0 }) {
+    assertPeriodOpen(year, month);
     const cid = activeCompanyId();
     const row = {
       company_id: cid,
@@ -77,6 +79,8 @@ export const gratificacionService = {
   },
 
   async remove(id) {
+    const old = cache.find((g) => g.id === id);
+    if (old) assertPeriodOpen(old.year, old.month);
     const { error } = await supabase.from('payroll_gratificaciones').delete().eq('id', id);
     if (error) throw new Error(error.message);
     cache = cache.filter((g) => g.id !== id);

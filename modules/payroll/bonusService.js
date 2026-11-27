@@ -5,6 +5,7 @@
 import { supabase } from '../../js/supabase.js';
 import { num, round2 } from './payrollUtils.js';
 import { activeCompanyId } from './payrollScope.js';
+import { assertPeriodOpen } from './periodLock.js';
 
 let cache = [];
 
@@ -60,6 +61,7 @@ export const bonusService = {
   },
 
   async create(data) {
+    assertPeriodOpen(data.year, data.month);
     const row = {
       company_id: activeCompanyId(),
       employee_id: data.employeeId,
@@ -76,7 +78,10 @@ export const bonusService = {
     return rec;
   },
   async update(id, patch) {
-    const merged = { ...(cache.find((b) => b.id === id) || {}), ...patch };
+    const old = cache.find((b) => b.id === id) || {};
+    assertPeriodOpen(old.year, old.month);
+    const merged = { ...old, ...patch };
+    assertPeriodOpen(merged.year, merged.month);
     const row = {
       employee_id: merged.employeeId || null,
       year: num(merged.year),
@@ -93,6 +98,8 @@ export const bonusService = {
     return rec;
   },
   async remove(id) {
+    const old = cache.find((b) => b.id === id);
+    if (old) assertPeriodOpen(old.year, old.month);
     const { error } = await supabase.from('payroll_bonuses').delete().eq('id', id);
     if (error) throw new Error(error.message);
     cache = cache.filter((b) => b.id !== id);
